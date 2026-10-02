@@ -22,6 +22,8 @@ uv sync
 The first sync downloads CPU-only PyTorch from the PyTorch index and the spaCy Spanish model
 (`es_core_news_md`) from GitHub, so expect a download of over 1 GB.
 
+The run configuration lives in `config/default.yaml` and is validated on load.
+
 ## Checks
 
 ```sh

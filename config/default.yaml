@@ -1,0 +1,78 @@
+# Initial configuration, declared ex ante.
+# Every change to these values is logged in odd/tasks/thematic-redundancy-system.md.
+
+# Locations relative to the project root.
+paths:
+  data_dir: data
+  results_dir: results
+  tessdata_dir: tessdata
+
+# Public DSpace repository and the faculty community that holds the programs.
+repository:
+  base_url: "https://repositorio.ucsm.edu.pe"
+  faculty_community_uuid: "3e706f8d-cba0-4d4a-8d51-dd317c3e7652"
+
+# Corpus filter: dc.date.issued range, renati.type, and program collections.
+snapshot:
+  year_start: 2021
+  year_end: 2026
+  thesis_type: tesis
+  programs:
+    - key: sistemas
+      name: "Ingeniería de Sistemas"
+    - key: industrial
+      name: "Ingeniería Industrial"
+    - key: electronica
+      name: "Ingeniería Electrónica"
+    - key: mecanica
+      name: "Ingeniería Mecánica, Mecánica-Eléctrica y Mecatrónica"
+    - key: minas
+      name: "Ingeniería de Minas"
+
+# Tesseract languages and rasterization resolution for pages without a text layer.
+ocr:
+  languages: spa+eng
+  dpi: 300
+
+# Token budget per chunk, special tokens included, under both tokenizers.
+chunking:
+  max_tokens: 128
+
+embedding:
+  models:
+    - sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+    - sentence-transformers/paraphrase-multilingual-mpnet-base-v2
+
+umap:
+  n_neighbors: 15
+  n_components: 5
+  min_dist: 0.0
+  metric: cosine
+
+# K sweep from k_start to k_stop (inclusive) in steps of k_step.
+kmeans:
+  k_start: 8
+  k_stop: 50
+  k_step: 2
+
+# min_samples keeps the HDBSCAN default.
+hdbscan:
+  min_cluster_sizes: [5, 10, 15, 20]
+
+seeds: [7, 13, 21, 42, 73]
+
+redundancy:
+  cv_folds: 5
+
+recommender:
+  top_k: 5
+  mmr_lambda: 0.7
+  neighbor_topics: 3
+  nearby_gaps: 3
+
+gaps:
+  temporal_split_year: 2024
+  temporal_min_count: 3
+  bridge_max_docs: 1
+  nearest_topics: 3
+  stability_min_runs: 4
