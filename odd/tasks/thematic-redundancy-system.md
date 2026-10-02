@@ -175,7 +175,7 @@ Python 3.13 · uv · pymupdf 1.28 · pdfplumber 0.11 (fallback) · httpx 0.28 ·
 Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P = passive, M = medium, H = high.
 
 ### P0 — Foundation (M1)
-- [ ] **T01** Scaffold the repo. Contents:
+- [x] **T01** Scaffold the repo. Contents:
   - layout, `pyproject.toml` (PyTorch CPU index, spaCy model as a URL dependency);
   - ruff/pytest config;
   - `.gitignore` / `.dockerignore`;
@@ -196,6 +196,19 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - T04: pydantic normalizes `base_url` with a trailing slash.
     - `load_config` reads YAML as UTF-8 because of the accents.
     - Run uv with `UV_PYTHON_DOWNLOADS=never` so it uses the local CPython 3.13.2.
+  - Commits on `main`: `04bd609` (plan doc), `c87eba2` (scaffold + lock), `cdf72e4` (config unit). They appeared on `origin/main` at 14:01:35; the push was not run as part of this task.
+  - Review:
+    - The range was assessed as medium risk.
+    - The full range exceeded the reviewer context budget, because `uv.lock` is 2,803 generated lines.
+    - The config commit alone was reviewed with consent granted. It was approved and acknowledged.
+    - `c87eba2` has no automated review, since the generated lock cannot be split. Its authored part was verified with `uv lock --check` and ruff.
+  - Lesson: commit future `uv.lock` changes separately (`build(deps): ...`) so code commits stay reviewable.
+- [ ] **T01a** Config hardening, from the four non-blocking review findings:
+  - enforce an inclusive k-means stop (`(k_stop - k_start) % k_step == 0`);
+  - reject paths that escape the project root (`..`);
+  - reject duplicate YAML keys;
+  - use strict types (no string-to-number coercion).
+  - Route I. Risk M.
 - [ ] **T02** Smoke-test the full stack on a synthetic mini corpus. The run covers embeddings → UMAP → K-means/HDBSCAN → BERTopic → NPMI → an AppTest import. Pin any major version that breaks.
   - Route D. Risk M.
   - Accept: the run completes end to end and the pins are documented.
@@ -351,6 +364,8 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
   - Route: D. Trigger: 3+ non-trivial files (pyproject, config module, tests).
 - 2026-10-02: The user chose O08: direct commits on `main`, with no PR chain. This makes the slice plan for T01 three commits: the plan doc, the scaffold, and the config unit.
 
+- 2026-10-02: T01 closed. It is three commits on `main`, with the config unit reviewed and approved and T01a added from the review findings.
+
 ## Next step
 
-Commit T01 on `main`: plan doc, then scaffold, then config unit. After that, start T02 (stack smoke test) and T03 (OCR assets).
+T01a (config hardening), then T02 (stack smoke test) and T03 (OCR assets).
