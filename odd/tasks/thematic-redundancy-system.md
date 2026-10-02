@@ -95,7 +95,7 @@ D15, labeled set, in detail:
 | O05 | Acceptance criterion for objectives extraction | ≥90% correct on a manual, stratified sample of ~60 theses. Otherwise fall back to title + abstract and document it | **Accepted 2026-10-02** | T10 |
 | O06 | Rule for flagging an atypical proposal | Flag it when its similarity to the nearest centroid is below the P5 of member-to-own-centroid similarities | **Accepted 2026-10-02** | T23 |
 | O07 | Where the expert demos run | The local laptop, with the Docker image ready. Revisit at M5 | **Accepted 2026-10-02** | T29 |
-| O08 | PR chain strategy | Commit work units directly on `main`, with no PR chain. Each task closes with one or more Conventional Commits | **Accepted 2026-10-02 (user decision)** | First commit |
+| O08 | PR chain strategy | Work units go directly on `main`, with no PR chain. The user makes every commit and push manually in GitHub Desktop. The developer prepares each verified work unit and announces when a commit is due, with the file list and a Conventional Commit message | **Accepted 2026-10-02 (user decision; revised the same day)** | First commit |
 
 ## Inputs the user must secure (lead time)
 
@@ -196,19 +196,29 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - T04: pydantic normalizes `base_url` with a trailing slash.
     - `load_config` reads YAML as UTF-8 because of the accents.
     - Run uv with `UV_PYTHON_DOWNLOADS=never` so it uses the local CPython 3.13.2.
-  - Commits on `main`: `04bd609` (plan doc), `c87eba2` (scaffold + lock), `cdf72e4` (config unit). They appeared on `origin/main` at 14:01:35; the push was not run as part of this task.
+  - Commits on `main`: `04bd609` (plan doc), `c87eba2` (scaffold + lock), `cdf72e4` (config unit). The user pushed them to `origin/main` through GitHub Desktop at 14:01:35.
   - Review:
     - The range was assessed as medium risk.
     - The full range exceeded the reviewer context budget, because `uv.lock` is 2,803 generated lines.
     - The config commit alone was reviewed with consent granted. It was approved and acknowledged.
     - `c87eba2` has no automated review, since the generated lock cannot be split. Its authored part was verified with `uv lock --check` and ruff.
   - Lesson: commit future `uv.lock` changes separately (`build(deps): ...`) so code commits stay reviewable.
-- [ ] **T01a** Config hardening, from the four non-blocking review findings:
+- [x] **T01a** Config hardening, from the four non-blocking review findings:
   - enforce an inclusive k-means stop (`(k_stop - k_start) % k_step == 0`);
   - reject paths that escape the project root (`..`);
   - reject duplicate YAML keys;
   - use strict types (no string-to-number coercion).
-  - Route I. Risk M.
+  - Route D. Trigger: 2 non-trivial files (`config.py`, `test_config.py`). Risk M.
+  - Evidence (2026-10-02):
+    - RED → GREEN per change: 3 failed → 47 passed; 4 failed → 53; 2 failed → 55; 6 failed → 63.
+    - `ruff check` and `ruff format --check` are clean, and `pytest` gives 63 passed (independent re-run).
+    - Diff: 226 insertions, 32 deletions.
+  - Behavior notes:
+    - `k_values()` returns the inclusive sweep.
+    - `resolve_against` also verifies that resolved paths stay inside the root. As a result, a `data/` symlink or junction pointing to another drive is rejected. This was kept deliberately; revisit it if the data must live on another disk.
+    - Integer fields reject floats such as `300.0`.
+    - YAML exponents need a dot and a signed exponent (`7.0e-1`).
+  - Commit: pending; the user commits in GitHub Desktop.
 - [ ] **T02** Smoke-test the full stack on a synthetic mini corpus. The run covers embeddings → UMAP → K-means/HDBSCAN → BERTopic → NPMI → an AppTest import. Pin any major version that breaks.
   - Route D. Risk M.
   - Accept: the run completes end to end and the pins are documented.
@@ -366,6 +376,8 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
 
 - 2026-10-02: T01 closed. It is three commits on `main`, with the config unit reviewed and approved and T01a added from the review findings.
 
+- 2026-10-02: T01a implemented and verified (63 tests). Its commit was handed to the user.
+
 ## Next step
 
-T01a (config hardening), then T02 (stack smoke test) and T03 (OCR assets).
+After the user's T01a commit: T02 (stack smoke test), then T03 (OCR assets).

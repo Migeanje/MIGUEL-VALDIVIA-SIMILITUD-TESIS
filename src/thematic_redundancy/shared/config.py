@@ -3,11 +3,21 @@
 from collections import Counter
 from collections.abc import Hashable, Sequence
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Annotated, Self
+from typing import Annotated, Any, Self
 from uuid import UUID
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    StrictFloat,
+    StrictInt,
+    field_validator,
+    model_validator,
+)
+from yaml.constructor import ConstructorError
 
 MODEL_MAX_SEQ_LENGTH = 128
 """Verified ``max_seq_length`` of both multilingual SBERT models; no chunk may exceed it."""
@@ -16,9 +26,14 @@ SEED_COUNT = 5
 """Number of fixed seeds that every stochastic step is repeated with."""
 
 NonEmptyStr = Annotated[str, Field(min_length=1)]
-NonNegativeInt = Annotated[int, Field(ge=0)]
-PositiveInt = Annotated[int, Field(ge=1)]
-Seed = Annotated[int, Field(ge=0, lt=2**32)]
+
+# Numeric fields use pydantic's strict types: a quoted "15" or a boolean is refused instead
+# of coerced, while StrictFloat still accepts an integer such as 0. Model-wide strict mode is
+# avoided because it would also refuse the strings that YAML gives for paths and UUIDs, and
+# the lists that it gives for tuples.
+NonNegativeInt = Annotated[StrictInt, Field(ge=0)]
+PositiveInt = Annotated[StrictInt, Field(ge=1)]
+Seed = Annotated[StrictInt, Field(ge=0, lt=2**32)]
 
 
 def _require_unique(values: Sequence[Hashable], label: str) -> None:
@@ -30,6 +45,21 @@ def _require_unique(values: Sequence[Hashable], label: str) -> None:
 def _is_anchored(raw_path: str) -> bool:
     """Tell whether a path is absolute or rooted under either Windows or POSIX rules."""
     return bool(PureWindowsPath(raw_path).anchor or PurePosixPath(raw_path).anchor)
+
+
+def _has_parent_segment(raw_path: str) -> bool:
+    """Tell whether a path has a ``..`` segment under either Windows or POSIX rules."""
+    return ".." in PureWindowsPath(raw_path).parts or ".." in PurePosixPath(raw_path).parts
+
+
+def _resolve_inside(root: Path, location: Path, field_name: str) -> Path:
+    """Resolve ``location`` under the resolved ``root`` and refuse any result outside it."""
+    resolved = (root / location).resolve()
+    if not resolved.is_relative_to(root):
+        raise ValueError(
+            f"paths.{field_name} resolves to '{resolved}', outside the project root '{root}'"
+        )
+    return resolved
 
 
 class _FrozenModel(BaseModel):
@@ -55,18 +85,26 @@ class PathsConfig(_FrozenModel):
 
     @field_validator("data_dir", "results_dir", "tessdata_dir")
     @classmethod
-    def _require_relative(cls, value: Path) -> Path:
-        if _is_anchored(str(value)):
+    def _require_inside_project_root(cls, value: Path) -> Path:
+        raw_path = str(value)
+        if _is_anchored(raw_path):
             raise ValueError(f"must be relative to the project root, got '{value}'")
+        if _has_parent_segment(raw_path):
+            raise ValueError(f"must not contain '..' segments, got '{value}'")
         return value
 
     def resolve_against(self, project_root: Path) -> ResolvedPaths:
-        """Join every location onto ``project_root`` and return absolute paths."""
+        """Join every location onto ``project_root`` and return absolute paths.
+
+        Raises:
+            ValueError: if a location resolves outside the project root, for example
+                through a symbolic link that points elsewhere.
+        """
         root = Path(project_root).resolve()
         return ResolvedPaths(
-            data_dir=(root / self.data_dir).resolve(),
-            results_dir=(root / self.results_dir).resolve(),
-            tessdata_dir=(root / self.tessdata_dir).resolve(),
+            data_dir=_resolve_inside(root, self.data_dir, "data_dir"),
+            results_dir=_resolve_inside(root, self.results_dir, "results_dir"),
+            tessdata_dir=_resolve_inside(root, self.tessdata_dir, "tessdata_dir"),
         )
 
 
@@ -87,8 +125,8 @@ class ProgramConfig(_FrozenModel):
 class SnapshotConfig(_FrozenModel):
     """Filter that selects the theses of the frozen corpus snapshot."""
 
-    year_start: int
-    year_end: int
+    year_start: StrictInt
+    year_end: StrictInt
     thesis_type: NonEmptyStr
     programs: Annotated[tuple[ProgramConfig, ...], Field(min_length=1)]
 
@@ -114,13 +152,13 @@ class OcrConfig(_FrozenModel):
 
     languages: Annotated[str, Field(pattern=r"^[A-Za-z_]+(\+[A-Za-z_]+)*$")]
     """Tesseract language spec, for example ``spa+eng``."""
-    dpi: Annotated[int, Field(ge=72, le=600)]
+    dpi: Annotated[StrictInt, Field(ge=72, le=600)]
 
 
 class ChunkingConfig(_FrozenModel):
     """Sentence-aligned chunk budget, special tokens included, under both tokenizers."""
 
-    max_tokens: Annotated[int, Field(ge=16, le=MODEL_MAX_SEQ_LENGTH)]
+    max_tokens: Annotated[StrictInt, Field(ge=16, le=MODEL_MAX_SEQ_LENGTH)]
 
 
 class EmbeddingConfig(_FrozenModel):
@@ -138,9 +176,9 @@ class EmbeddingConfig(_FrozenModel):
 class UmapConfig(_FrozenModel):
     """UMAP reduction applied before clustering."""
 
-    n_neighbors: Annotated[int, Field(ge=2)]
+    n_neighbors: Annotated[StrictInt, Field(ge=2)]
     n_components: PositiveInt
-    min_dist: Annotated[float, Field(ge=0.0, le=1.0)]
+    min_dist: Annotated[StrictFloat, Field(ge=0.0, le=1.0)]
     """Bounded by UMAP's default ``spread`` of 1.0."""
     metric: NonEmptyStr
 
@@ -148,21 +186,31 @@ class UmapConfig(_FrozenModel):
 class KMeansConfig(_FrozenModel):
     """K sweep for K-means: from ``k_start`` to ``k_stop`` (inclusive) every ``k_step``."""
 
-    k_start: Annotated[int, Field(ge=2)]
-    k_stop: int
+    k_start: Annotated[StrictInt, Field(ge=2)]
+    k_stop: StrictInt
     k_step: PositiveInt
 
     @model_validator(mode="after")
-    def _require_increasing_sweep(self) -> Self:
+    def _check_sweep_rules(self) -> Self:
         if self.k_start >= self.k_stop:
             raise ValueError(f"k_start ({self.k_start}) must be below k_stop ({self.k_stop})")
+        span = self.k_stop - self.k_start
+        if span % self.k_step != 0:
+            raise ValueError(
+                f"k_step ({self.k_step}) must divide k_stop - k_start ({span}), "
+                "so that the inclusive sweep ends exactly at k_stop"
+            )
         return self
+
+    def k_values(self) -> tuple[int, ...]:
+        """Return every K of the sweep, from ``k_start`` to ``k_stop`` inclusive."""
+        return tuple(range(self.k_start, self.k_stop + 1, self.k_step))
 
 
 class HdbscanConfig(_FrozenModel):
     """Grid of ``min_cluster_size`` values; ``min_samples`` keeps the HDBSCAN default."""
 
-    min_cluster_sizes: Annotated[tuple[Annotated[int, Field(ge=2)], ...], Field(min_length=1)]
+    min_cluster_sizes: Annotated[tuple[Annotated[StrictInt, Field(ge=2)], ...], Field(min_length=1)]
 
     @field_validator("min_cluster_sizes")
     @classmethod
@@ -174,14 +222,14 @@ class HdbscanConfig(_FrozenModel):
 class RedundancyConfig(_FrozenModel):
     """Calibration of the direct-redundancy threshold."""
 
-    cv_folds: Annotated[int, Field(ge=2)]
+    cv_folds: Annotated[StrictInt, Field(ge=2)]
 
 
 class RecommenderConfig(_FrozenModel):
     """Antecedent ranking (top-k with MMR) and alternative research lines."""
 
     top_k: PositiveInt
-    mmr_lambda: Annotated[float, Field(ge=0.0, le=1.0)]
+    mmr_lambda: Annotated[StrictFloat, Field(ge=0.0, le=1.0)]
     neighbor_topics: NonNegativeInt
     nearby_gaps: NonNegativeInt
 
@@ -189,7 +237,7 @@ class RecommenderConfig(_FrozenModel):
 class GapsConfig(_FrozenModel):
     """Parameters of the gap rules and of their cross-seed stability filter."""
 
-    temporal_split_year: int
+    temporal_split_year: StrictInt
     """First year of the later period compared by the temporal-shift rule."""
     temporal_min_count: PositiveInt
     bridge_max_docs: NonNegativeInt
@@ -239,7 +287,50 @@ class AppConfig(_FrozenModel):
         return self
 
 
+_YAML_MERGE_TAG = "tag:yaml.org,2002:merge"
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """Safe YAML loader that rejects a key written twice in one mapping, at any depth.
+
+    ``yaml.safe_load`` silently keeps the last duplicate. Keys brought in through a
+    ``<<`` merge may still be overridden, as YAML intends.
+    """
+
+    def __init__(self, stream: str) -> None:
+        super().__init__(stream)
+        self._written_keys: dict[yaml.Node, list[yaml.Node]] = {}
+
+    def flatten_mapping(self, node: yaml.MappingNode) -> None:
+        # A merge folds other keys into node.value, and a merge source can be flattened
+        # before its own construction, so record the written keys at the first flatten.
+        self._written_keys.setdefault(
+            node, [key_node for key_node, _ in node.value if key_node.tag != _YAML_MERGE_TAG]
+        )
+        super().flatten_mapping(node)
+
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Any, Any]:
+        mapping = super().construct_mapping(node, deep=deep)
+        seen: set[Any] = set()
+        for key_node in self._written_keys[node]:
+            key = self.construct_object(key_node, deep=deep)
+            if key in seen:
+                raise ConstructorError(
+                    "while constructing a mapping",
+                    node.start_mark,
+                    f"found duplicate key '{key}'",
+                    key_node.start_mark,
+                )
+            seen.add(key)
+        return mapping
+
+
 def load_config(path: Path) -> AppConfig:
-    """Read a YAML configuration file and return it validated."""
-    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    """Read a YAML configuration file and return it validated.
+
+    Raises:
+        yaml.YAMLError: if the file is not valid YAML or a mapping repeats a key.
+        pydantic.ValidationError: if the content breaks the configuration contract.
+    """
+    raw = yaml.load(Path(path).read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
     return AppConfig.model_validate(raw)
