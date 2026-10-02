@@ -262,9 +262,31 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - NPMI can exceed 1 by about 1e-11, so range checks need a tolerance.
     - The model cache lives in `%USERPROFILE%\.cache\huggingface\hub`.
   - Route D. Size: 508 lines in one cohesive suite, about 75 of them the synthetic corpus. This exceeds the 400-line guide.
-  - Commit: pending; the user commits in GitHub Desktop.
-- [ ] **T03** Script that fetches tessdata, plus an OCR fixture test that reads the tessdata path only from config.
+  - Review:
+    - Before the commit: medium risk, one lens, approved.
+    - After the commit, the range `f39343b..fdd81da` (T01b + T02, 838 lines) was declined by the user for this candidate only. Both commits had already been approved before they were committed.
+  - Commit: `fdd81da`, made by the user.
+- [ ] **T02a** Smoke-suite follow-ups from the non-blocking T02 review:
+  - make smoke exclusion robust to later `-m` filters (for example an opt-in flag or a collection hook instead of `addopts -m`);
+  - add an explicit assertion that accented tokens survive in BERTopic topic words (direct proof of D22).
+  - Route D. Risk P/M.
+- [x] **T03** Script that fetches tessdata, plus an OCR fixture test that reads the tessdata path only from config.
   - Route D. Risk M.
+  - Evidence (2026-10-02):
+    - `extraction/ocr_assets.py` is a one-time, idempotent tessdata_best fetch. It takes an injected downloader, uses atomic `.part` → rename, has a 5 MB size floor, records sha256 in `tessdata/manifest.json`, and runs as `python -m thematic_redundancy.extraction.ocr_assets`.
+    - Unit tests: 33, no network. RED was `ModuleNotFoundError`, then GREEN. Three throwaway mutants were each caught.
+    - OCR smoke test: an image-only page with Spanish text was recovered exactly, accents and ñ included, at 300 dpi in 0.27 s. If tessdata is missing it fails with an actionable message.
+  - Downloads:
+    - `spa.traineddata`: 13,570,187 bytes, sha256 `e2c1ffda…ab2c`.
+    - `eng.traineddata`: 15,400,601 bytes, sha256 `8280aed0…66ba`.
+    - A second run skips both. No Tesseract installation is needed.
+  - Checks: `ruff check` and `ruff format --check` are clean. `pytest`: 116 passed, 1 skipped. `pytest -m smoke`: 15 passed (independent re-run).
+  - Size: 906 authored lines, about 57% tests. This exceeds the 400-line guide, but it is one cohesive unit.
+  - Optional follow-ups:
+    - pin the source URL to a tessdata commit instead of `main`;
+    - pin the expected sha256 values in code;
+    - clean stale `.part` files left by a hard kill.
+  - Commit: pending; the user commits in GitHub Desktop.
 
 ### P1 — Corpus acquisition (M1–M2)
 - [ ] **T04** Metadata harvester over DSpace REST for the 5 collections, with filters, DNI fields dropped, and a manifest. **Needs U8.**
@@ -423,7 +445,12 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
 - 2026-10-02: T01b implemented and verified (83 passed, 1 skipped). Its commit was handed to the user.
 - 2026-10-02: The user committed T01b as `2575007`. T02 started. Route: D. Trigger: new smoke suite plus pytest config.
 - 2026-10-02: T02 implemented and verified (14 smoke tests, no pins). D22 was added, and the commit was handed to the user.
+- 2026-10-02: The user committed T02 as `fdd81da` and declined the post-commit review. T02a was added. T03 started.
+  - Route: D. Trigger: new OCR assets module plus unit and smoke tests.
+  - Downloads: two public tessdata files from GitHub (`tesseract-ocr/tessdata_best`), no credentials.
+
+- 2026-10-02: T03 implemented and verified (116 unit, 15 smoke). Its commit was handed to the user.
 
 ## Next step
 
-After the user's T02 commit: T03 (OCR assets).
+After the user's T03 commit: T02a (smoke-suite follow-ups), which closes Phase 0.

@@ -24,6 +24,23 @@ The first sync downloads CPU-only PyTorch from the PyTorch index and the spaCy S
 
 The run configuration lives in `config/default.yaml` and is validated on load.
 
+## OCR assets
+
+Scanned theses have pages without a text layer. PyMuPDF reads them with the Tesseract engine it
+bundles, so no Tesseract installation is needed, only its language files. Fetch them once per
+machine:
+
+```sh
+uv run python -m thematic_redundancy.extraction.ocr_assets
+```
+
+The command downloads `spa.traineddata` and `eng.traineddata` from Tesseract's
+[`tessdata_best`](https://github.com/tesseract-ocr/tessdata_best) models (about 29 MB in total)
+into `tessdata/` (the `paths.tessdata_dir` setting), which is gitignored. It records the source,
+size, SHA-256 and download time of each file in `tessdata/manifest.json`. Later runs check the
+files against the manifest and download only the ones that are missing or changed; `--force`
+downloads them all again.
+
 ## Checks
 
 ```sh
@@ -36,7 +53,9 @@ uv run pytest -q
 
 A separate suite checks that the locked stack works together on this machine. It covers spaCy,
 the embedding model, UMAP with K-means/HDBSCAN inside BERTopic, the metrics, plotly/Streamlit,
-and the stats and file libraries. The default test run excludes it. Run it with:
+the stats and file libraries, and OCR of a page without a text layer. The OCR check needs the
+files from [OCR assets](#ocr-assets) and fails with the fetch command when they are missing.
+The default test run excludes the suite. Run it with:
 
 ```sh
 uv run pytest -m smoke
