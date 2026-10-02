@@ -1,0 +1,10 @@
+.git
+.venv
+data
+tessdata
+results
+odd
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.ipynb_checkpoints

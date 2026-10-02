@@ -1,0 +1,19 @@
+# Corpus data and OCR language files never enter git
+data/
+tessdata/
+
+# Environment
+.venv/
+.env
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
