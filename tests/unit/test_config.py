@@ -18,6 +18,9 @@ from thematic_redundancy.shared.config import (
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "default.yaml"
 
+SISTEMAS_COLLECTION = "695b14ab-e5b2-49b5-9edf-f709e883b73b"
+"""Collection of the first declared program, ``sistemas``."""
+
 
 @pytest.fixture
 def raw_default() -> dict[str, Any]:
@@ -67,14 +70,16 @@ def test_default_config_loads_with_the_declared_plan_values() -> None:
     assert config.paths.data_dir == Path("data")
     assert str(config.repository.base_url).rstrip("/") == "https://repositorio.ucsm.edu.pe"
     assert config.repository.faculty_community_uuid == UUID("3e706f8d-cba0-4d4a-8d51-dd317c3e7652")
+    assert (config.repository.page_size, config.repository.max_retries) == (100, 3)
+    assert config.repository.request_interval_seconds == 1.0
     assert (config.snapshot.year_start, config.snapshot.year_end) == (2021, 2026)
     assert config.snapshot.thesis_type == "tesis"
-    assert [program.key for program in config.snapshot.programs] == [
-        "sistemas",
-        "industrial",
-        "electronica",
-        "mecanica",
-        "minas",
+    assert [(program.key, program.collection_uuid) for program in config.snapshot.programs] == [
+        ("sistemas", UUID(SISTEMAS_COLLECTION)),
+        ("industrial", UUID("f0217548-ce48-4bae-b163-21b5e2504ef6")),
+        ("electronica", UUID("a8bdd7c0-f1aa-4797-b04e-112e27f60da3")),
+        ("mecanica", UUID("cf0ca97e-9b81-484d-a325-611b8a8d8223")),
+        ("minas", UUID("9d9ecbe5-56c5-4cdf-81a3-b9a3736a47b3")),
     ]
     assert config.snapshot.programs[3].name == (
         "Ingeniería Mecánica, Mecánica-Eléctrica y Mecatrónica"
@@ -253,13 +258,18 @@ def test_keys_written_twice_inside_a_merge_source_are_rejected(
         load_with_literal(tmp_path, raw_default, dotted_key, literal)
 
 
+# Each program keeps its own collection uuid, so only the name comes from the anchor.
 @pytest.mark.parametrize(
     "programs_literal",
     [
-        "[&base {key: sistemas, name: Engineering},"
-        " {<<: *base, key: industrial}, {<<: *base, key: minas}]",
-        "[{<<: &base {name: Engineering}, key: sistemas},"
-        " {<<: *base, key: industrial}, {<<: *base, key: minas}]",
+        "[&base {key: sistemas, name: Engineering,"
+        " collection_uuid: '00000000-0000-4000-8000-000000000001'},"
+        " {<<: *base, key: industrial, collection_uuid: '00000000-0000-4000-8000-000000000002'},"
+        " {<<: *base, key: minas, collection_uuid: '00000000-0000-4000-8000-000000000003'}]",
+        "[{<<: &base {name: Engineering}, key: sistemas,"
+        " collection_uuid: '00000000-0000-4000-8000-000000000001'},"
+        " {<<: *base, key: industrial, collection_uuid: '00000000-0000-4000-8000-000000000002'},"
+        " {<<: *base, key: minas, collection_uuid: '00000000-0000-4000-8000-000000000003'}]",
     ],
     ids=["anchored-item", "anchored-merge-source"],
 )
@@ -346,10 +356,65 @@ def test_snapshot_years_must_be_ordered(raw_default: dict[str, Any]) -> None:
         SnapshotConfig.model_validate(snapshot)
 
 
+def test_a_program_without_a_collection_uuid_is_rejected(
+    raw_default: dict[str, Any], tmp_path: Path
+) -> None:
+    del raw_default["snapshot"]["programs"][1]["collection_uuid"]
+
+    with pytest.raises(ValidationError, match="collection_uuid"):
+        load_variant(tmp_path, raw_default)
+
+
+@pytest.mark.parametrize(
+    ("collection_uuid", "message"),
+    [("not-a-uuid", "collection_uuid"), (SISTEMAS_COLLECTION, "collection uuids must be unique")],
+    ids=["malformed", "shared-with-another-program"],
+)
+def test_a_program_collection_that_is_malformed_or_shared_is_rejected(
+    raw_default: dict[str, Any], tmp_path: Path, collection_uuid: str, message: str
+) -> None:
+    raw_default["snapshot"]["programs"][1]["collection_uuid"] = collection_uuid
+
+    with pytest.raises(ValidationError, match=message):
+        load_variant(tmp_path, raw_default)
+
+
+def test_harvest_settings_take_their_defaults_when_omitted(
+    raw_default: dict[str, Any], tmp_path: Path
+) -> None:
+    for key in ("page_size", "request_interval_seconds", "max_retries"):
+        del raw_default["repository"][key]
+
+    repository = load_variant(tmp_path, raw_default).repository
+
+    assert (repository.page_size, repository.max_retries) == (100, 3)
+    assert repository.request_interval_seconds == 1.0
+
+
 @pytest.mark.parametrize(
     ("dotted_key", "value"),
     [
-        ("snapshot.programs", [{"key": "minas", "name": "A"}, {"key": "minas", "name": "B"}]),
+        (
+            "snapshot.programs",
+            [
+                {
+                    "key": "minas",
+                    "name": "A",
+                    "collection_uuid": "00000000-0000-4000-8000-00000000000a",
+                },
+                {
+                    "key": "minas",
+                    "name": "B",
+                    "collection_uuid": "00000000-0000-4000-8000-00000000000b",
+                },
+            ],
+        ),
+        ("repository.page_size", 0),
+        ("repository.page_size", 1001),
+        ("repository.request_interval_seconds", 0.5),
+        ("repository.request_interval_seconds", 60.5),
+        ("repository.max_retries", -1),
+        ("repository.max_retries", 11),
         ("ocr.dpi", 71),
         ("ocr.dpi", 601),
         ("chunking.max_tokens", 15),
@@ -382,6 +447,9 @@ def test_values_outside_the_contract_are_rejected(
     ("dotted_key", "value", "error_type"),
     [
         ("umap.n_neighbors", "15", "int_type"),
+        ("repository.page_size", "100", "int_type"),
+        ("repository.max_retries", 3.0, "int_type"),
+        ("repository.request_interval_seconds", "1.0", "float_type"),
         ("ocr.dpi", True, "int_type"),
         ("recommender.top_k", True, "int_type"),
         ("kmeans.k_step", 2.0, "int_type"),
@@ -449,6 +517,12 @@ def test_the_global_safe_loader_still_reads_plain_exponents_as_text() -> None:
 @pytest.mark.parametrize(
     ("dotted_key", "value"),
     [
+        ("repository.page_size", 1),
+        ("repository.page_size", 1000),
+        ("repository.request_interval_seconds", 1),
+        ("repository.request_interval_seconds", 60.0),
+        ("repository.max_retries", 0),
+        ("repository.max_retries", 10),
         ("ocr.dpi", 72),
         ("ocr.dpi", 600),
         ("chunking.max_tokens", 16),

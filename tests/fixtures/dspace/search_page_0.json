@@ -1,0 +1,140 @@
+{
+  "id": null,
+  "scope": "00000000-0000-4000-8000-0000000000c1",
+  "query": null,
+  "appliedFilters": [
+    {"filter": "dateIssued", "operator": "equals", "value": "[2021 TO 2026]", "label": "[2021 TO 2026]"}
+  ],
+  "sort": {"by": "dc.date.issued", "order": "ASC"},
+  "configuration": null,
+  "type": "discover",
+  "_links": {
+    "self": {"href": "https://repo.example.edu/server/api/discover/search/objects?dsoType=ITEM&scope=00000000-0000-4000-8000-0000000000c1&f.dateIssued=[2021 TO 2026],equals&sort=dc.date.issued,ASC&page=0&size=2"}
+  },
+  "_embedded": {
+    "searchResult": {
+      "_embedded": {
+        "objects": [
+          {
+            "hitHighlights": null,
+            "type": "discover",
+            "_links": {
+              "indexableObject": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a001"}
+            },
+            "_embedded": {
+              "indexableObject": {
+                "id": "00000000-0000-4000-8000-00000000a001",
+                "uuid": "00000000-0000-4000-8000-00000000a001",
+                "name": "Título sintético 001",
+                "handle": "123456789/1001",
+                "metadata": {
+                  "dc.contributor.advisor": [{"value": "Asesor Sintético, 001", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.contributor.author": [{"value": "Autor Sintético, 001", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.date.accessioned": [{"value": "2026-01-15T10:00:00Z", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.date.available": [{"value": "2026-01-15T10:00:00Z", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.date.issued": [{"value": "2021-01-20", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.description.abstract": [{"value": "Resumen sintético 001 sobre la gestión de procesos.", "language": "es", "authority": null, "confidence": -1, "place": 0}],
+                  "dc.identifier.uri": [{"value": "https://hdl.handle.net/123456789/1001", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.language.iso": [{"value": "spa", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.publisher": [{"value": "Universidad Sintética", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.rights": [{"value": "https://purl.org/coar/access_right/c_abf2", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.subject": [{"value": "Tema sintético A", "language": "es", "authority": null, "confidence": -1, "place": 0}, {"value": "Tema sintético B", "language": "es", "authority": null, "confidence": -1, "place": 1}],
+                  "dc.subject.ocde": [{"value": "https://purl.org/pe-repo/ocde/ford#2.02.04", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.title": [{"value": "Título sintético 001", "language": "es", "authority": null, "confidence": -1, "place": 0}],
+                  "dc.type": [{"value": "http://purl.org/coar/resource_type/c_7a1f", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "renati.advisor.dni": [{"value": "SYNTHETIC-DNI-ADVISOR-001", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "renati.author.dni": [{"value": "SYNTHETIC-DNI-AUTHOR-001", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "renati.juror": [{"value": "Jurado Sintético, A", "language": null, "authority": null, "confidence": -1, "place": 0}, {"value": "Jurado Sintético, B", "language": null, "authority": null, "confidence": -1, "place": 1}],
+                  "renati.level": [{"value": "https://purl.org/pe-repo/renati/level#tituloProfesional", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "renati.type": [{"value": "https://purl.org/pe-repo/renati/type#tesis", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "thesis.degree.discipline": [{"value": "Ingeniería Sintética", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "thesis.degree.name": [{"value": "Ingeniero Sintético", "language": null, "authority": null, "confidence": -1, "place": 0}]
+                },
+                "inArchive": true,
+                "discoverable": true,
+                "withdrawn": false,
+                "lastModified": "2026-01-15T10:00:00.000+00:00",
+                "entityType": null,
+                "type": "item",
+                "_links": {
+                  "accessStatus": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a001/accessStatus"},
+                  "bundles": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a001/bundles"},
+                  "identifiers": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a001/identifiers"},
+                  "mappedCollections": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a001/mappedCollections"},
+                  "owningCollection": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a001/owningCollection"},
+                  "relationships": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a001/relationships"},
+                  "version": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a001/version"},
+                  "templateItemOf": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a001/templateItemOf"},
+                  "thumbnail": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a001/thumbnail"},
+                  "self": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a001"}
+                }
+              }
+            }
+          },
+          {
+            "hitHighlights": null,
+            "type": "discover",
+            "_links": {
+              "indexableObject": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a002"}
+            },
+            "_embedded": {
+              "indexableObject": {
+                "id": "00000000-0000-4000-8000-00000000a002",
+                "uuid": "00000000-0000-4000-8000-00000000a002",
+                "name": "Título sintético 002",
+                "handle": "123456789/1002",
+                "metadata": {
+                  "dc.contributor.advisor": [{"value": "Asesor Sintético, 002", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.contributor.author": [{"value": "Autor Sintético, 002", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.date.accessioned": [{"value": "2026-01-15T10:00:00Z", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.date.available": [{"value": "2026-01-15T10:00:00Z", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.date.issued": [{"value": "2021-07-02", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.description.abstract": [{"value": "Resumen sintético 002 sobre la gestión de procesos.", "language": "es", "authority": null, "confidence": -1, "place": 0}],
+                  "dc.identifier.uri": [{"value": "https://hdl.handle.net/123456789/1002", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.language.iso": [{"value": "spa", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.publisher": [{"value": "Universidad Sintética", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.rights": [{"value": "https://purl.org/coar/access_right/c_abf2", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.subject": [{"value": "Tema sintético A", "language": "es", "authority": null, "confidence": -1, "place": 0}, {"value": "Tema sintético B", "language": "es", "authority": null, "confidence": -1, "place": 1}],
+                  "dc.subject.ocde": [{"value": "https://purl.org/pe-repo/ocde/ford#2.02.04", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "dc.title": [{"value": "Título sintético 002", "language": "es", "authority": null, "confidence": -1, "place": 0}],
+                  "dc.type": [{"value": "http://purl.org/coar/resource_type/c_7a1f", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "renati.advisor.dni": [{"value": "SYNTHETIC-DNI-ADVISOR-002", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "renati.author.dni": [{"value": "SYNTHETIC-DNI-AUTHOR-002", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "renati.juror": [{"value": "Jurado Sintético, A", "language": null, "authority": null, "confidence": -1, "place": 0}, {"value": "Jurado Sintético, B", "language": null, "authority": null, "confidence": -1, "place": 1}],
+                  "renati.level": [{"value": "https://purl.org/pe-repo/renati/level#tituloProfesional", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "renati.type": [{"value": "https://purl.org/pe-repo/renati/type#tesis", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "thesis.degree.discipline": [{"value": "Ingeniería Sintética", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                  "thesis.degree.name": [{"value": "Ingeniero Sintético", "language": null, "authority": null, "confidence": -1, "place": 0}]
+                },
+                "inArchive": true,
+                "discoverable": true,
+                "withdrawn": false,
+                "lastModified": "2026-01-15T10:00:00.000+00:00",
+                "entityType": null,
+                "type": "item",
+                "_links": {
+                  "accessStatus": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a002/accessStatus"},
+                  "bundles": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a002/bundles"},
+                  "identifiers": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a002/identifiers"},
+                  "mappedCollections": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a002/mappedCollections"},
+                  "owningCollection": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a002/owningCollection"},
+                  "relationships": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a002/relationships"},
+                  "version": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a002/version"},
+                  "templateItemOf": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a002/templateItemOf"},
+                  "thumbnail": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a002/thumbnail"},
+                  "self": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a002"}
+                }
+              }
+            }
+          }
+        ]
+      },
+      "page": {"number": 0, "size": 2, "totalPages": 3, "totalElements": 5},
+      "_links": {
+        "next": {"href": "https://repo.example.edu/server/api/discover/search/objects?dsoType=ITEM&scope=00000000-0000-4000-8000-0000000000c1&f.dateIssued=[2021 TO 2026],equals&sort=dc.date.issued,ASC&page=1&size=2"},
+        "last": {"href": "https://repo.example.edu/server/api/discover/search/objects?dsoType=ITEM&scope=00000000-0000-4000-8000-0000000000c1&f.dateIssued=[2021 TO 2026],equals&sort=dc.date.issued,ASC&page=2&size=2"},
+        "self": {"href": "https://repo.example.edu/server/api/discover/search/objects?dsoType=ITEM&scope=00000000-0000-4000-8000-0000000000c1&f.dateIssued=[2021 TO 2026],equals&sort=dc.date.issued,ASC&page=0&size=2"}
+      }
+    }
+  }
+}

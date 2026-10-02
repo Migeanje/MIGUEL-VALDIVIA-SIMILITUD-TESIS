@@ -7,12 +7,18 @@ paths:
   results_dir: results
   tessdata_dir: tessdata
 
-# Public DSpace repository and the faculty community that holds the programs.
+# Public DSpace repository and the faculty community that holds the programs. The metadata
+# harvest asks for page_size items per page, starts requests at least
+# request_interval_seconds apart, and retries a failed request up to max_retries times.
 repository:
   base_url: "https://repositorio.ucsm.edu.pe"
   faculty_community_uuid: "3e706f8d-cba0-4d4a-8d51-dd317c3e7652"
+  page_size: 100
+  request_interval_seconds: 1.0
+  max_retries: 3
 
-# Corpus filter: dc.date.issued range, renati.type, and program collections.
+# Corpus filter: dc.date.issued range, renati.type, and program collections. Each program
+# is one DSpace collection of the faculty community (uuids resolved on 2026-10-02).
 snapshot:
   year_start: 2021
   year_end: 2026
@@ -20,14 +26,19 @@ snapshot:
   programs:
     - key: sistemas
       name: "Ingeniería de Sistemas"
+      collection_uuid: "695b14ab-e5b2-49b5-9edf-f709e883b73b"
     - key: industrial
       name: "Ingeniería Industrial"
+      collection_uuid: "f0217548-ce48-4bae-b163-21b5e2504ef6"
     - key: electronica
       name: "Ingeniería Electrónica"
+      collection_uuid: "a8bdd7c0-f1aa-4797-b04e-112e27f60da3"
     - key: mecanica
       name: "Ingeniería Mecánica, Mecánica-Eléctrica y Mecatrónica"
+      collection_uuid: "cf0ca97e-9b81-484d-a325-611b8a8d8223"
     - key: minas
       name: "Ingeniería de Minas"
+      collection_uuid: "9d9ecbe5-56c5-4cdf-81a3-b9a3736a47b3"
 
 # Tesseract languages and rasterization resolution for pages without a text layer.
 ocr:

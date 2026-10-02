@@ -1,0 +1,25 @@
+{
+  "id": null,
+  "scope": "00000000-0000-4000-8000-0000000000c1",
+  "query": null,
+  "appliedFilters": [
+    {"filter": "dateIssued", "operator": "equals", "value": "[2021 TO 2026]", "label": "[2021 TO 2026]"}
+  ],
+  "sort": {"by": "dc.date.issued", "order": "ASC"},
+  "configuration": null,
+  "type": "discover",
+  "_links": {
+    "self": {"href": "https://repo.example.edu/server/api/discover/search/objects?dsoType=ITEM&scope=00000000-0000-4000-8000-0000000000c1&f.dateIssued=[2021 TO 2026],equals&sort=dc.date.issued,ASC&page=0&size=2"}
+  },
+  "_embedded": {
+    "searchResult": {
+      "_embedded": {
+        "objects": []
+      },
+      "page": {"number": 0, "size": 2, "totalPages": 0, "totalElements": 0},
+      "_links": {
+        "self": {"href": "https://repo.example.edu/server/api/discover/search/objects?dsoType=ITEM&scope=00000000-0000-4000-8000-0000000000c1&f.dateIssued=[2021 TO 2026],equals&sort=dc.date.issued,ASC&page=0&size=2"}
+      }
+    }
+  }
+}

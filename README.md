@@ -41,6 +41,45 @@ size, SHA-256 and download time of each file in `tessdata/manifest.json`. Later 
 files against the manifest and download only the ones that are missing or changed; `--force`
 downloads them all again.
 
+## Corpus snapshot
+
+The corpus comes from the public DSpace 7 REST API of the UCSM repository. Harvest the
+metadata of the program collections once per snapshot:
+
+```sh
+uv run python -m thematic_redundancy.corpus.harvest
+```
+
+The command lists every item of each program collection (`snapshot.programs`) issued from
+`snapshot.year_start` to `snapshot.year_end`, and writes a new snapshot under `data/raw/`:
+
+- `<snapshot_id>/metadata.jsonl`: one JSON object per item, with its uuid, handle, program,
+  collection, harvest time, and metadata.
+- `<snapshot_id>/manifest.json`:
+  - the source URL and query, and the harvest time;
+  - the item counts per program and per `renati.type`, plus the faculty-wide total;
+  - the number of items issued after the harvest date, and the dropped DNI keys;
+  - the SHA-256 of `metadata.jsonl`.
+
+How a snapshot behaves:
+
+- **Id.** It defaults to the UTC harvest time, such as `20261002T150405Z`. `--snapshot-id`
+  chooses another name.
+- **Immutable.** A snapshot is never overwritten. It appears complete or not at all.
+- **All types kept.** Every item type stays in the snapshot; the theses are selected later,
+  with an exclusion log.
+- **Reconciled.** If a listing does not match the repository's own total, or lists an item
+  twice, the harvest stops before anything is written.
+
+The harvest is polite to the server:
+
+- It sends one request at a time, at least `repository.request_interval_seconds` apart
+  (1 s or more).
+- Each request carries a User-Agent that names the project, and a timeout.
+- After HTTP 429, HTTP 5xx or a network error, it retries at most `repository.max_retries`
+  times, with exponential backoff.
+- It reads metadata only, never PDFs.
+
 ## Checks
 
 ```sh
@@ -70,7 +109,9 @@ work offline with `HF_HUB_OFFLINE=1`.
 - `data/` and `tessdata/` are never committed; both are gitignored and excluded from Docker builds.
 - The theses are licensed CC BY-NC-ND 4.0. They are used for research only, their texts are not
   redistributed, and every displayed thesis links to its repository item.
-- DNI fields (`renati.author.dni`, `renati.advisor.dni`) are dropped at ingestion.
+- DNI fields (every metadata key ending in `.dni`, such as `renati.author.dni` and
+  `renati.advisor.dni`) are dropped at ingestion, before anything is written. The snapshot
+  manifest lists the dropped keys.
 - Author names are never shown in the app or in reports, and user queries are never persisted.
 
 ## Plan

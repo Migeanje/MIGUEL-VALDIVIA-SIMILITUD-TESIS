@@ -115,17 +115,26 @@ class PathsConfig(_FrozenModel):
 
 
 class RepositoryConfig(_FrozenModel):
-    """Public DSpace repository and the faculty community that holds the programs."""
+    """Public DSpace repository, the faculty community that holds the programs, and the
+    pace of the metadata harvest."""
 
     base_url: HttpUrl
     faculty_community_uuid: UUID
+    page_size: Annotated[StrictInt, Field(ge=1, le=1000)] = 100
+    """Items requested per search page."""
+    request_interval_seconds: Annotated[StrictFloat, Field(ge=1.0, le=60.0)] = 1.0
+    """Shortest time between the starts of two requests; at least one second, to stay polite."""
+    max_retries: Annotated[StrictInt, Field(ge=0, le=10)] = 3
+    """Retries of one request after HTTP 429, HTTP 5xx, a timeout or a network error."""
 
 
 class ProgramConfig(_FrozenModel):
-    """Academic program: a stable short key plus its official collection name."""
+    """Academic program: a stable short key, its official name, and its repository collection."""
 
     key: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*$")]
     name: NonEmptyStr
+    collection_uuid: UUID
+    """DSpace collection that holds the program's items; an item's program comes from it."""
 
 
 class SnapshotConfig(_FrozenModel):
@@ -138,10 +147,12 @@ class SnapshotConfig(_FrozenModel):
 
     @field_validator("programs")
     @classmethod
-    def _require_unique_program_keys(
+    def _require_distinct_programs(
         cls, value: tuple[ProgramConfig, ...]
     ) -> tuple[ProgramConfig, ...]:
         _require_unique([program.key for program in value], "program keys")
+        # Two programs on one collection would list, and count, the same items twice.
+        _require_unique([program.collection_uuid for program in value], "program collection uuids")
         return value
 
     @model_validator(mode="after")

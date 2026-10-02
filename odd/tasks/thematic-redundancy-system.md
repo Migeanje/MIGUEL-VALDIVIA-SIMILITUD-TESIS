@@ -154,6 +154,8 @@ Python 3.13 · uv · pymupdf 1.28 · pdfplumber 0.11 (fallback) · httpx 0.28 ·
 | Key | Initial value |
 |---|---|
 | snapshot filter | `dc.date.issued` from 2021 to 2026, `renati.type` = tesis, the 5 program collections |
+| programs.collection_uuid | sistemas `695b14ab-e5b2-49b5-9edf-f709e883b73b`, industrial `f0217548-ce48-4bae-b163-21b5e2504ef6`, electronica `a8bdd7c0-f1aa-4797-b04e-112e27f60da3`, mecanica `cf0ca97e-9b81-484d-a325-611b8a8d8223`, minas `9d9ecbe5-56c5-4cdf-81a3-b9a3736a47b3` (added in T04) |
+| repository | `page_size` 100 (1–1000), `request_interval_seconds` 1.0 (1.0–60.0), `max_retries` 3 (0–10) (added in T04) |
 | ocr | `spa+eng`, 300 dpi, `full=True` on pages without a text layer |
 | chunk.max_tokens | 128 under both tokenizers, special tokens included |
 | doc_vector | equal-weight mean of the section vectors, L2-normalized |
@@ -266,9 +268,11 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - Before the commit: medium risk, one lens, approved.
     - After the commit, the range `f39343b..fdd81da` (T01b + T02, 838 lines) was declined by the user for this candidate only. Both commits had already been approved before they were committed.
   - Commit: `fdd81da`, made by the user.
-- [ ] **T02a** Smoke-suite follow-ups from the non-blocking T02 review:
-  - make smoke exclusion robust to later `-m` filters (for example an opt-in flag or a collection hook instead of `addopts -m`);
-  - add an explicit assertion that accented tokens survive in BERTopic topic words (direct proof of D22).
+- [ ] **T02a** Phase 0 follow-ups from the non-blocking T02 and T03 reviews. Deferred by the user's priority on Phase 1; none of them blocks.
+  - Make smoke exclusion robust to later `-m` filters (for example an opt-in flag or a collection hook instead of `addopts -m`).
+  - Add an explicit assertion that accented tokens survive in BERTopic topic words (direct proof of D22).
+  - The OCR assets CLI should report `ValueError`/validation errors as one `error:` line with exit code 1.
+  - Make the tessdata size check per language (or pinned sha256) instead of one 5 MB floor.
   - Route D. Risk P/M.
 - [x] **T03** Script that fetches tessdata, plus an OCR fixture test that reads the tessdata path only from config.
   - Route D. Risk M.
@@ -286,17 +290,40 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - pin the source URL to a tessdata commit instead of `main`;
     - pin the expected sha256 values in code;
     - clean stale `.part` files left by a hard kill.
-  - Commit: pending; the user commits in GitHub Desktop.
+  - Review: medium risk, one lens, approved both before and after the commit.
+  - Findings (non-blocking, moved to T02a):
+    - The CLI lets `ValueError`/validation errors escape as tracebacks.
+    - The 5 MB size floor is calibrated on spa/eng only.
+  - Commit: `3f9888f`, made by the user.
 
 ### P1 — Corpus acquisition (M1–M2)
-- [ ] **T04** Metadata harvester over DSpace REST for the 5 collections, with filters, DNI fields dropped, and a manifest. **Needs U8.**
+- [x] **T04** Metadata harvester over DSpace REST for the 5 collections, with filters, DNI fields dropped, and a manifest. **Needs U8.**
   - Route D. Risk H.
   - Tests use recorded fixtures (no network).
   - Accept: counts reconcile with the repository totals at the snapshot date, and no DNI appears in any output.
+  - Evidence (2026-10-02):
+    - Code layout under `corpus/`:
+      - `repository.py`: the port.
+      - `dspace.py`: the httpx adapter. It paces requests at 1/s or more, retries 429/5xx with backoff, and verifies that the scope and filters were applied.
+      - `snapshot.py`: models, the DNI filter, and an atomic, never-overwrite snapshot.
+      - `harvest.py`: the use case and the CLI `python -m thematic_redundancy.corpus.harvest`.
+    - Tests use synthetic fixtures only (no real names, DNI or texts). RED → GREEN for config and corpus. 11 throwaway mutants were all caught.
+    - Checks: `ruff` clean. `pytest`: 233 passed, 1 skipped (independent re-run).
+  - Real harvest, done once under U8:
+    - Snapshot `20261002T224412Z`. 14 requests in total and 47 s wall time.
+    - Records per program: sistemas 67, industrial 349, electronica 55, mecanica 192, minas 103. Total 766, which equals the faculty total.
+    - `renati.type`: `#tesis` 746, `#trabajoAcademico` 1, and suficiencia profesional 19 across 5 spellings.
+    - Dates: 2 items are issued after the harvest date (2026-12-01, 2026-12-04). Range 2021-01-06 to 2026-12-04.
+    - Privacy check (independent): 0 `.dni` keys in 766 records. The manifest lists the dropped `renati.advisor.dni` and `renati.author.dni`.
+  - Size: about 2,760 authored lines, about 1,600 of them tests and fixtures. Slice plan, in order, made by the user:
+    - A: config unit (`config.py`, `default.yaml`, `test_config.py`).
+    - B: port, adapter, `test_dspace.py`, fixtures. B depends on A.
+    - C: snapshot, harvest, CLI, `test_harvest.py`, README, plan doc.
+  - Commits: pending (A, B, C), made by the user.
 - [ ] **T05** Thesis PDF downloader. It picks the thesis bitstream by name (excluding `*.RT.pdf` and `Autorización_*`), rate-limits, resumes, and records sha256. Embargoed/restricted items are skipped with a reason. **Needs U8.**
   - Route D. Risk H.
   - Accept: every included item has exactly one thesis PDF or a recorded reason.
-- [ ] **T06** Freeze the snapshot, back it up (U7), and write the data card (counts by program and year, embargo list).
+- [ ] **T06** Freeze the snapshot, back it up (U7), and write the data card (counts by program and year, embargo list). The card must flag records whose `dc.date.issued` lies after the snapshot date. As of 2026-10-02 some items carry future dates (2026-12-04, 2026-12-01). The temporal split (T27) must handle them explicitly.
   - Route I. Risk P.
 - [ ] **T07** EDA notebook: program/year distribution, abstract token lengths, keywords, title suffix patterns.
   - Route D. Risk P.
@@ -315,7 +342,7 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
   - spaCy lemmatization (full cleaner only).
   - Accents and ñ are kept.
   - Route D. Risk M.
-- [ ] **T12** Build the fichas dataset, the exclusion log, and a quality report.
+- [ ] **T12** Build the fichas dataset, the exclusion log, and a quality report. Inclusion requires an exact `renati.type` fragment `#tesis` (746 in snapshot `20261002T224412Z`). Suficiencia profesional appears in 5 spellings and is excluded with its reason.
   - Route D. Risk M.
 
 ### P3 — Representation and topic map (M3–M5)
@@ -450,7 +477,18 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
   - Downloads: two public tessdata files from GitHub (`tesseract-ocr/tessdata_best`), no credentials.
 
 - 2026-10-02: T03 implemented and verified (116 unit, 15 smoke). Its commit was handed to the user.
+- 2026-10-02: The user committed T03 as `3f9888f`. The post-commit review was approved, so the reviewed boundary is now `3f9888f`.
+  - The user prioritized Phase 1, so T02a is deferred.
+  - The repository count for 2021–2026 (all types) moved from 765 to 766 during the day, and future `dc.date.issued` values were observed. Both are recorded under T06.
+
+- 2026-10-02: U8 was granted for T04 only. The scope is read-only GET requests to the public DSpace REST API of `repositorio.ucsm.edu.pe`, with no credentials, to download the metadata (no PDFs) of the 5 program collections for 2021–2026.
+  - Rate: about 1 request/s.
+  - DNI fields are dropped at ingestion, and the output stays in gitignored `data/raw/`.
+  - T05 (PDF download) needs a separate authorization.
+  - T04 started. Route: D. Trigger: new corpus package plus config and tests.
+
+- 2026-10-02: T04 implemented and verified, and the real snapshot `20261002T224412Z` was taken (766 records, 746 theses, 0 DNI). Three commits (A, B, C) were handed to the user.
 
 ## Next step
 
-After the user's T03 commit: T02a (smoke-suite follow-ups), which closes Phase 0.
+After the user's T04 commits: review each commit separately, then T05 (thesis PDF download). T05 needs a new authorization under U8.
