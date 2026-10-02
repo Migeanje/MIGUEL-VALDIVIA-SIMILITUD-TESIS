@@ -68,3 +68,7 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not smoke'"
+markers = [
+    "smoke: slow checks that the third-party stack works together; may download models. Run with -m smoke.",
+]

@@ -32,6 +32,20 @@ uv run ruff format --check .
 uv run pytest -q
 ```
 
+## Smoke test
+
+A separate suite checks that the locked stack works together on this machine. It covers spaCy,
+the embedding model, UMAP with K-means/HDBSCAN inside BERTopic, the metrics, plotly/Streamlit,
+and the stats and file libraries. The default test run excludes it. Run it with:
+
+```sh
+uv run pytest -m smoke
+```
+
+The first run downloads the embedding model `paraphrase-multilingual-MiniLM-L12-v2` (about
+0.5 GB) into the Hugging Face cache. Later runs reuse that copy, take under a minute, and also
+work offline with `HF_HUB_OFFLINE=1`.
+
 ## Data policy
 
 - `data/` and `tessdata/` are never committed; both are gitignored and excluded from Docker builds.

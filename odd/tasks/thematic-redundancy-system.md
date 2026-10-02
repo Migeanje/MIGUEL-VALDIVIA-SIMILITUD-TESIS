@@ -75,6 +75,7 @@ Institutional integrity tools such as Turnitin detect textual overlap. They do n
 | D19 | Code architecture is hexagonal-lite with a screaming layout. Notebooks only orchestrate | The experiment requires swappable components |
 | D20 | Project repository: this repo, the single official repo for the whole system (remote `origin` on GitHub). No push without a user decision | Confirmed by the user 2026-10-02. One repo is enough; the user creates any extra repo on request |
 | D21 | The earlier `TesisSimilitud` repo (Feb 2025) is ignored entirely | The user says it was only a test |
+| D22 | Always construct BERTopic with `language="spanish"` (never the default) | With `embedding_model=None`, BERTopic 0.17.4 keeps `language="english"` and strips every character outside `[A-Za-z0-9 ]` before c-TF-IDF, so `fragmentación` becomes `fragmentacin`. Found and proven by the T02 smoke test |
 
 D15, labeled set, in detail:
 - ≈120 pairs drawn from four pools: SBERT-high, TF-IDF-high, mid-range, and random.
@@ -237,10 +238,31 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
   - Known limits:
     - A `<<` key written twice in the same mapping is still accepted, and the later merge wins.
     - `yaml.safe_dump` writes strings like `1e-3` unquoted, so they would round-trip as floats.
-  - Commit: pending; the user commits in GitHub Desktop.
-- [ ] **T02** Smoke-test the full stack on a synthetic mini corpus. The run covers embeddings → UMAP → K-means/HDBSCAN → BERTopic → NPMI → an AppTest import. Pin any major version that breaks.
+  - Review: medium risk, one lens, approved before the commit. After the commit it was assessed as `under_budget`, so it stays pending in the slice.
+  - Commit: `2575007`, made by the user.
+  - Follow-ups from the review (non-blocking):
+    - The symlink test has never executed, so it must run on Linux (T29). This also checks its message regex.
+    - Add a test that pins what happens when an exponent-shaped unquoted scalar lands in a string field.
+- [x] **T02** Smoke-test the full stack on a synthetic mini corpus. The run covers embeddings → UMAP → K-means/HDBSCAN → BERTopic → NPMI → an AppTest import. Pin any major version that breaks.
   - Route D. Risk M.
   - Accept: the run completes end to end and the pins are documented.
+  - Evidence (2026-10-02):
+    - `tests/smoke/test_stack.py` holds 14 tests marked `smoke`. The default run excludes them via `addopts`; run them with `uv run pytest -m smoke`.
+    - All 14 pass, also offline with `HF_HUB_OFFLINE=1` (~30 s). The default run still gives 83 passed, 1 skipped.
+    - No pins were needed; pandas 3, plotly 7, transformers 5, sentence-transformers 6 and numpy 2.5 all work with BERTopic 0.17.4.
+  - Observed values:
+    - MiniLM: `max_seq_length` 128, dimension 384. Paraphrase cosine 0.598 vs. 0.002 for an unrelated pair.
+    - K-means: 3 topics, each pure. HDBSCAN: 3 topics, 0 outliers.
+    - Metrics are finite: silhouette 0.444, DB 1.454, CH 15.94, NPMI 0.092.
+    - Seeded UMAP and K-means are bitwise deterministic across runs.
+  - Findings:
+    - BERTopic must get `language="spanish"` (D22).
+    - In sentence-transformers 6, `get_embedding_dimension()` replaces the deprecated `get_sentence_embedding_dimension()`.
+    - Run gensim NPMI with `processes=1`; on a small corpus the default spawns 15 workers.
+    - NPMI can exceed 1 by about 1e-11, so range checks need a tolerance.
+    - The model cache lives in `%USERPROFILE%\.cache\huggingface\hub`.
+  - Route D. Size: 508 lines in one cohesive suite, about 75 of them the synthetic corpus. This exceeds the 400-line guide.
+  - Commit: pending; the user commits in GitHub Desktop.
 - [ ] **T03** Script that fetches tessdata, plus an OCR fixture test that reads the tessdata path only from config.
   - Route D. Risk M.
 
@@ -281,7 +303,7 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
   - Route D. Risk M.
 - [ ] **T15** TF-IDF baseline representations, used for both clustering and redundancy.
   - Route D. Risk M.
-- [ ] **T16** Topic map builder:
+- [ ] **T16** Topic map builder (must pass `language="spanish"` to BERTopic, see D22):
   - UMAP + K-means/HDBSCAN + BERTopic, using precomputed embeddings and the full-clean documents;
   - outputs topics, assignments, centroids and 2D coordinates;
   - applies the noise policy.
@@ -318,7 +340,7 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
   - Route D. Risk M.
 
 ### P6 — Prototype (M5–M6)
-- [ ] **T28** Streamlit app with the map, query and gaps views. It loads saved artifacts, persists no queries, links to the repository, and shows no author names. UI language per O01.
+- [ ] **T28** Streamlit app with the map, query and gaps views. It loads saved artifacts, persists no queries, links to the repository, and shows no author names. UI language per O01. Disable Streamlit usage statistics (`browser.gatherUsageStats = false`).
   - Route D. Risk M.
   - Checks: an AppTest smoke test.
 - [ ] **T29** Dockerfile (python:3.13-slim + uv, CPU torch, data mounted as a volume) and a run guide (O07).
@@ -399,7 +421,9 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
 - 2026-10-02: The user committed T01a as `f39343b`. Its review was approved before and after the commit. T01b was created from the findings, and commit messages now use Spanish.
 
 - 2026-10-02: T01b implemented and verified (83 passed, 1 skipped). Its commit was handed to the user.
+- 2026-10-02: The user committed T01b as `2575007`. T02 started. Route: D. Trigger: new smoke suite plus pytest config.
+- 2026-10-02: T02 implemented and verified (14 smoke tests, no pins). D22 was added, and the commit was handed to the user.
 
 ## Next step
 
-After the user's T01b commit: T02 (stack smoke test), then T03 (OCR assets).
+After the user's T02 commit: T03 (OCR assets).
