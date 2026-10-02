@@ -1,6 +1,5 @@
 """Behavior of the application configuration loader."""
 
-from itertools import pairwise
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -9,7 +8,13 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from thematic_redundancy.shared.config import AppConfig, PathsConfig, SnapshotConfig, load_config
+from thematic_redundancy.shared.config import (
+    AppConfig,
+    KMeansConfig,
+    PathsConfig,
+    SnapshotConfig,
+    load_config,
+)
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "default.yaml"
 
@@ -39,6 +44,21 @@ def set_value(data: dict[str, Any], dotted_key: str, value: Any) -> None:
     for parent in parents:
         node = node[parent]
     node[leaf] = value
+
+
+def load_with_literal(
+    tmp_path: Path, data: dict[str, Any], dotted_key: str, literal: str
+) -> AppConfig:
+    """Load ``data`` with the value at ``dotted_key`` written as the YAML text ``literal``.
+
+    This reaches spellings that a dump does not produce, such as merge keys or plain
+    scientific notation: the literal replaces a placeholder value in the dumped text.
+    """
+    placeholder = "LITERAL_VALUE_PLACEHOLDER"
+    set_value(data, dotted_key, placeholder)
+    text = yaml.safe_dump(data, allow_unicode=True)
+    assert text.count(placeholder) == 1
+    return load_text(tmp_path, text.replace(placeholder, literal))
 
 
 def test_default_config_loads_with_the_declared_plan_values() -> None:
@@ -129,23 +149,37 @@ def test_stability_min_runs_above_the_seed_count_is_rejected(
         load_variant(tmp_path, raw_default)
 
 
-@pytest.mark.parametrize("k_step", [4, 43])
-def test_kmeans_sweep_that_would_miss_k_stop_is_rejected(
-    raw_default: dict[str, Any], tmp_path: Path, k_step: int
-) -> None:
-    # The default sweep spans 50 - 8 = 42, which neither step divides.
-    raw_default["kmeans"]["k_step"] = k_step
-
+@pytest.mark.parametrize("k_step", [3, 9])
+def test_kmeans_sweep_that_would_miss_k_stop_is_rejected(k_step: int) -> None:
+    # The sweep spans 11 - 3 = 8, which neither step divides.
     with pytest.raises(ValidationError, match="k_step"):
-        load_variant(tmp_path, raw_default)
+        KMeansConfig(k_start=3, k_stop=11, k_step=k_step)
 
 
-def test_kmeans_sweep_includes_both_k_start_and_k_stop() -> None:
-    k_values = load_config(DEFAULT_CONFIG_PATH).kmeans.k_values()
+@pytest.mark.parametrize(
+    ("k_start", "k_stop", "k_step", "expected"),
+    [(2, 3, 1, (2, 3)), (3, 11, 4, (3, 7, 11)), (5, 20, 15, (5, 20))],
+    ids=["smallest-k_start", "k_stop-reached-in-steps", "k_step-equal-to-span"],
+)
+def test_kmeans_sweep_includes_both_k_start_and_k_stop(
+    k_start: int, k_stop: int, k_step: int, expected: tuple[int, ...]
+) -> None:
+    sweep = KMeansConfig(k_start=k_start, k_stop=k_stop, k_step=k_step)
 
-    assert len(k_values) == 22
-    assert (k_values[0], k_values[-1]) == (8, 50)
-    assert {later - earlier for earlier, later in pairwise(k_values)} == {2}
+    assert sweep.k_values() == expected
+
+
+# Each sweep breaks exactly one rule, so a missing check cannot hide behind another one.
+@pytest.mark.parametrize(
+    ("k_start", "k_stop", "k_step", "field"),
+    [(1, 3, 1, "k_start"), (3, 11, 0, "k_step"), (10, 10, 1, "k_start"), (11, 10, 1, "k_start")],
+    ids=["k_start-below-2", "zero-k_step", "k_start-equal-to-k_stop", "k_start-above-k_stop"],
+)
+def test_kmeans_sweep_with_bounds_outside_the_contract_is_rejected(
+    k_start: int, k_stop: int, k_step: int, field: str
+) -> None:
+    with pytest.raises(ValidationError, match=field):
+        KMeansConfig(k_start=k_start, k_stop=k_stop, k_step=k_step)
 
 
 @pytest.mark.parametrize("dotted_key", ["unexpected_key", "umap.unexpected_key"])
@@ -175,6 +209,70 @@ def test_keys_written_twice_are_rejected(
 
     with pytest.raises(yaml.YAMLError, match=f"duplicate key '{key}'"):
         load_text(tmp_path, text)
+
+
+def test_a_written_key_overrides_a_merged_key(raw_default: dict[str, Any], tmp_path: Path) -> None:
+    umap_literal = (
+        "{<<: {n_neighbors: 10, n_components: 2, min_dist: 0.5, metric: euclidean},"
+        " n_neighbors: 30}"
+    )
+
+    umap = load_with_literal(tmp_path, raw_default, "umap", umap_literal).umap
+
+    assert umap.n_neighbors == 30
+    assert (umap.n_components, umap.min_dist, umap.metric) == (2, 0.5, "euclidean")
+
+
+@pytest.mark.parametrize(
+    ("dotted_key", "literal", "key"),
+    [
+        (
+            "umap",
+            "{<<: {n_neighbors: 10, n_neighbors: 20, n_components: 2, min_dist: 0.5,"
+            " metric: euclidean}}",
+            "n_neighbors",
+        ),
+        (
+            "umap",
+            "{<<: [{n_neighbors: 10, n_neighbors: 20},"
+            " {n_components: 2, min_dist: 0.5, metric: euclidean}]}",
+            "n_neighbors",
+        ),
+        (
+            "snapshot.programs",
+            "[&base {key: sistemas, key: minas, name: Engineering}, {<<: *base, key: industrial}]",
+            "key",
+        ),
+    ],
+    ids=["inline-source", "source-in-a-list", "anchored-source"],
+)
+def test_keys_written_twice_inside_a_merge_source_are_rejected(
+    raw_default: dict[str, Any], tmp_path: Path, dotted_key: str, literal: str, key: str
+) -> None:
+    with pytest.raises(yaml.YAMLError, match=f"duplicate key '{key}'"):
+        load_with_literal(tmp_path, raw_default, dotted_key, literal)
+
+
+@pytest.mark.parametrize(
+    "programs_literal",
+    [
+        "[&base {key: sistemas, name: Engineering},"
+        " {<<: *base, key: industrial}, {<<: *base, key: minas}]",
+        "[{<<: &base {name: Engineering}, key: sistemas},"
+        " {<<: *base, key: industrial}, {<<: *base, key: minas}]",
+    ],
+    ids=["anchored-item", "anchored-merge-source"],
+)
+def test_an_anchor_reused_by_several_mappings_loads(
+    raw_default: dict[str, Any], tmp_path: Path, programs_literal: str
+) -> None:
+    config = load_with_literal(tmp_path, raw_default, "snapshot.programs", programs_literal)
+
+    assert [(program.key, program.name) for program in config.snapshot.programs] == [
+        ("sistemas", "Engineering"),
+        ("industrial", "Engineering"),
+        ("minas", "Engineering"),
+    ]
 
 
 def test_paths_resolve_against_the_given_project_root(
@@ -214,6 +312,26 @@ def test_resolution_refuses_a_location_outside_the_project_root(tmp_path: Path) 
         unchecked.resolve_against(tmp_path / "project")
 
 
+def test_resolution_refuses_a_symbolic_link_that_leaves_the_project_root(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    outside = tmp_path / "outside"
+    project_root.mkdir()
+    outside.mkdir()
+    try:
+        (project_root / "data").symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError) as error:
+        pytest.skip(
+            "cannot create a directory symlink here; on Windows this needs Developer Mode "
+            f"or an elevated shell ({error})"
+        )
+    paths = PathsConfig(
+        data_dir=Path("data"), results_dir=Path("results"), tessdata_dir=Path("tessdata")
+    )
+
+    with pytest.raises(ValueError, match="data_dir resolves to .*, outside the project root"):
+        paths.resolve_against(project_root)
+
+
 def test_loaded_config_is_immutable() -> None:
     config = load_config(DEFAULT_CONFIG_PATH)
 
@@ -237,9 +355,6 @@ def test_snapshot_years_must_be_ordered(raw_default: dict[str, Any]) -> None:
         ("chunking.max_tokens", 15),
         ("embedding.models", []),
         ("embedding.models", ["org/model", "org/model"]),
-        ("kmeans.k_start", 1),
-        ("kmeans.k_stop", 8),
-        ("kmeans.k_step", 0),
         ("hdbscan.min_cluster_sizes", [1, 5]),
         ("hdbscan.min_cluster_sizes", [5, 5]),
         ("seeds", [7, 13, 21, 42]),
@@ -285,6 +400,52 @@ def test_numeric_fields_refuse_values_of_another_type(
     assert error_type in {error["type"] for error in caught.value.errors()}
 
 
+# Under YAML 1.1 a float needs a dot, and an exponent needs a sign, so PyYAML reads 1e-3
+# as a string. The loader reads every YAML 1.2 exponent form as a float.
+@pytest.mark.parametrize(
+    ("notation", "expected"),
+    [
+        ("1e-3", 0.001),
+        ("7e-1", 0.7),
+        ("7E-1", 0.7),
+        ("+70e-2", 0.7),
+        (".7e0", 0.7),
+        ("0.07e1", 0.7),
+        ("1E0", 1.0),
+        ("7.0e-1", 0.7),
+    ],
+)
+def test_float_fields_accept_scientific_notation(
+    raw_default: dict[str, Any], tmp_path: Path, notation: str, expected: float
+) -> None:
+    config = load_with_literal(tmp_path, raw_default, "recommender.mmr_lambda", notation)
+
+    assert config.recommender.mmr_lambda == pytest.approx(expected)
+
+
+def test_scientific_notation_above_a_float_bound_fails_the_range_check(
+    raw_default: dict[str, Any], tmp_path: Path
+) -> None:
+    with pytest.raises(ValidationError) as caught:
+        load_with_literal(tmp_path, raw_default, "recommender.mmr_lambda", "1E3")
+
+    assert {error["type"] for error in caught.value.errors()} == {"less_than_equal"}
+
+
+@pytest.mark.parametrize("notation", ["300.0", "3e2", "3.0e+2"])
+def test_integer_fields_refuse_floats_in_any_notation(
+    raw_default: dict[str, Any], tmp_path: Path, notation: str
+) -> None:
+    with pytest.raises(ValidationError) as caught:
+        load_with_literal(tmp_path, raw_default, "ocr.dpi", notation)
+
+    assert {error["type"] for error in caught.value.errors()} == {"int_type"}
+
+
+def test_the_global_safe_loader_still_reads_plain_exponents_as_text() -> None:
+    assert yaml.safe_load("1e-3") == "1e-3"
+
+
 @pytest.mark.parametrize(
     ("dotted_key", "value"),
     [
@@ -292,8 +453,6 @@ def test_numeric_fields_refuse_values_of_another_type(
         ("ocr.dpi", 600),
         ("chunking.max_tokens", 16),
         ("umap.min_dist", 0),
-        ("kmeans.k_start", 2),
-        ("kmeans.k_step", 42),
         ("hdbscan.min_cluster_sizes", [2]),
         ("redundancy.cv_folds", 2),
         ("recommender.top_k", 1),

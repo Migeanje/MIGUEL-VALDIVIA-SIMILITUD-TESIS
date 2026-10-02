@@ -1,5 +1,6 @@
 """Typed, immutable run configuration loaded from YAML."""
 
+import re
 from collections import Counter
 from collections.abc import Hashable, Sequence
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -85,7 +86,12 @@ class PathsConfig(_FrozenModel):
 
     @field_validator("data_dir", "results_dir", "tessdata_dir")
     @classmethod
-    def _require_inside_project_root(cls, value: Path) -> Path:
+    def _require_relative_without_parent_segments(cls, value: Path) -> Path:
+        """Refuse absolute or rooted paths and ``..`` segments, judging the text alone.
+
+        Nothing touches the file system here, so a symbolic link can still lead outside
+        the project root. :meth:`resolve_against` enforces containment once the root is known.
+        """
         raw_path = str(value)
         if _is_anchored(raw_path):
             raise ValueError(f"must be relative to the project root, got '{value}'")
@@ -288,32 +294,43 @@ class AppConfig(_FrozenModel):
 
 
 _YAML_MERGE_TAG = "tag:yaml.org,2002:merge"
+_YAML_FLOAT_TAG = "tag:yaml.org,2002:float"
+
+_EXPONENT_FLOAT = re.compile(r"^[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)[eE][-+]?[0-9]+$")
+"""YAML 1.2 core-schema float written with an exponent, such as ``1e-3`` or ``1E3``."""
 
 
 class _UniqueKeyLoader(yaml.SafeLoader):
     """Safe YAML loader that rejects a key written twice in one mapping, at any depth.
 
-    ``yaml.safe_load`` silently keeps the last duplicate. Keys brought in through a
-    ``<<`` merge may still be overridden, as YAML intends.
+    ``yaml.safe_load`` silently keeps the last duplicate. The check also covers the
+    sources of a ``<<`` merge, while keys brought in through a merge may still be
+    overridden, as YAML intends. Plain scientific notation such as ``1e-3`` loads as a
+    float, as in YAML 1.2, instead of as a string.
     """
 
     def __init__(self, stream: str) -> None:
         super().__init__(stream)
-        self._written_keys: dict[yaml.Node, list[yaml.Node]] = {}
+        self._checked_mappings: set[yaml.Node] = set()
 
     def flatten_mapping(self, node: yaml.MappingNode) -> None:
-        # A merge folds other keys into node.value, and a merge source can be flattened
-        # before its own construction, so record the written keys at the first flatten.
-        self._written_keys.setdefault(
-            node, [key_node for key_node, _ in node.value if key_node.tag != _YAML_MERGE_TAG]
-        )
+        # Every mapping is flattened before it is constructed, and so is every merge
+        # source, even an inline one that is never constructed on its own. Flattening
+        # folds the merged keys into node.value, so take the written keys before it.
+        if node in self._checked_mappings:
+            super().flatten_mapping(node)
+            return
+        self._checked_mappings.add(node)
+        written_keys = [key_node for key_node, _ in node.value if key_node.tag != _YAML_MERGE_TAG]
         super().flatten_mapping(node)
+        self._reject_repeated_keys(node, written_keys)
 
-    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Any, Any]:
-        mapping = super().construct_mapping(node, deep=deep)
+    def _reject_repeated_keys(self, node: yaml.MappingNode, key_nodes: list[yaml.Node]) -> None:
         seen: set[Any] = set()
-        for key_node in self._written_keys[node]:
-            key = self.construct_object(key_node, deep=deep)
+        for key_node in key_nodes:
+            key = self.construct_object(key_node)
+            if not isinstance(key, Hashable):
+                continue  # PyYAML refuses unhashable keys itself when it builds the mapping.
             if key in seen:
                 raise ConstructorError(
                     "while constructing a mapping",
@@ -322,7 +339,13 @@ class _UniqueKeyLoader(yaml.SafeLoader):
                     key_node.start_mark,
                 )
             seen.add(key)
-        return mapping
+
+
+# PyYAML follows YAML 1.1: a float needs a dot, and an exponent needs a sign, so 1e-3 and
+# 7.0e1 load as strings. On a subclass, add_implicit_resolver first copies the inherited
+# table, so yaml.SafeLoader keeps its rules. PyYAML's own resolvers run first, so this one
+# only claims the scalars that YAML 1.1 leaves as strings.
+_UniqueKeyLoader.add_implicit_resolver(_YAML_FLOAT_TAG, _EXPONENT_FLOAT, list("-+.0123456789"))
 
 
 def load_config(path: Path) -> AppConfig:

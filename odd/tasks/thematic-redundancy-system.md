@@ -212,12 +212,31 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
   - Evidence (2026-10-02):
     - RED → GREEN per change: 3 failed → 47 passed; 4 failed → 53; 2 failed → 55; 6 failed → 63.
     - `ruff check` and `ruff format --check` are clean, and `pytest` gives 63 passed (independent re-run).
-    - Diff: 226 insertions, 32 deletions.
+    - Diff (code + tests): 224 insertions, 30 deletions.
+    - Review: high risk, four review lenses, approved before and after the commit.
   - Behavior notes:
     - `k_values()` returns the inclusive sweep.
     - `resolve_against` also verifies that resolved paths stay inside the root. As a result, a `data/` symlink or junction pointing to another drive is rejected. This was kept deliberately; revisit it if the data must live on another disk.
     - Integer fields reject floats such as `300.0`.
-    - YAML exponents need a dot and a signed exponent (`7.0e-1`).
+    - YAML exponents need a dot and a signed exponent (`7.0e-1`). Superseded by T01b: plain scientific notation now loads as a float.
+  - Commits: `30282fa` (plan progress) and `f39343b` (config hardening), both made by the user.
+- [x] **T01b** Config follow-ups from the non-blocking T01a review findings:
+  - build explicit `KMeansConfig` objects in the sweep tests instead of relying on the shipped defaults;
+  - rename `_require_inside_project_root` to `_require_relative_without_parent_segments`, because it only performs lexical checks;
+  - test YAML `<<` merge keys: a merged key overridden by a written key loads, a duplicate inside a merge source is refused, and an anchor reused across mappings keeps working;
+  - add a real symlink containment test, skipped when the platform cannot create symlinks;
+  - make plain scientific notation (`1e-3`) load as a float, or fail with an actionable message.
+  - Route D. Trigger: 2 non-trivial files. Risk M.
+  - Evidence (2026-10-02):
+    - Bug found and fixed. A key written twice inside a `<<` merge source (inline, list item, or merge-only anchor) was silently accepted. The duplicate check now runs once per mapping in `flatten_mapping`; RED was `DID NOT RAISE` on 2 cases.
+    - Plain scientific notation (`1e-3`, `1E3`) now loads as a float through a resolver on the custom loader only. The global `yaml.SafeLoader` is unchanged, and int fields still refuse `300.0`, `3e2` and `3.0e+2`. RED: 8 failed.
+    - The sweep tests build explicit `KMeansConfig` objects. The validator was renamed.
+    - A real symlink test is skipped on this machine (WinError 1314, no Developer Mode). An equivalent junction check was refused manually.
+    - `ruff check` and `ruff format --check` are clean. `pytest`: 83 passed, 1 skipped (independent re-run).
+    - Diff (code + tests): 216 insertions, 34 deletions.
+  - Known limits:
+    - A `<<` key written twice in the same mapping is still accepted, and the later merge wins.
+    - `yaml.safe_dump` writes strings like `1e-3` unquoted, so they would round-trip as floats.
   - Commit: pending; the user commits in GitHub Desktop.
 - [ ] **T02** Smoke-test the full stack on a synthetic mini corpus. The run covers embeddings → UMAP → K-means/HDBSCAN → BERTopic → NPMI → an AppTest import. Pin any major version that breaks.
   - Route D. Risk M.
@@ -356,7 +375,7 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
 
 - **Forecast:** about 8,000–9,000 authored changed lines (source plus tests), which exceeds the ~400-line slice budget.
 - **Strategy:** direct work-unit commits on `main`, with no PR chain (O08, user decision). Slices are commits, each one coherent on its own.
-- **Commits:** Conventional Commits only, with no trailers. Pushing is the user's decision.
+- **Commits:** Conventional Commits only, with no trailers. The user writes the Summary and Description in Spanish, and the type keywords stay in English (user decision, 2026-10-02). Pushing is the user's decision.
 - **Slice boundaries (commits per task):** recorded in each task's evidence.
 
 ## Progress log
@@ -377,7 +396,10 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
 - 2026-10-02: T01 closed. It is three commits on `main`, with the config unit reviewed and approved and T01a added from the review findings.
 
 - 2026-10-02: T01a implemented and verified (63 tests). Its commit was handed to the user.
+- 2026-10-02: The user committed T01a as `f39343b`. Its review was approved before and after the commit. T01b was created from the findings, and commit messages now use Spanish.
+
+- 2026-10-02: T01b implemented and verified (83 passed, 1 skipped). Its commit was handed to the user.
 
 ## Next step
 
-After the user's T01a commit: T02 (stack smoke test), then T03 (OCR assets).
+After the user's T01b commit: T02 (stack smoke test), then T03 (OCR assets).
