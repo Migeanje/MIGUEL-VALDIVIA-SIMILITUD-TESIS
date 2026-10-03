@@ -1,8 +1,9 @@
 """Behavior of the DSpace REST adapter: URLs, paging, pacing, retries, and response checks.
 
-``httpx.MockTransport`` replays the synthetic search pages in ``tests/fixtures/dspace``. They
-copy the structure of DSpace 7.6 search responses (keys, nesting and paging fields) with
-fake values. A fake clock stands in for time, so no test opens a connection or sleeps.
+``httpx.MockTransport`` replays the synthetic responses in ``tests/fixtures/dspace``: search
+pages, and an item with its bundles and files embedded. They copy the structure of DSpace 7.6
+responses (keys, nesting and paging fields) with fake values. A fake clock stands in for
+time, so no test opens a connection or sleeps.
 """
 
 import itertools
@@ -18,10 +19,18 @@ from pydantic import HttpUrl
 
 from thematic_redundancy.corpus.dspace import (
     MAX_PAGES_PER_SEARCH,
+    MAX_REDIRECTS,
     USER_AGENT,
     DSpaceRestRepository,
 )
-from thematic_redundancy.corpus.repository import IssuedYears, RepositoryError, SearchDescription
+from thematic_redundancy.corpus.repository import (
+    Bitstream,
+    Checksum,
+    IssuedYears,
+    RepositoryError,
+    ResourceUnavailableError,
+    SearchDescription,
+)
 from thematic_redundancy.shared.config import RepositoryConfig
 
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "dspace"
@@ -514,3 +523,273 @@ def test_from_config_applies_the_page_size_the_pace_and_the_retries(fake_time: F
     assert str(server.requests[0].url).startswith(f"{SEARCH_URL}?")
     # The second page waits out the 2 s pace; its retry waits the 2 s backoff, which covers it.
     assert fake_time.sleeps == [1.75, 2.0]
+
+
+ITEM = UUID("00000000-0000-4000-8000-00000000a001")
+"""Item that the synthetic ``item_files.json`` response describes."""
+ITEM_URL = f"{BASE_URL}/server/api/core/items/{ITEM}"
+THESIS_FILE = UUID("00000000-0000-4000-8000-0000000f0001")
+CONTENT_URL = f"{BASE_URL}/server/api/core/bitstreams/{THESIS_FILE}/content"
+PDF_BYTES = b"%PDF-1.7\n" + bytes(range(256)) * 512 + b"\n%%EOF\n"
+"""Synthetic file body, longer than one download chunk."""
+
+
+def item_files() -> dict[str, Any]:
+    """Return the synthetic item whose bundles and files are embedded in the response."""
+    return fixture("item_files.json")
+
+
+def bundles_of(payload: dict[str, Any]) -> dict[str, Any]:
+    return payload["_embedded"]["bundles"]
+
+
+def original_files_of(payload: dict[str, Any]) -> dict[str, Any]:
+    return bundles_of(payload)["_embedded"]["bundles"][0]["_embedded"]["bitstreams"]
+
+
+class MemorySink:
+    """Byte sink that keeps a download in memory and counts how often it started over."""
+
+    def __init__(self) -> None:
+        self.data = bytearray()
+        self.restarts = 0
+
+    def write(self, data: bytes, /) -> int:
+        self.data += data
+        return len(data)
+
+    def restart(self) -> None:
+        self.data.clear()
+        self.restarts += 1
+
+
+class BrokenStream(httpx.SyncByteStream):
+    """Response body that delivers its first bytes and then loses the connection."""
+
+    def __iter__(self) -> Iterator[bytes]:
+        yield PDF_BYTES[:100]
+        raise httpx.ReadError("simulated connection drop")
+
+
+def test_list_bundles_reads_the_bundles_and_files_of_an_item_in_one_request(
+    connect: Connect,
+) -> None:
+    repository, server = connect([item_files()])
+
+    bundles = repository.list_bundles(ITEM)
+
+    [request] = server.requests
+    assert str(request.url).split("?")[0] == ITEM_URL
+    assert dict(request.url.params) == {"embed": "bundles/bitstreams"}
+    # The slash goes unescaped, as the DSpace web client sends it.
+    assert request.url.query == b"embed=bundles/bitstreams"
+    assert request.headers["Accept"] == "application/json"
+    assert request.headers["User-Agent"] == USER_AGENT
+    assert [bundle.name for bundle in bundles] == ["ORIGINAL", "LICENSE", "TEXT", "THUMBNAIL"]
+    assert [len(bundle.bitstreams) for bundle in bundles] == [3, 1, 1, 1]
+    assert bundles[0].bitstreams[0] == Bitstream(
+        uuid=THESIS_FILE,
+        name="70.0001.SYNTHETICNAME.pdf",
+        size_bytes=6715889,
+        checksum=Checksum(algorithm="MD5", value="0123456789abcdef0123456789abcdef"),
+    )
+
+
+def test_list_bundles_uses_the_api_under_the_base_url_path(connect: Connect) -> None:
+    repository, server = connect([item_files()], base_url="https://repo.example.edu/dspace/")
+
+    repository.list_bundles(ITEM)
+
+    assert str(server.requests[0].url) == (
+        f"https://repo.example.edu/dspace/server/api/core/items/{ITEM}?embed=bundles/bitstreams"
+    )
+
+
+def for_another_item(payload: dict[str, Any]) -> None:
+    payload["uuid"] = "00000000-0000-4000-8000-00000000a002"
+
+
+def without_embedded_bundles(payload: dict[str, Any]) -> None:
+    del payload["_embedded"]
+
+
+def with_a_file_without_checksum(payload: dict[str, Any]) -> None:
+    del original_files_of(payload)["_embedded"]["bitstreams"][0]["checkSum"]
+
+
+def with_a_negative_size(payload: dict[str, Any]) -> None:
+    original_files_of(payload)["_embedded"]["bitstreams"][0]["sizeBytes"] = -1
+
+
+def with_bundles_cut_short(payload: dict[str, Any]) -> None:
+    bundles_of(payload)["page"]["totalElements"] = 5
+
+
+def with_files_cut_short(payload: dict[str, Any]) -> None:
+    original_files_of(payload)["page"]["totalElements"] = 4
+
+
+@pytest.mark.parametrize(
+    ("damage", "message"),
+    [
+        (for_another_item, "another item"),
+        (without_embedded_bundles, "unexpected"),
+        (with_a_file_without_checksum, "unexpected"),
+        (with_a_negative_size, "unexpected"),
+        (with_bundles_cut_short, "4 of its 5 bundles"),
+        (with_files_cut_short, "3 of the 4 files"),
+    ],
+)
+def test_an_item_response_that_is_wrong_or_incomplete_is_rejected_without_retry(
+    connect: Connect, damage: Callable[[dict[str, Any]], None], message: str
+) -> None:
+    payload = item_files()
+    damage(payload)
+    repository, server = connect([payload])
+
+    with pytest.raises(RepositoryError, match=message) as caught:
+        repository.list_bundles(ITEM)
+
+    assert len(server.requests) == 1
+    assert "SYNTHETICNAME" not in str(caught.value)  # Messages never repeat file names.
+
+
+def test_download_streams_the_file_content_into_the_sink(connect: Connect) -> None:
+    repository, server = connect([httpx.Response(200, content=PDF_BYTES)])
+    sink = MemorySink()
+
+    repository.download(THESIS_FILE, sink)
+
+    assert bytes(sink.data) == PDF_BYTES
+    [request] = server.requests
+    assert str(request.url) == CONTENT_URL
+    assert request.headers["User-Agent"] == USER_AGENT
+    assert request.headers["Accept"] == "*/*"
+    assert not {"authorization", "cookie"} & {name.lower() for name in request.headers}
+
+
+@pytest.mark.parametrize("status", [401, 403, 404])
+@pytest.mark.parametrize("call", ["list_bundles", "download"])
+def test_a_refusal_is_final_and_never_retried(
+    connect: Connect, fake_time: FakeTime, status: int, call: str
+) -> None:
+    repository, server = connect([httpx.Response(status)])
+
+    with pytest.raises(ResourceUnavailableError, match=f"HTTP {status}") as caught:
+        if call == "list_bundles":
+            repository.list_bundles(ITEM)
+        else:
+            repository.download(THESIS_FILE, MemorySink())
+
+    assert caught.value.status_code == status
+    assert (len(server.requests), repository.request_count, fake_time.sleeps) == (1, 1, [])
+
+
+def test_a_download_cut_off_midway_starts_again_from_the_first_byte(
+    connect: Connect, fake_time: FakeTime
+) -> None:
+    repository, server = connect(
+        [httpx.Response(200, stream=BrokenStream()), httpx.Response(200, content=PDF_BYTES)]
+    )
+    sink = MemorySink()
+
+    repository.download(THESIS_FILE, sink)
+
+    assert bytes(sink.data) == PDF_BYTES
+    assert (sink.restarts, len(server.requests)) == (2, 2)
+    assert fake_time.sleeps == [2.0]
+
+
+@pytest.mark.parametrize("status", [429, 500, 503])
+def test_a_download_retries_transient_statuses_with_backoff(
+    connect: Connect, fake_time: FakeTime, status: int
+) -> None:
+    repository, server = connect([httpx.Response(status), httpx.Response(200, content=PDF_BYTES)])
+    sink = MemorySink()
+
+    repository.download(THESIS_FILE, sink)
+
+    assert bytes(sink.data) == PDF_BYTES
+    assert (len(server.requests), fake_time.sleeps) == (2, [2.0])
+
+
+def test_a_download_gives_up_after_the_last_retry(connect: Connect) -> None:
+    repository, server = connect([httpx.Response(503)] * 2, max_retries=1)
+
+    with pytest.raises(RepositoryError, match=r"after 2 attempts: HTTP 503") as caught:
+        repository.download(THESIS_FILE, MemorySink())
+
+    assert not isinstance(caught.value, ResourceUnavailableError)
+    assert CONTENT_URL in str(caught.value)
+    assert len(server.requests) == 2
+
+
+def test_listings_and_downloads_share_one_pace(connect: Connect, fake_time: FakeTime) -> None:
+    repository, server = connect([item_files(), httpx.Response(200, content=PDF_BYTES)])
+
+    repository.list_bundles(ITEM)
+    repository.download(THESIS_FILE, MemorySink())
+
+    assert server.started_at[1] - server.started_at[0] == pytest.approx(1.0)
+    assert repository.request_count == 2
+
+
+def test_a_redirect_within_the_repository_is_followed_at_the_same_pace(
+    connect: Connect, fake_time: FakeTime
+) -> None:
+    moved = f"/server/api/core/bitstreams/{THESIS_FILE}/content?mirror=1"
+    repository, server = connect(
+        [httpx.Response(302, headers={"Location": moved}), httpx.Response(200, content=PDF_BYTES)]
+    )
+    sink = MemorySink()
+
+    repository.download(THESIS_FILE, sink)
+
+    assert bytes(sink.data) == PDF_BYTES
+    assert [str(request.url) for request in server.requests] == [CONTENT_URL, BASE_URL + moved]
+    assert server.started_at[1] - server.started_at[0] == pytest.approx(1.0)
+    assert repository.request_count == 2
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https://cdn.example.org/files/70.0001.SYNTHETICNAME.pdf",
+        "http://repo.example.edu/files/70.0001.SYNTHETICNAME.pdf",
+        "https://repo.example.edu:8443/files/70.0001.SYNTHETICNAME.pdf",
+    ],
+    ids=["other-host", "plain-http", "other-port"],
+)
+def test_a_redirect_that_leaves_the_repository_is_never_followed(
+    connect: Connect, fake_time: FakeTime, location: str
+) -> None:
+    repository, server = connect([httpx.Response(302, headers={"Location": location})])
+
+    with pytest.raises(RepositoryError, match="outside https://repo.example.edu") as caught:
+        repository.download(THESIS_FILE, MemorySink())
+
+    assert (len(server.requests), fake_time.sleeps) == (1, [])
+    assert "SYNTHETICNAME" not in str(caught.value)
+
+
+def test_a_request_redirected_too_many_times_is_given_up(connect: Connect) -> None:
+    loop = httpx.Response(302, headers={"Location": CONTENT_URL})
+    repository, server = connect([loop] * (MAX_REDIRECTS + 1))
+
+    with pytest.raises(RepositoryError, match="redirected more than"):
+        repository.download(THESIS_FILE, MemorySink())
+
+    assert len(server.requests) == MAX_REDIRECTS + 1
+
+
+def test_an_error_raised_by_the_sink_ends_the_download_without_retry(connect: Connect) -> None:
+    class FullDisk(MemorySink):
+        def write(self, data: bytes, /) -> int:
+            raise OSError("simulated full disk")
+
+    repository, server = connect([httpx.Response(200, content=PDF_BYTES)])
+
+    with pytest.raises(OSError, match="full disk"):
+        repository.download(THESIS_FILE, FullDisk())
+
+    assert len(server.requests) == 1

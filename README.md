@@ -78,7 +78,57 @@ The harvest is polite to the server:
 - Each request carries a User-Agent that names the project, and a timeout.
 - After HTTP 429, HTTP 5xx or a network error, it retries at most `repository.max_retries`
   times, with exponential backoff.
-- It reads metadata only, never PDFs.
+- It reads metadata only. The PDFs come from a separate command, below.
+
+## Thesis PDFs
+
+Once a snapshot exists, fetch the PDF of each of its theses:
+
+```sh
+uv run python -m thematic_redundancy.corpus.download_pdfs
+```
+
+The command reads the snapshot harvested last (`--snapshot-id` picks another one) and takes
+its theses: the items whose `renati.type` fragment is `snapshot.thesis_type` (`#tesis`). It
+writes into `data/raw/<snapshot_id>/pdfs/`:
+
+- `<item uuid>.pdf`: the thesis PDF, named after its item. Original file names are never
+  used or stored, because they may hold author names.
+- `manifest.json`:
+  - one entry per thesis: its status and reason, the repository file it came from, the size
+    and checksum that the repository lists, and the MD5 and SHA-256 of the file on disk;
+  - counts by status and by program, and the total size of the files.
+
+**Which file.** The `ORIGINAL` bundle of a UCSM thesis may hold three PDFs: the thesis, a
+similarity report (`*.RT.pdf`) and a publication authorization form (`Autorización_*.pdf`).
+The command drops the last two, ignoring letter case and accents.
+
+- One PDF left: it is downloaded.
+- None left: the thesis is recorded as `no_thesis_file`, with nothing downloaded.
+- Several left: it is recorded as `ambiguous`, with nothing downloaded.
+
+How a run behaves:
+
+- **Restricted items.** An item whose `dc.rights` is embargoed, restricted or metadata-only
+  access is recorded as `restricted` (`rights_restricted`) without any request.
+  - HTTP 401 and 403 also give `restricted`, and HTTP 404 gives `not_found`.
+  - None of them is asked again, in this run or in later ones.
+- **Verified.** A download goes to `<item uuid>.pdf.part`. It is renamed into place only when
+  it starts with `%PDF` and matches the size and checksum (MD5) that the repository lists.
+  Otherwise it is deleted and recorded as `integrity_error`.
+- **Resumable.** The manifest is rewritten atomically after every thesis, so a run can stop
+  at any point. A rerun:
+  - keeps every PDF whose size and SHA-256 still match the manifest, without any request;
+  - retries the theses recorded as `error` or `integrity_error`.
+- **Bounded.** `--limit N` takes the first N theses in snapshot order, and `--per-program N`
+  the first N of each program.
+- **Guarded.** Only one run at a time may use a PDF directory, and a run stops after 3 failed
+  theses in a row, since that points at the server or the network.
+
+It is as polite as the harvest: one request at a time, at least
+`repository.request_interval_seconds` apart, with the same User-Agent and retry policy. It
+follows redirects only within the repository's host. It sends about two requests per thesis:
+one to list the item's files and one to download the thesis.
 
 ## Checks
 
@@ -109,6 +159,8 @@ work offline with `HF_HUB_OFFLINE=1`.
 - `data/` and `tessdata/` are never committed; both are gitignored and excluded from Docker builds.
 - The theses are licensed CC BY-NC-ND 4.0. They are used for research only, their texts are not
   redistributed, and every displayed thesis links to its repository item.
+- Thesis PDFs are saved under the uuid of their item. Their original file names, which may hold
+  author names, are never stored.
 - DNI fields (every metadata key ending in `.dni`, such as `renati.author.dni` and
   `renati.advisor.dni`) are dropped at ingestion, before anything is written. The snapshot
   manifest lists the dropped keys.

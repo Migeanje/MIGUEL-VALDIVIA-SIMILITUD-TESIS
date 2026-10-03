@@ -319,10 +319,37 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - A: config unit (`config.py`, `default.yaml`, `test_config.py`).
     - B: port, adapter, `test_dspace.py`, fixtures. B depends on A.
     - C: snapshot, harvest, CLI, `test_harvest.py`, README, plan doc.
-  - Commits: pending (A, B, C), made by the user.
+  - Commit: `ad160a5`, made by the user. It is a single commit, not the planned A/B/C slices, and its message describes only the config unit, yet it contains all of T04 (15 files). Its tree `373abce…` is byte-identical to the reviewed candidate. The message was left as is, because rewriting published history is not worth it for a cosmetic issue.
+  - Reviews: medium risk, one lens, approved both before and after the commit.
+- [ ] **T04a** Harvest robustness follow-ups from the T04 reviews:
+  - Make offset paging stable with a unique tiebreak, or a listing that does not depend on undefined order among items with the same `dc.date.issued`. The current snapshot is unaffected: 766 unique uuids, reconciled with each listing total and with the faculty total.
+  - Enforce, or clearly document, reconciliation against the faculty-wide total, which is currently only recorded.
+  - Route D. Risk M.
 - [ ] **T05** Thesis PDF downloader. It picks the thesis bitstream by name (excluding `*.RT.pdf` and `Autorización_*`), rate-limits, resumes, and records sha256. Embargoed/restricted items are skipped with a reason. **Needs U8.**
   - Route D. Risk H.
   - Accept: every included item has exactly one thesis PDF or a recorded reason.
+  - Evidence, implementation (2026-10-02):
+    - Port and adapter extensions:
+      - `list_bundles` uses `items/{uuid}?embed=bundles/bitstreams`, so each thesis costs 2 requests.
+      - Downloads are streamed and share the pacing and retry core. 401/403/404 are final and never retried. Same-host redirects are followed up to 3 hops.
+    - Pure selection rules in `thesis_files.py`: PDFs in ORIGINAL only, excluding `.RT.pdf` and `Autoriz*`. If none remains the status is `no_thesis_file`; if several remain it is `ambiguous`, and nothing is downloaded.
+    - Each download is checked for the `%PDF` header, a size equal to `sizeBytes`, and the server MD5. sha256 is then recorded.
+    - Files are named by item uuid. The manifest stores no original filenames.
+    - Restricted or embargoed items are skipped by `dc.rights` without any request.
+    - Runs resume and are incremental; an atomic manifest and an OS lock prevent concurrent runs.
+    - CLI: `python -m thematic_redundancy.corpus.download_pdfs`.
+    - Tests: 121 new. RED → GREEN. 24 mutants were tried; 2 survivors led to 4 added tests, after which all were caught.
+    - Checks: `ruff` clean. `pytest`: 354 passed, 1 skipped (independent re-run).
+  - Naming inspection (13 items across the 5 programs): each item has exactly one thesis PDF. 9 also have `.RT.pdf`, 7 have `Autorización_*.pdf`. 0 ambiguous, 0 `no_thesis_file`.
+  - Sample (2 per program, 10 PDFs):
+    - 65.3 MB in 20 requests and 114 s. All 10 were verified independently.
+    - A rerun made 0 requests.
+    - Extrapolated total: 4.5–10 GB, about 2.5–4.5 h at 1 request/s.
+  - Full run: started in the background on 2026-10-02. It is resumable.
+  - Open decision: 7 of the 8 embargoed theses have a `dc.date.embargoEnd` already past (2022–2025). They are skipped without any request. Fetching them needs a separate authorization.
+  - Size: about 3,400 authored lines, about 1,760 of them tests and fixtures. Commit slices:
+    - A: port, adapter, fixture, `test_dspace`.
+    - B: selection rules, manifest, use case, CLI, their tests, README, plan doc.
 - [ ] **T06** Freeze the snapshot, back it up (U7), and write the data card (counts by program and year, embargo list). The card must flag records whose `dc.date.issued` lies after the snapshot date. As of 2026-10-02 some items carry future dates (2026-12-04, 2026-12-01). The temporal split (T27) must handle them explicitly.
   - Route I. Risk P.
 - [ ] **T07** EDA notebook: program/year distribution, abstract token lengths, keywords, title suffix patterns.
@@ -331,7 +358,7 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
 ### P2 — Data preparation (M2–M3)
 - [ ] **T08** Ficha schema (pydantic) and its parquet adapter. It holds the Anexo B fields plus: handle URL, snapshot id, keywords, OCDE code, objectives status, section source, include/exclude with reason, file hash.
   - Route D. Risk M.
-- [ ] **T09** PDF text extraction with text-layer detection and an OCR fallback.
+- [ ] **T09** PDF text extraction with text-layer detection and an OCR fallback. Note from T05: 6 of 13 inspected items also carry DSpace's extracted full text (`*.pdf.txt` in a TEXT bundle). It could serve as a cross-check, but it was not fetched and is not authorized yet.
   - Route D. Risk M.
 - [ ] **T10** Objectives locator plus a manual verification sample (~60, stratified by program), producing an accuracy report (O05).
   - Route D. Risk M.
@@ -489,6 +516,25 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
 
 - 2026-10-02: T04 implemented and verified, and the real snapshot `20261002T224412Z` was taken (766 records, 746 theses, 0 DNI). Three commits (A, B, C) were handed to the user.
 
+- 2026-10-02: The user committed T04 as the single commit `ad160a5`, and the post-commit review was approved, so the reviewed boundary is now `ad160a5`. T04a was added. T05 was proposed, awaiting a new U8 authorization:
+  - only the thesis PDF of each of the 746 theses;
+  - about 3 requests per thesis at 1/s;
+  - an estimated 3–8 GB, measured first on a sample of 10 (183 GB free);
+  - restricted items skipped with a reason.
+
+- 2026-10-02: U8 was granted for T05. The scope:
+  - read-only GET requests to `repositorio.ucsm.edu.pe`, with no credentials;
+  - only the thesis PDF of each of the 746 `#tesis` items in snapshot `20261002T224412Z`;
+  - no similarity report or authorization form;
+  - at least 1 s between requests, sequential;
+  - restricted or embargoed items skipped with a recorded reason;
+  - files go to gitignored `data/raw/<snapshot>/pdfs/` with checksums;
+  - research use only, no redistribution (CC BY-NC-ND).
+
+  T05 started. Route: D. Trigger: adapter extension, new use case and CLI, plus tests. A writer implements the downloader and runs a 10-file sample; the parent runs the full download in the background.
+
+- 2026-10-02: T05 downloader implemented and verified on a 10-PDF sample. The full download is running in the background, and the commits were handed to the user.
+
 ## Next step
 
-After the user's T04 commits: review each commit separately, then T05 (thesis PDF download). T05 needs a new authorization under U8.
+Finish the T05 full download, then record the per-status counts. Next is T06: freeze, back up (U7 location still needed from the user), and write the data card. T04a and T02a are pending follow-ups.

@@ -7,8 +7,11 @@ A snapshot is the directory ``<data_dir>/raw/<snapshot_id>/``, holding two files
   the SHA-256 of ``metadata.jsonl``.
 
 Snapshots are immutable. A directory is written once, as a whole, and is never overwritten.
+Readers check ``metadata.jsonl`` against the SHA-256 in the manifest before using it. Later
+steps may add their own subdirectories, such as ``pdfs/``, but never touch those two files.
 """
 
+import hashlib
 import os
 import re
 import shutil
@@ -27,6 +30,7 @@ from pydantic import (
     Field,
     JsonValue,
     StrictInt,
+    ValidationError,
     field_validator,
 )
 
@@ -203,6 +207,77 @@ def write_snapshot(snapshot_dir: Path, metadata: bytes, manifest: SnapshotManife
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
+
+
+def read_snapshot_manifest(snapshot_dir: Path) -> SnapshotManifest:
+    """Return the manifest of the snapshot at ``snapshot_dir``.
+
+    Raises:
+        FileNotFoundError: if the snapshot has no manifest.
+        ValueError: if the manifest is not a valid snapshot manifest.
+    """
+    path = snapshot_dir / MANIFEST_FILE_NAME
+    content = path.read_bytes()
+    try:
+        return SnapshotManifest.model_validate_json(content)
+    except ValidationError as error:
+        raise ValueError(
+            f"{path} is not a valid snapshot manifest ({error.error_count()} problems)"
+        ) from error
+
+
+def read_snapshot(snapshot_dir: Path) -> tuple[SnapshotManifest, tuple[SnapshotRecord, ...]]:
+    """Return the manifest and the records of the snapshot at ``snapshot_dir``.
+
+    The records are read only once ``metadata.jsonl`` matches the SHA-256 in the manifest,
+    so a snapshot changed after its harvest is never used.
+
+    Raises:
+        FileNotFoundError: if a file of the snapshot is missing.
+        ValueError: if the manifest is invalid, if ``metadata.jsonl`` does not match its
+            SHA-256, or if a record is invalid.
+    """
+    manifest = read_snapshot_manifest(snapshot_dir)
+    path = snapshot_dir / METADATA_FILE_NAME
+    content = path.read_bytes()
+    digest = hashlib.sha256(content).hexdigest()
+    if digest != manifest.metadata_sha256:
+        raise ValueError(
+            f"{path} has SHA-256 {digest}, but its manifest records {manifest.metadata_sha256}; "
+            "the snapshot changed after the harvest, so it is not used"
+        )
+    records = []
+    for number, line in enumerate(content.splitlines(), start=1):
+        try:
+            records.append(SnapshotRecord.model_validate_json(line))
+        except ValidationError as error:
+            raise ValueError(f"line {number} of {path} is not a valid record") from error
+    return manifest, tuple(records)
+
+
+def latest_snapshot_id(raw_dir: Path) -> str:
+    """Return the id of the snapshot under ``raw_dir`` that was harvested last.
+
+    Only directories named like a snapshot id that hold a manifest count, so the hidden
+    staging directory of an unfinished harvest and stray files are skipped. Snapshots
+    harvested in the same second are told apart by the greater id.
+
+    Raises:
+        FileNotFoundError: if ``raw_dir`` holds no snapshot.
+        ValueError: if a snapshot manifest is invalid.
+    """
+    harvests = []
+    if raw_dir.is_dir():
+        for path in raw_dir.iterdir():
+            if (
+                _SNAPSHOT_ID.fullmatch(path.name)
+                and path.is_dir()
+                and (path / MANIFEST_FILE_NAME).is_file()
+            ):
+                harvests.append((read_snapshot_manifest(path).harvested_at, path.name))
+    if not harvests:
+        raise FileNotFoundError(f"no snapshot under {raw_dir}; run the harvest first")
+    return max(harvests)[1]
 
 
 def _write_durably(path: Path, content: bytes) -> None:

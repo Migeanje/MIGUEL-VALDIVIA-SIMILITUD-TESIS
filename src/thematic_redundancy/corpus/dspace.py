@@ -1,22 +1,35 @@
-"""DSpace 7 REST adapter for :class:`~thematic_redundancy.corpus.repository.ItemRepository`.
+"""DSpace 7 REST adapter for the repository ports of :mod:`thematic_redundancy.corpus.repository`.
 
-It searches ``<base_url>/server/api/discover/search/objects`` for the items under one
-collection or community whose ``dc.date.issued`` year falls in a range, sorted by that date,
-and reads the pages until the reported total is covered. Anonymous read access is enough,
-so it sends no credentials. It stays polite to the server:
+As an :class:`~thematic_redundancy.corpus.repository.ItemRepository`, it searches
+``<base_url>/server/api/discover/search/objects`` for the items under one collection or
+community whose ``dc.date.issued`` year falls in a range, sorted by that date, and reads the
+pages until the reported total is covered. As a
+:class:`~thematic_redundancy.corpus.repository.BitstreamRepository`, it reads an item's
+bundles and files in one request (``core/items/<uuid>?embed=bundles/bitstreams``) and streams
+a file from ``core/bitstreams/<uuid>/content``.
+
+Anonymous read access is enough, so it sends no credentials. It stays polite to the server:
 
 - one request at a time, each starting at least ``request_interval_seconds`` after the
-  previous one began;
+  previous one began, redirects included;
 - a User-Agent that names the research project, and a timeout on every request;
 - a bounded number of retries after HTTP 429, HTTP 5xx, a timeout or a network error, with
-  exponential backoff that honours a ``Retry-After`` of up to one minute.
+  exponential backoff that honours a ``Retry-After`` of up to one minute. A download that
+  fails midway starts over from its first byte;
+- no retry after HTTP 401, 403 or 404, which raise
+  :class:`~thematic_redundancy.corpus.repository.ResourceUnavailableError`;
+- redirects only within the repository's own scheme, host and port.
 
 Each response is checked before use: its shape, the scope and year filter that the server
-says it applied, the page number, and paging that stays the same from page to page.
+says it applied, the page number, paging that stays the same from page to page, the item
+that a listing describes, and embedded lists that hold every element. Error messages quote
+neither metadata values nor file names: a malformed response is described by the location
+and kind of each problem, and a refused redirect by its scheme, host and port.
 """
 
+import json
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
@@ -24,9 +37,14 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StrictInt, ValidationError
 
 from thematic_redundancy.corpus.repository import (
+    Bitstream,
+    Bundle,
+    ByteSink,
+    Checksum,
     IssuedYears,
     RepositoryError,
     RepositoryItem,
+    ResourceUnavailableError,
     ScopeListing,
     SearchDescription,
 )
@@ -34,6 +52,11 @@ from thematic_redundancy.shared.config import RepositoryConfig
 
 API_PATH = "server/api"
 SEARCH_PATH = "discover/search/objects"
+ITEMS_PATH = "core/items"
+BITSTREAMS_PATH = "core/bitstreams"
+
+FILES_EMBED = "bundles/bitstreams"
+"""Projection that embeds an item's bundles, and the files of each, in the item itself."""
 
 USER_AGENT = "thematic-redundancy-research/0.1 (academic thesis research)"
 """Names the project, and no person, so that the repository's operators can identify it."""
@@ -51,26 +74,47 @@ BACKOFF_BASE_SECONDS = 2.0
 """Wait before the first retry; each later retry waits twice as long as the one before."""
 
 MAX_RETRY_AFTER_SECONDS = 60.0
-"""Longest ``Retry-After`` honoured; a server that asks for a longer wait ends the search."""
+"""Longest ``Retry-After`` honoured; a server that asks for a longer wait ends the request."""
 
 MAX_PAGES_PER_SEARCH = 100
 """Most pages that one search may take; more suggests a wrong scope or a filter not applied."""
 
-_HEADERS = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+MAX_REDIRECTS = 3
+"""Most redirects that one request follows; each must stay on the repository's host."""
+
+DOWNLOAD_CHUNK_BYTES = 64 * 1024
+
+_JSON_HEADERS = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+_CONTENT_HEADERS = {"User-Agent": USER_AGENT, "Accept": "*/*"}
+_FINAL_STATUSES = frozenset({401, 403, 404})
+"""Refusals that asking again would not change: no access, or no such resource."""
 _TRANSIENT_ERRORS = (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)
 _SHOWN_VALIDATION_ERRORS = 3
 
 
 def search_url(base_url: str) -> str:
     """Return the search endpoint under ``base_url``, which may end with a slash or not."""
-    return f"{base_url.rstrip('/')}/{API_PATH}/{SEARCH_PATH}"
+    return f"{api_url(base_url)}/{SEARCH_PATH}"
+
+
+def api_url(base_url: str) -> str:
+    """Return the REST API root under ``base_url``, which may end with a slash or not."""
+    return f"{base_url.rstrip('/')}/{API_PATH}"
+
+
+class _RetryableFailure(Exception):
+    """A request failed in a way that may pass: HTTP 429 or 5xx, a timeout, a lost connection."""
+
+    def __init__(self, description: str, retry_after: float | None = None) -> None:
+        super().__init__(description)
+        self.retry_after = retry_after
 
 
 class _Response(BaseModel):
     """Read-only view of part of a response; it ignores unknown keys.
 
     Errors never quote the input, because a response carries DNI fields until the harvest
-    drops them.
+    drops them, and file names that may hold author names.
     """
 
     model_config = ConfigDict(frozen=True, extra="ignore", hide_input_in_errors=True)
@@ -134,8 +178,95 @@ class _SearchResponse(_Response):
         return items
 
 
+class _Checksum(_Response):
+    algorithm: str = Field(alias="checkSumAlgorithm", min_length=1)
+    value: str = Field(min_length=1)
+
+
+class _Bitstream(_Response):
+    type: Literal["bitstream"]
+    uuid: UUID
+    name: str
+    size_bytes: Annotated[StrictInt, Field(ge=0, alias="sizeBytes")]
+    checksum: _Checksum = Field(alias="checkSum")
+
+    def as_bitstream(self) -> Bitstream:
+        checksum = Checksum(algorithm=self.checksum.algorithm, value=self.checksum.value)
+        return Bitstream(
+            uuid=self.uuid, name=self.name, size_bytes=self.size_bytes, checksum=checksum
+        )
+
+
+class _BitstreamsEmbedded(_Response):
+    bitstreams: tuple[_Bitstream, ...] = ()
+
+
+class _BitstreamList(_Response):
+    embedded: _BitstreamsEmbedded = Field(alias="_embedded")
+    page: _Page
+
+
+class _BundleEmbedded(_Response):
+    bitstreams: _BitstreamList
+
+
+class _Bundle(_Response):
+    type: Literal["bundle"]
+    name: str
+    embedded: _BundleEmbedded = Field(alias="_embedded")
+
+
+class _BundlesEmbedded(_Response):
+    bundles: tuple[_Bundle, ...] = ()
+
+
+class _BundleList(_Response):
+    embedded: _BundlesEmbedded = Field(alias="_embedded")
+    page: _Page
+
+
+class _ItemEmbedded(_Response):
+    bundles: _BundleList
+
+
+class _ItemFiles(_Response):
+    """An item with its bundles, and the files of each, embedded."""
+
+    type: Literal["item"]
+    uuid: UUID
+    embedded: _ItemEmbedded = Field(alias="_embedded")
+
+    def bundles(self) -> tuple[Bundle, ...]:
+        """Return the bundles and their files, refusing any embedded list cut short.
+
+        An embedded list holds one page of its elements; a longer list would need paging
+        that this listing does not do.
+        """
+        listed = self.embedded.bundles
+        shown = len(listed.embedded.bundles)
+        if shown != listed.page.total_elements:
+            raise RepositoryError(
+                f"the response for item {self.uuid} embeds {shown} of its "
+                f"{listed.page.total_elements} bundles; one embedded page cannot hold them all"
+            )
+        bundles = []
+        for bundle in listed.embedded.bundles:
+            files = bundle.embedded.bitstreams
+            shown = len(files.embedded.bitstreams)
+            if shown != files.page.total_elements:
+                raise RepositoryError(
+                    f"the response for item {self.uuid} embeds {shown} of the "
+                    f"{files.page.total_elements} files of bundle {bundle.name}; one embedded "
+                    "page cannot hold them all"
+                )
+            bitstreams = tuple(file.as_bitstream() for file in files.embedded.bitstreams)
+            bundles.append(Bundle(name=bundle.name, bitstreams=bitstreams))
+        return tuple(bundles)
+
+
 class DSpaceRestRepository:
-    """:class:`ItemRepository` over the REST API of a DSpace 7 repository."""
+    """:class:`ItemRepository` and :class:`BitstreamRepository` over the REST API of a
+    DSpace 7 repository, sharing one pace and one retry policy."""
 
     def __init__(
         self,
@@ -148,7 +279,8 @@ class DSpaceRestRepository:
         clock: Callable[[], float] = time.monotonic,
         sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
-        """Search through ``client``; ``clock`` and ``sleeper`` replace real time in tests.
+        """Send requests through ``client``; ``clock`` and ``sleeper`` replace real time in
+        tests.
 
         Raises:
             ValueError: if ``page_size`` is below 1, ``max_retries`` below 0, or
@@ -164,7 +296,9 @@ class DSpaceRestRepository:
                 f"got {request_interval_seconds:g}"
             )
         self._client = client
+        self._api_url = api_url(base_url)
         self._search_url = search_url(base_url)
+        self._origin = _origin_of(httpx.URL(base_url))
         self._page_size = page_size
         self._request_interval = request_interval_seconds
         self._max_retries = max_retries
@@ -218,6 +352,32 @@ class DSpaceRestRepository:
     def count_items(self, scope: UUID, years: IssuedYears) -> int:
         return self._search(scope, years, page=0, size=1).page.total_elements
 
+    def list_bundles(self, item: UUID) -> tuple[Bundle, ...]:
+        # The slash stays unescaped in the query, as the DSpace web client sends it.
+        url = f"{self._api_url}/{ITEMS_PATH}/{item}?embed={FILES_EMBED}"
+        payload = self._get_json(url)
+        try:
+            listed = _ItemFiles.model_validate(payload)
+        except ValidationError as error:
+            raise RepositoryError(
+                f"unexpected item response from {url}: {_summarize(error)}"
+            ) from error
+        if listed.uuid != item:
+            raise RepositoryError(
+                f"asked for item {item}, but the repository answered with another item "
+                f"({listed.uuid})"
+            )
+        return listed.bundles()
+
+    def download(self, bitstream: UUID, sink: ByteSink) -> None:
+        def stream_into_sink(response: httpx.Response) -> None:
+            sink.restart()
+            for chunk in response.iter_bytes(DOWNLOAD_CHUNK_BYTES):
+                sink.write(chunk)
+
+        url = f"{self._api_url}/{BITSTREAMS_PATH}/{bitstream}/content"
+        self._get(url, None, _CONTENT_HEADERS, stream_into_sink)
+
     def _parameters(self, years: IssuedYears, size: int) -> dict[str, str]:
         """Return the query parameters that every search over ``years`` sends."""
         return {
@@ -230,7 +390,7 @@ class DSpaceRestRepository:
     def _search(self, scope: UUID, years: IssuedYears, *, page: int, size: int) -> _SearchResponse:
         """Fetch one page of the search under ``scope`` and check that it answers the query."""
         parameters = {"scope": str(scope), **self._parameters(years, size), "page": str(page)}
-        payload = self._get_json(parameters)
+        payload = self._get_json(self._search_url, parameters)
         try:
             response = _SearchResponse.model_validate(payload)
         except ValidationError as error:
@@ -261,42 +421,102 @@ class DSpaceRestRepository:
             )
         return response
 
-    def _get_json(self, parameters: dict[str, str]) -> Any:
-        """GET the search endpoint and return the decoded JSON body.
+    def _get_json(self, url: str, parameters: Mapping[str, str] | None = None) -> Any:
+        """GET ``url`` with ``parameters`` and return the decoded JSON body."""
+        body = self._get(url, parameters, _JSON_HEADERS, httpx.Response.read)
+        try:
+            return json.loads(body)
+        except ValueError as error:  # Malformed JSON, or a body that is not UTF-8 text.
+            raise RepositoryError(
+                f"GET {_with_parameters(url, parameters)} returned a body that is not JSON"
+            ) from error
+
+    def _get[T](
+        self,
+        url: str,
+        parameters: Mapping[str, str] | None,
+        headers: Mapping[str, str],
+        consume: Callable[[httpx.Response], T],
+    ) -> T:
+        """GET ``url`` and return what ``consume`` makes of the HTTP 200 response.
 
         A timeout, a network error, HTTP 429 or HTTP 5xx is retried up to ``max_retries``
-        times; any other failure ends the search at once.
+        times, and so is such a failure while ``consume`` reads the body; ``consume`` then
+        runs again on the new response. HTTP 401, 403 and 404 raise
+        :class:`ResourceUnavailableError`. Every other failure, and any other error that
+        ``consume`` raises, ends the request at once.
         """
-        attempts = self._max_retries + 1
-        for attempt in range(attempts):
+        for attempt in range(self._max_retries):
+            try:
+                return self._send(url, parameters, headers, consume)
+            except _RetryableFailure as failure:
+                self._sleep(self._backoff(url, attempt, failure))
+        try:
+            return self._send(url, parameters, headers, consume)
+        except _RetryableFailure as failure:
+            attempts = self._max_retries + 1
+            plural = "s" if attempts > 1 else ""
+            raise RepositoryError(
+                f"GET {url} gave up after {attempts} attempt{plural}: {failure}"
+            ) from failure
+
+    def _send[T](
+        self,
+        url: str,
+        parameters: Mapping[str, str] | None,
+        headers: Mapping[str, str],
+        consume: Callable[[httpx.Response], T],
+    ) -> T:
+        """Send one GET, follow its redirects within the repository, and consume HTTP 200.
+
+        Each redirect is a request of its own, paced and counted like any other. Messages
+        name the requested URL only, never a redirect target, whose path may hold a file name.
+
+        Raises:
+            _RetryableFailure: for HTTP 429 or 5xx, a timeout or a network error.
+        """
+        requested = _with_parameters(url, parameters)
+        target = requested
+        for _ in range(MAX_REDIRECTS + 1):
             self._wait_for_turn()
             self.request_count += 1
-            retry_after: float | None = None
             try:
-                response = self._client.get(
-                    self._search_url, params=parameters, headers=_HEADERS, timeout=REQUEST_TIMEOUT
-                )
+                with self._client.stream(
+                    "GET", target, headers=headers, timeout=REQUEST_TIMEOUT
+                ) as response:
+                    status = response.status_code
+                    if status == httpx.codes.OK:
+                        return consume(response)
+                    if response.has_redirect_location:
+                        target = self._redirect_target(requested, response)
+                        continue
+                    if status in _FINAL_STATUSES:
+                        raise ResourceUnavailableError(
+                            f"GET {requested} returned HTTP {status}", status_code=status
+                        )
+                    if _is_transient(status):
+                        raise _RetryableFailure(f"HTTP {status}", _retry_after_seconds(response))
+                    raise RepositoryError(f"GET {requested} returned HTTP {status}")
             except _TRANSIENT_ERRORS as error:
-                failure = f"{type(error).__name__}: {error}"
+                raise _RetryableFailure(f"{type(error).__name__}: {error}") from error
             except httpx.HTTPError as error:
                 raise RepositoryError(
-                    f"GET {self._search_url} failed: {type(error).__name__}: {error}"
+                    f"GET {requested} failed: {type(error).__name__}: {error}"
                 ) from error
-            else:
-                if response.status_code == httpx.codes.OK:
-                    return _decode(response)
-                if not _is_transient(response.status_code):
-                    raise RepositoryError(
-                        f"GET {response.url} returned HTTP {response.status_code}"
-                    )
-                failure = f"HTTP {response.status_code}"
-                retry_after = _retry_after_seconds(response)
-            if attempt + 1 < attempts:
-                self._sleep(self._backoff(attempt, retry_after, failure))
-        plural = "s" if attempts > 1 else ""
-        raise RepositoryError(
-            f"GET {self._search_url} gave up after {attempts} attempt{plural}: {failure}"
-        )
+        raise RepositoryError(f"GET {requested} was redirected more than {MAX_REDIRECTS} times")
+
+    def _redirect_target(self, requested: httpx.URL, response: httpx.Response) -> httpx.URL:
+        """Return where ``response`` redirects to, refusing any place off the repository."""
+        try:
+            target = response.url.join(response.headers["Location"])
+        except httpx.InvalidURL as error:
+            raise RepositoryError(f"GET {requested} was redirected to an invalid URL") from error
+        if _origin_of(target) != self._origin:
+            raise RepositoryError(
+                f"GET {requested} was redirected to {_describe_origin(_origin_of(target))}, "
+                f"outside {_describe_origin(self._origin)}; requests stay on the repository"
+            )
+        return target
 
     def _wait_for_turn(self) -> None:
         """Sleep until ``request_interval_seconds`` have passed since the last request began."""
@@ -306,18 +526,36 @@ class DSpaceRestRepository:
                 self._sleep(wait)
         self._last_request_at = self._clock()
 
-    def _backoff(self, attempt: int, retry_after: float | None, failure: str) -> float:
+    def _backoff(self, url: str, attempt: int, failure: _RetryableFailure) -> float:
         """Return the wait before retry ``attempt + 1``, at least what ``Retry-After`` asks."""
         wait = BACKOFF_BASE_SECONDS * 2**attempt
-        if retry_after is None:
+        if failure.retry_after is None:
             return wait
-        if retry_after > MAX_RETRY_AFTER_SECONDS:
+        if failure.retry_after > MAX_RETRY_AFTER_SECONDS:
             raise RepositoryError(
-                f"GET {self._search_url} got {failure} with Retry-After {retry_after:g} s, "
-                f"longer than the {MAX_RETRY_AFTER_SECONDS:g} s this harvest waits; "
+                f"GET {url} got {failure} with Retry-After {failure.retry_after:g} s, "
+                f"longer than the {MAX_RETRY_AFTER_SECONDS:g} s this client waits; "
                 "try again later"
             )
-        return max(wait, retry_after)
+        return max(wait, failure.retry_after)
+
+
+def _with_parameters(url: str, parameters: Mapping[str, str] | None) -> httpx.URL:
+    """Return ``url`` with ``parameters`` as its query; without them, keep its own query."""
+    return httpx.URL(url) if parameters is None else httpx.URL(url, params=parameters)
+
+
+_Origin = tuple[str, str, int | None]
+"""Scheme, host and explicit port of a URL; a default port is ``None``."""
+
+
+def _origin_of(url: httpx.URL) -> _Origin:
+    return (url.scheme, url.host, url.port)
+
+
+def _describe_origin(origin: _Origin) -> str:
+    scheme, host, port = origin
+    return f"{scheme}://{host}" if port is None else f"{scheme}://{host}:{port}"
 
 
 def _year_range(years: IssuedYears) -> str:
@@ -335,13 +573,6 @@ def _retry_after_seconds(response: httpx.Response) -> float | None:
     """
     value = response.headers.get("Retry-After", "").strip()
     return float(value) if value.isascii() and value.isdigit() else None
-
-
-def _decode(response: httpx.Response) -> Any:
-    try:
-        return response.json()
-    except ValueError as error:  # Malformed JSON, or a body that is not UTF-8 text.
-        raise RepositoryError(f"GET {response.url} returned a body that is not JSON") from error
 
 
 def _require_same_paging(paging: _Page, first: _Page, scope: UUID) -> None:

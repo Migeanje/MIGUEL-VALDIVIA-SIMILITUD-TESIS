@@ -1,0 +1,217 @@
+{
+  "id": "00000000-0000-4000-8000-00000000a001",
+  "uuid": "00000000-0000-4000-8000-00000000a001",
+  "name": "Título sintético 001",
+  "handle": "123456789/1001",
+  "metadata": {
+    "dc.title": [{"value": "Título sintético 001", "language": "es", "authority": null, "confidence": -1, "place": 0}]
+  },
+  "inArchive": true,
+  "discoverable": true,
+  "withdrawn": false,
+  "lastModified": "2026-01-15T10:00:00.000+00:00",
+  "entityType": null,
+  "type": "item",
+  "_links": {
+    "bundles": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a001/bundles"},
+    "self": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a001"}
+  },
+  "_embedded": {
+    "bundles": {
+      "_embedded": {
+        "bundles": [
+          {
+            "uuid": "00000000-0000-4000-8000-0000000b0001",
+            "name": "ORIGINAL",
+            "handle": null,
+            "metadata": {
+              "dc.title": [{"value": "ORIGINAL", "language": null, "authority": null, "confidence": -1, "place": 0}]
+            },
+            "type": "bundle",
+            "_links": {
+              "bitstreams": {"href": "https://repo.example.edu/server/api/core/bundles/00000000-0000-4000-8000-0000000b0001/bitstreams"},
+              "self": {"href": "https://repo.example.edu/server/api/core/bundles/00000000-0000-4000-8000-0000000b0001"}
+            },
+            "_embedded": {
+              "bitstreams": {
+                "_embedded": {
+                  "bitstreams": [
+                    {
+                      "id": "00000000-0000-4000-8000-0000000f0001",
+                      "uuid": "00000000-0000-4000-8000-0000000f0001",
+                      "name": "70.0001.SYNTHETICNAME.pdf",
+                      "handle": null,
+                      "metadata": {
+                        "dc.description": [{"value": "Texto completo", "language": "es", "authority": null, "confidence": -1, "place": 0}],
+                        "dc.source": [{"value": "70.0001.SYNTHETICNAME.pdf", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                        "dc.title": [{"value": "70.0001.SYNTHETICNAME.pdf", "language": null, "authority": null, "confidence": -1, "place": 0}]
+                      },
+                      "bundleName": "ORIGINAL",
+                      "sizeBytes": 6715889,
+                      "checkSum": {"checkSumAlgorithm": "MD5", "value": "0123456789abcdef0123456789abcdef"},
+                      "sequenceId": 1,
+                      "type": "bitstream",
+                      "_links": {
+                        "content": {"href": "https://repo.example.edu/server/api/core/bitstreams/00000000-0000-4000-8000-0000000f0001/content"},
+                        "format": {"href": "https://repo.example.edu/server/api/core/bitstreams/00000000-0000-4000-8000-0000000f0001/format"},
+                        "self": {"href": "https://repo.example.edu/server/api/core/bitstreams/00000000-0000-4000-8000-0000000f0001"}
+                      }
+                    },
+                    {
+                      "id": "00000000-0000-4000-8000-0000000f0002",
+                      "uuid": "00000000-0000-4000-8000-0000000f0002",
+                      "name": "70.0001.SYNTHETICNAME.RT.pdf",
+                      "handle": null,
+                      "metadata": {
+                        "dc.source": [{"value": "70.0001.SYNTHETICNAME.RT.pdf", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                        "dc.title": [{"value": "70.0001.SYNTHETICNAME.RT.pdf", "language": null, "authority": null, "confidence": -1, "place": 0}]
+                      },
+                      "bundleName": "ORIGINAL",
+                      "sizeBytes": 36793734,
+                      "checkSum": {"checkSumAlgorithm": "MD5", "value": "11111111111111111111111111111111"},
+                      "sequenceId": 2,
+                      "type": "bitstream",
+                      "_links": {
+                        "content": {"href": "https://repo.example.edu/server/api/core/bitstreams/00000000-0000-4000-8000-0000000f0002/content"},
+                        "self": {"href": "https://repo.example.edu/server/api/core/bitstreams/00000000-0000-4000-8000-0000000f0002"}
+                      }
+                    },
+                    {
+                      "id": "00000000-0000-4000-8000-0000000f0003",
+                      "uuid": "00000000-0000-4000-8000-0000000f0003",
+                      "name": "Autorización_70.0001.SYNTHETICNAME.pdf",
+                      "handle": null,
+                      "metadata": {
+                        "dc.source": [{"value": "Autorización_70.0001.SYNTHETICNAME.pdf", "language": null, "authority": null, "confidence": -1, "place": 0}],
+                        "dc.title": [{"value": "Autorización_70.0001.SYNTHETICNAME.pdf", "language": null, "authority": null, "confidence": -1, "place": 0}]
+                      },
+                      "bundleName": "ORIGINAL",
+                      "sizeBytes": 489885,
+                      "checkSum": {"checkSumAlgorithm": "MD5", "value": "22222222222222222222222222222222"},
+                      "sequenceId": 3,
+                      "type": "bitstream",
+                      "_links": {
+                        "content": {"href": "https://repo.example.edu/server/api/core/bitstreams/00000000-0000-4000-8000-0000000f0003/content"},
+                        "self": {"href": "https://repo.example.edu/server/api/core/bitstreams/00000000-0000-4000-8000-0000000f0003"}
+                      }
+                    }
+                  ]
+                },
+                "_links": {
+                  "self": {"href": "https://repo.example.edu/server/api/core/bundles/00000000-0000-4000-8000-0000000b0001/bitstreams"}
+                },
+                "page": {"number": 0, "size": 20, "totalPages": 1, "totalElements": 3}
+              }
+            }
+          },
+          {
+            "uuid": "00000000-0000-4000-8000-0000000b0002",
+            "name": "LICENSE",
+            "handle": null,
+            "metadata": {},
+            "type": "bundle",
+            "_links": {
+              "self": {"href": "https://repo.example.edu/server/api/core/bundles/00000000-0000-4000-8000-0000000b0002"}
+            },
+            "_embedded": {
+              "bitstreams": {
+                "_embedded": {
+                  "bitstreams": [
+                    {
+                      "id": "00000000-0000-4000-8000-0000000f0004",
+                      "uuid": "00000000-0000-4000-8000-0000000f0004",
+                      "name": "license.txt",
+                      "handle": null,
+                      "metadata": {},
+                      "bundleName": "LICENSE",
+                      "sizeBytes": 1748,
+                      "checkSum": {"checkSumAlgorithm": "MD5", "value": "33333333333333333333333333333333"},
+                      "sequenceId": 4,
+                      "type": "bitstream",
+                      "_links": {
+                        "self": {"href": "https://repo.example.edu/server/api/core/bitstreams/00000000-0000-4000-8000-0000000f0004"}
+                      }
+                    }
+                  ]
+                },
+                "page": {"number": 0, "size": 20, "totalPages": 1, "totalElements": 1}
+              }
+            }
+          },
+          {
+            "uuid": "00000000-0000-4000-8000-0000000b0003",
+            "name": "TEXT",
+            "handle": null,
+            "metadata": {},
+            "type": "bundle",
+            "_links": {
+              "self": {"href": "https://repo.example.edu/server/api/core/bundles/00000000-0000-4000-8000-0000000b0003"}
+            },
+            "_embedded": {
+              "bitstreams": {
+                "_embedded": {
+                  "bitstreams": [
+                    {
+                      "id": "00000000-0000-4000-8000-0000000f0005",
+                      "uuid": "00000000-0000-4000-8000-0000000f0005",
+                      "name": "70.0001.SYNTHETICNAME.pdf.txt",
+                      "handle": null,
+                      "metadata": {},
+                      "bundleName": "TEXT",
+                      "sizeBytes": 238794,
+                      "checkSum": {"checkSumAlgorithm": "MD5", "value": "44444444444444444444444444444444"},
+                      "sequenceId": 5,
+                      "type": "bitstream",
+                      "_links": {
+                        "self": {"href": "https://repo.example.edu/server/api/core/bitstreams/00000000-0000-4000-8000-0000000f0005"}
+                      }
+                    }
+                  ]
+                },
+                "page": {"number": 0, "size": 20, "totalPages": 1, "totalElements": 1}
+              }
+            }
+          },
+          {
+            "uuid": "00000000-0000-4000-8000-0000000b0004",
+            "name": "THUMBNAIL",
+            "handle": null,
+            "metadata": {},
+            "type": "bundle",
+            "_links": {
+              "self": {"href": "https://repo.example.edu/server/api/core/bundles/00000000-0000-4000-8000-0000000b0004"}
+            },
+            "_embedded": {
+              "bitstreams": {
+                "_embedded": {
+                  "bitstreams": [
+                    {
+                      "id": "00000000-0000-4000-8000-0000000f0006",
+                      "uuid": "00000000-0000-4000-8000-0000000f0006",
+                      "name": "70.0001.SYNTHETICNAME.pdf.jpg",
+                      "handle": null,
+                      "metadata": {},
+                      "bundleName": "THUMBNAIL",
+                      "sizeBytes": 4580,
+                      "checkSum": {"checkSumAlgorithm": "MD5", "value": "55555555555555555555555555555555"},
+                      "sequenceId": 6,
+                      "type": "bitstream",
+                      "_links": {
+                        "self": {"href": "https://repo.example.edu/server/api/core/bitstreams/00000000-0000-4000-8000-0000000f0006"}
+                      }
+                    }
+                  ]
+                },
+                "page": {"number": 0, "size": 20, "totalPages": 1, "totalElements": 1}
+              }
+            }
+          }
+        ]
+      },
+      "_links": {
+        "self": {"href": "https://repo.example.edu/server/api/core/items/00000000-0000-4000-8000-00000000a001/bundles"}
+      },
+      "page": {"number": 0, "size": 20, "totalPages": 1, "totalElements": 4}
+    }
+  }
+}
