@@ -75,6 +75,8 @@ Institutional integrity tools such as Turnitin detect textual overlap. They do n
 | D19 | Code architecture is hexagonal-lite with a screaming layout. Notebooks only orchestrate | The experiment requires swappable components |
 | D20 | Project repository: this repo, the single official repo for the whole system (remote `origin` on GitHub). No push without a user decision | Confirmed by the user 2026-10-02. One repo is enough; the user creates any extra repo on request |
 | D21 | The earlier `TesisSimilitud` repo (Feb 2025) is ignored entirely | The user says it was only a test |
+| D24 | Deduplicate exact duplicate records before anything else | T07 found 2 pairs of `#tesis` records with identical title, abstract, author, advisor and date under different item uuids, so there are 744 distinct theses, not 746. T12 keeps one canonical record per pair (rule fixed in T12) and logs the other as `duplicate_of`. Duplicates never enter the labeled pairs (T20) or the redundancy evaluation, where they would be trivial positives |
+| D23 | No backup copy of the raw snapshot; U7 is dropped | User decision 2026-10-03, risk R8 accepted. Partial mitigation: the metadata and PDF manifests record item uuids, bitstream uuids and sha256, so a later re-harvest can be diffed and documented |
 | D22 | Always construct BERTopic with `language="spanish"` (never the default) | With `embedding_model=None`, BERTopic 0.17.4 keeps `language="english"` and strips every character outside `[A-Za-z0-9 ]` before c-TF-IDF, so `fragmentación` becomes `fragmentacin`. Found and proven by the T02 smoke test |
 
 D15, labeled set, in detail:
@@ -108,7 +110,7 @@ D15, labeled set, in detail:
 | U4 | A career-affinity matrix agreed with advisors BEFORE seeing any results | Before T24 |
 | U5 | Review of the OpenAlex subfield mapping per program | Before T25 |
 | U6 | Expert panel (6–8 people), V de Aiken judges, consent forms | T30 (M6) |
-| U7 | A backup location for the raw snapshot (external drive or personal cloud; the data is public) | T06 (M2) |
+| U7 | ~~A backup location for the raw snapshot~~. Dropped by the user on 2026-10-03 (D23) | — |
 | U8 | Authorization for the remote operations: UCSM harvesting (T04/T05) and the OpenAlex topics download (T25) | At each task start |
 
 ## Architecture and data layout
@@ -350,10 +352,32 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
   - Size: about 3,400 authored lines, about 1,760 of them tests and fixtures. Commit slices:
     - A: port, adapter, fixture, `test_dspace`.
     - B: selection rules, manifest, use case, CLI, their tests, README, plan doc.
-- [ ] **T06** Freeze the snapshot, back it up (U7), and write the data card (counts by program and year, embargo list). The card must flag records whose `dc.date.issued` lies after the snapshot date. As of 2026-10-02 some items carry future dates (2026-12-04, 2026-12-01). The temporal split (T27) must handle them explicitly.
+- [ ] **T05a** Downloader follow-ups from the T05 reviews (non-blocking):
+  - Classify deterministic integrity failures (unsupported checksum algorithm, a stale listing producing a size or checksum mismatch) so they neither retry forever nor trip the stop after 3 consecutive failures.
+  - Add tests for refusing a PDF manifest that belongs to another snapshot.
+  - Add tests for keeping a matching on-disk file while a previous manifest entry exists, whether it was an error or had a different bitstream.
+  - Route D. Risk M.
+- [ ] **T06** Freeze the snapshot and write the data card (no backup, per D23) (counts by program and year, embargo list). The card must flag records whose `dc.date.issued` lies after the snapshot date. As of 2026-10-02 some items carry future dates (2026-12-04, 2026-12-01). The temporal split (T27) must handle them explicitly.
   - Route I. Risk P.
-- [ ] **T07** EDA notebook: program/year distribution, abstract token lengths, keywords, title suffix patterns.
+- [x] **T07** EDA notebook: program/year distribution, abstract token lengths, keywords, title suffix patterns.
   - Route D. Risk P.
+  - Evidence (2026-10-03):
+    - `corpus/profile.py` holds the pure, tested profile functions (82 tests). `experiments/eda_metadata.py` writes aggregates only to `results/eda/20261002T224412Z/` (`metadata_profile.json`, `summary.md`, 4 figures).
+    - RED → GREEN. 27 throwaway mutants were all caught.
+    - Checks: `ruff` clean. `pytest`: 436 passed, 1 skipped (independent re-run).
+    - Privacy: the writer's independent scan of every output for titles, abstracts, sentences, names and ORCIDs found 0 hits. A parent spot check of 60 random titles found 0 hits.
+  - Key numbers:
+    - Abstract tokens (MiniLM, special tokens included): median 366.5, P95 625.5, max 1,157. 745 of 746 (99.9%) exceed 128. Sentence packing needs a median of 4 chunks per abstract, max 13.
+    - Title tokens: median 35, max 85, none above 128. 397 of 746 titles (53.2%) end with a place and/or year; Arequipa appears in 263. This supports D10.
+    - Keywords: median 3 per thesis, 1,719 distinct, 84% used by a single thesis. They are too sparse to act as a topic signal.
+    - Programs: industrial 340 (45.6%), mecanica 192, minas 103, sistemas 65, electronica 46. 2025 is the busiest year (162). Minas grows from 3 (2021) to 34 (2025).
+    - Rights: 732 open, 8 embargoed (7 past end date), 6 restricted. 2 theses are future-dated.
+  - Findings that change later tasks:
+    - 2 exact-duplicate pairs, so there are 744 distinct theses (D24).
+    - 716 of 746 abstracts are hard-wrapped, with 85.7% of breaks in mid-sentence, so T11 must unwrap them.
+    - 44 advisor ORCIDs map to several name variants, so advisors must be identified by ORCID (T08/T12).
+    - The mpnet tokenizer is not cached yet, so D09's check under both tokenizers is pending (T13).
+  - Commit: pending; the user commits in GitHub Desktop.
 
 ### P2 — Data preparation (M2–M3)
 - [ ] **T08** Ficha schema (pydantic) and its parquet adapter. It holds the Anexo B fields plus: handle URL, snapshot id, keywords, OCDE code, objectives status, section source, include/exclude with reason, file hash.
@@ -467,7 +491,7 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
 | R5 | Industrial dominates the topics (46% of the corpus) | Report per program and normalize gap rules per program |
 | R6 | Annotators or experts are unavailable | Request them now (U3, U6) |
 | R7 | Cross-lingual matching against OpenAlex is weak | Use nearest-topic assignment and manually check a sample |
-| R8 | The snapshot is lost | Back it up (U7) |
+| R8 | The snapshot is lost | Accepted by the user, with no backup (D23). The manifests' uuids and sha256 allow a documented re-harvest |
 
 ## Delivery strategy
 
@@ -535,6 +559,12 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
 
 - 2026-10-02: T05 downloader implemented and verified on a 10-PDF sample. The full download is running in the background, and the commits were handed to the user.
 
+- 2026-10-03: The user committed T05 as `54173b8`. Its tree `dd756e9…` is identical to the reviewed one. The post-commit review was approved, so the reviewed boundary is now `54173b8`. T05a was added from the review findings.
+
+- 2026-10-03: The user dropped the snapshot backup (D23, U7 removed). T07 was started ahead of T06, because the EDA needs only the metadata while the PDF download runs. T06 follows when the download ends, since the data card needs the PDF counts. T07 route: D. Trigger: new profiling module, tests and an experiment script.
+
+- 2026-10-03: T07 implemented and verified. D24 (deduplication) was added. Notes for T08, T11, T12 and T13 are recorded under T07. The commit was handed to the user. The T05 download was at 434 of 746 (6.57 GB), with 1 `no_thesis_file`.
+
 ## Next step
 
-Finish the T05 full download, then record the per-status counts. Next is T06: freeze, back up (U7 location still needed from the user), and write the data card. T04a and T02a are pending follow-ups.
+Finish the T05 full download (relaunch if the background time limit cuts it), then T06 (data card). Next is T06: freeze, back up (U7 location still needed from the user), and write the data card. T04a and T02a are pending follow-ups.

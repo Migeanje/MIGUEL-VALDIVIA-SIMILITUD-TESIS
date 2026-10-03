@@ -130,6 +130,36 @@ It is as polite as the harvest: one request at a time, at least
 follows redirects only within the repository's host. It sends about two requests per thesis:
 one to list the item's files and one to download the thesis.
 
+## Metadata profile
+
+Profile the metadata of a snapshot, offline:
+
+```sh
+uv run python experiments/eda_metadata.py
+```
+
+The script profiles the snapshot harvested last (`--snapshot-id` picks another one) and writes
+into `results/eda/<snapshot_id>/`:
+
+- `metadata_profile.json`: the whole profile, with its provenance (snapshot and configuration
+  checksums, git commit, tokenizer).
+- `summary.md`: tables and observations for chunking, title cleaning and topic modeling.
+- Four figures: theses per program and year, abstract and title lengths in tokens, and the most
+  frequent keywords.
+
+How it works:
+
+- **Inputs.** It reads only `metadata.jsonl` and `manifest.json`, and refuses a snapshot whose
+  metadata no longer matches its manifest. The profiling logic lives in
+  `src/thematic_redundancy/corpus/profile.py`.
+- **Tokens.** It counts tokens, special tokens included, with the tokenizer of
+  `paraphrase-multilingual-MiniLM-L12-v2` from the local Hugging Face cache. The
+  [smoke test](#smoke-test) fetches that model once.
+- **Aggregates only.** No title, abstract or person's name appears in the outputs. Before
+  writing, the script searches every output for each title, abstract, abstract sentence,
+  author, advisor and juror name, and ORCID of the snapshot. A single hit stops it with nothing
+  written.
+
 ## Checks
 
 ```sh
@@ -165,6 +195,8 @@ work offline with `HF_HUB_OFFLINE=1`.
   `renati.advisor.dni`) are dropped at ingestion, before anything is written. The snapshot
   manifest lists the dropped keys.
 - Author names are never shown in the app or in reports, and user queries are never persisted.
+- `results/` holds aggregates only. The metadata profile refuses to write an output that holds a
+  title, an abstract, a person's name or an ORCID from the snapshot.
 
 ## Plan
 

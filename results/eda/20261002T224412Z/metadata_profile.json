@@ -1,0 +1,916 @@
+{
+  "provenance": {
+    "script": "experiments/eda_metadata.py",
+    "snapshot_id": "20261002T224412Z",
+    "harvested_at": "2026-10-02T22:44:12Z",
+    "metadata_sha256": "d88839012df3e6f3bd7ee08f90c8e1f3b6588cf75386127dde52f429b4d9d932",
+    "config_sha256": "e6de0c5a5ab8d185c337fa37ab71bcfb3ac9e892a87e5f9b419649cde0045139",
+    "git_commit": "54173b8c57d3c2b25be71ff718b7cfb8aa17ebc4",
+    "git_uncommitted_changes": true,
+    "tokenizer": {
+      "model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+      "class": "TokenizersBackend",
+      "vocabulary_size": 250002,
+      "special_tokens_per_sequence": 2
+    }
+  },
+  "profile": {
+    "snapshot_id": "20261002T224412Z",
+    "snapshot_date": "2026-10-02",
+    "thesis_type": "tesis",
+    "items": 766,
+    "theses": 746,
+    "calendar": {
+      "by_program": {
+        "sistemas": 65,
+        "industrial": 340,
+        "electronica": 46,
+        "mecanica": 192,
+        "minas": 103
+      },
+      "by_year": {
+        "2021": 139,
+        "2022": 116,
+        "2023": 105,
+        "2024": 98,
+        "2025": 162,
+        "2026": 126
+      },
+      "by_program_and_year": {
+        "sistemas": {
+          "2021": 19,
+          "2022": 18,
+          "2023": 5,
+          "2024": 9,
+          "2025": 6,
+          "2026": 8
+        },
+        "industrial": {
+          "2021": 64,
+          "2022": 39,
+          "2023": 48,
+          "2024": 44,
+          "2025": 90,
+          "2026": 55
+        },
+        "electronica": {
+          "2021": 16,
+          "2022": 8,
+          "2023": 3,
+          "2024": 5,
+          "2025": 4,
+          "2026": 10
+        },
+        "mecanica": {
+          "2021": 37,
+          "2022": 37,
+          "2023": 41,
+          "2024": 28,
+          "2025": 28,
+          "2026": 21
+        },
+        "minas": {
+          "2021": 3,
+          "2022": 14,
+          "2023": 8,
+          "2024": 12,
+          "2025": 34,
+          "2026": 32
+        }
+      },
+      "future_dated": 2,
+      "unparsed_dates": 0,
+      "earliest": "2021-01-06",
+      "latest": "2026-12-04"
+    },
+    "abstracts": {
+      "present": 746,
+      "missing": 0,
+      "lengths": {
+        "texts": 746,
+        "characters": {
+          "count": 746,
+          "mean": 1813.042,
+          "min": 661.0,
+          "p25": 1483.0,
+          "median": 1718.0,
+          "p75": 1993.25,
+          "p95": 2884.75,
+          "max": 5429.0
+        },
+        "words": {
+          "count": 746,
+          "mean": 281.511,
+          "min": 91.0,
+          "p25": 227.25,
+          "median": 266.0,
+          "p75": 313.0,
+          "p95": 449.75,
+          "max": 860.0
+        },
+        "tokens": {
+          "count": 746,
+          "mean": 390.702,
+          "min": 126.0,
+          "p25": 313.0,
+          "median": 366.5,
+          "p75": 436.0,
+          "p95": 625.5,
+          "max": 1157.0
+        },
+        "token_histogram": {
+          "bin_width": 16,
+          "counts": {
+            "112": 1,
+            "128": 1,
+            "144": 1,
+            "160": 3,
+            "176": 7,
+            "192": 6,
+            "208": 5,
+            "224": 10,
+            "240": 24,
+            "256": 28,
+            "272": 35,
+            "288": 35,
+            "304": 46,
+            "320": 50,
+            "336": 49,
+            "352": 76,
+            "368": 60,
+            "384": 37,
+            "400": 43,
+            "416": 35,
+            "432": 29,
+            "448": 17,
+            "464": 14,
+            "480": 17,
+            "496": 19,
+            "512": 14,
+            "528": 11,
+            "544": 10,
+            "560": 8,
+            "576": 5,
+            "592": 8,
+            "608": 4,
+            "624": 8,
+            "640": 4,
+            "656": 3,
+            "672": 0,
+            "688": 5,
+            "704": 1,
+            "720": 2,
+            "736": 2,
+            "752": 1,
+            "768": 0,
+            "784": 0,
+            "800": 0,
+            "816": 2,
+            "832": 0,
+            "848": 2,
+            "864": 1,
+            "880": 1,
+            "896": 2,
+            "912": 0,
+            "928": 0,
+            "944": 0,
+            "960": 2,
+            "976": 0,
+            "992": 0,
+            "1008": 0,
+            "1024": 0,
+            "1040": 0,
+            "1056": 0,
+            "1072": 0,
+            "1088": 0,
+            "1104": 0,
+            "1120": 1,
+            "1136": 0,
+            "1152": 1
+          }
+        },
+        "token_limit": 128,
+        "above_limit": 745,
+        "share_above_limit": 0.9987
+      },
+      "chunks": {
+        "token_limit": 128,
+        "special_tokens": 2,
+        "sentence_aligned": {
+          "1": 1,
+          "2": 28,
+          "3": 204,
+          "4": 293,
+          "5": 130,
+          "6": 57,
+          "7": 12,
+          "8": 10,
+          "9": 3,
+          "10": 4,
+          "11": 3,
+          "13": 1
+        },
+        "sentence_aligned_stats": {
+          "count": 746,
+          "mean": 4.169,
+          "min": 1.0,
+          "p25": 3.0,
+          "median": 4.0,
+          "p75": 5.0,
+          "p95": 6.0,
+          "max": 13.0
+        },
+        "lower_bound": {
+          "1": 1,
+          "2": 53,
+          "3": 371,
+          "4": 218,
+          "5": 68,
+          "6": 22,
+          "7": 6,
+          "8": 5,
+          "9": 1,
+          "10": 1
+        },
+        "sentence_sums_differing": 0
+      },
+      "line_breaks": {
+        "texts_with_breaks": 716,
+        "breaks": 13214,
+        "inside_sentence": 11327,
+        "after_hyphen": 14
+      },
+      "with_replacement_character": 1,
+      "with_keywords_section": 2
+    },
+    "titles": {
+      "present": 746,
+      "missing": 0,
+      "lengths": {
+        "texts": 746,
+        "characters": {
+          "count": 746,
+          "mean": 150.424,
+          "min": 47.0,
+          "p25": 127.0,
+          "median": 147.0,
+          "p75": 171.0,
+          "p95": 216.75,
+          "max": 347.0
+        },
+        "words": {
+          "count": 746,
+          "mean": 23.349,
+          "min": 7.0,
+          "p25": 19.0,
+          "median": 23.0,
+          "p75": 27.0,
+          "p95": 34.0,
+          "max": 56.0
+        },
+        "tokens": {
+          "count": 746,
+          "mean": 35.966,
+          "min": 13.0,
+          "p25": 30.0,
+          "median": 35.0,
+          "p75": 41.0,
+          "p95": 52.0,
+          "max": 85.0
+        },
+        "token_histogram": {
+          "bin_width": 8,
+          "counts": {
+            "8": 4,
+            "16": 44,
+            "24": 189,
+            "32": 272,
+            "40": 156,
+            "48": 59,
+            "56": 18,
+            "64": 2,
+            "72": 1,
+            "80": 1
+          }
+        },
+        "token_limit": 128,
+        "above_limit": 0,
+        "share_above_limit": 0.0
+      },
+      "suffix_patterns": {
+        "place_and_year": 216,
+        "year_after_separator": 15,
+        "year_after_temporal_word": 16,
+        "year_after_other_word": 8,
+        "place_after_separator": 24,
+        "place_after_word": 118,
+        "none": 349
+      },
+      "with_suffix": 397,
+      "with_year_suffix": 255,
+      "with_place_suffix": 358,
+      "share_with_suffix": 0.5322,
+      "places": {
+        "Arequipa": 263,
+        "Perú": 56,
+        "Ilo": 6,
+        "Moquegua": 6,
+        "Puno": 6,
+        "Cusco": 5,
+        "Huancavelica": 5,
+        "Lima": 5,
+        "Uchumayo": 4,
+        "Apurímac": 3,
+        "Cajamarca": 3,
+        "Camaná": 3,
+        "Majes": 3,
+        "Matarani": 3,
+        "Juliaca": 2,
+        "Mollendo": 2,
+        "Tacna": 2,
+        "Yanahuara": 2,
+        "Ayacucho": 1,
+        "Caravelí": 1,
+        "Castilla": 1,
+        "Cayma": 1,
+        "Ica": 1,
+        "La Joya": 1,
+        "Mariano Melgar": 1,
+        "Pasco": 1,
+        "Paucarpata": 1,
+        "Sachaca": 1,
+        "Tiabaya": 1
+      }
+    },
+    "keywords": {
+      "values": 2435,
+      "per_thesis": {
+        "count": 746,
+        "mean": 3.26,
+        "min": 1.0,
+        "p25": 3.0,
+        "median": 3.0,
+        "p75": 4.0,
+        "p95": 5.0,
+        "max": 11.0
+      },
+      "per_thesis_counts": {
+        "1": 8,
+        "2": 95,
+        "3": 454,
+        "4": 116,
+        "5": 50,
+        "6": 14,
+        "7": 4,
+        "8": 2,
+        "9": 1,
+        "10": 1,
+        "11": 1
+      },
+      "theses_without_keywords": 0,
+      "distinct": 1719,
+      "used_by_one_thesis": 1444,
+      "top": [
+        {
+          "keyword": "productividad",
+          "theses": 58
+        },
+        {
+          "keyword": "optimización",
+          "theses": 33
+        },
+        {
+          "keyword": "lean manufacturing",
+          "theses": 19
+        },
+        {
+          "keyword": "mejora continua",
+          "theses": 18
+        },
+        {
+          "keyword": "voladura",
+          "theses": 13
+        },
+        {
+          "keyword": "gestión por procesos",
+          "theses": 12
+        },
+        {
+          "keyword": "producción",
+          "theses": 12
+        },
+        {
+          "keyword": "confiabilidad",
+          "theses": 11
+        },
+        {
+          "keyword": "lean service",
+          "theses": 11
+        },
+        {
+          "keyword": "mantenimiento",
+          "theses": 11
+        },
+        {
+          "keyword": "ergonomía",
+          "theses": 10
+        },
+        {
+          "keyword": "mejora de procesos",
+          "theses": 10
+        },
+        {
+          "keyword": "procesos",
+          "theses": 10
+        },
+        {
+          "keyword": "disponibilidad",
+          "theses": 9
+        },
+        {
+          "keyword": "eficiencia",
+          "theses": 9
+        },
+        {
+          "keyword": "fragmentación",
+          "theses": 9
+        },
+        {
+          "keyword": "redes neuronales",
+          "theses": 9
+        },
+        {
+          "keyword": "automatización",
+          "theses": 8
+        },
+        {
+          "keyword": "gestión",
+          "theses": 8
+        },
+        {
+          "keyword": "rendimiento",
+          "theses": 8
+        },
+        {
+          "keyword": "costos",
+          "theses": 7
+        },
+        {
+          "keyword": "inteligencia artificial",
+          "theses": 7
+        },
+        {
+          "keyword": "inventario",
+          "theses": 7
+        },
+        {
+          "keyword": "lean office",
+          "theses": 7
+        },
+        {
+          "keyword": "mantenimiento preventivo",
+          "theses": 7
+        },
+        {
+          "keyword": "proyecto de inversión",
+          "theses": 7
+        },
+        {
+          "keyword": "calidad de servicio",
+          "theses": 6
+        },
+        {
+          "keyword": "estandarización",
+          "theses": 6
+        },
+        {
+          "keyword": "machine learning",
+          "theses": 6
+        },
+        {
+          "keyword": "perforación",
+          "theses": 6
+        }
+      ],
+      "top_by_program": {
+        "sistemas": [
+          {
+            "keyword": "redes neuronales",
+            "theses": 4
+          },
+          {
+            "keyword": "scrum",
+            "theses": 4
+          },
+          {
+            "keyword": "sistema web",
+            "theses": 4
+          },
+          {
+            "keyword": "inteligencia artificial",
+            "theses": 3
+          },
+          {
+            "keyword": "aplicativo móvil",
+            "theses": 2
+          },
+          {
+            "keyword": "aprendizaje automático",
+            "theses": 2
+          },
+          {
+            "keyword": "machine learning",
+            "theses": 2
+          },
+          {
+            "keyword": "python",
+            "theses": 2
+          },
+          {
+            "keyword": "realidad virtual",
+            "theses": 2
+          },
+          {
+            "keyword": "redes neuronales convolucionales",
+            "theses": 2
+          }
+        ],
+        "industrial": [
+          {
+            "keyword": "productividad",
+            "theses": 47
+          },
+          {
+            "keyword": "lean manufacturing",
+            "theses": 19
+          },
+          {
+            "keyword": "mejora continua",
+            "theses": 18
+          },
+          {
+            "keyword": "optimización",
+            "theses": 16
+          },
+          {
+            "keyword": "gestión por procesos",
+            "theses": 11
+          },
+          {
+            "keyword": "lean service",
+            "theses": 11
+          },
+          {
+            "keyword": "mejora de procesos",
+            "theses": 10
+          },
+          {
+            "keyword": "ergonomía",
+            "theses": 9
+          },
+          {
+            "keyword": "procesos",
+            "theses": 9
+          },
+          {
+            "keyword": "inventario",
+            "theses": 7
+          }
+        ],
+        "electronica": [
+          {
+            "keyword": "automatización",
+            "theses": 2
+          },
+          {
+            "keyword": "control difuso",
+            "theses": 2
+          },
+          {
+            "keyword": "electrónica",
+            "theses": 2
+          },
+          {
+            "keyword": "iot",
+            "theses": 2
+          },
+          {
+            "keyword": "microcontrolador",
+            "theses": 2
+          },
+          {
+            "keyword": "red inalámbrica",
+            "theses": 2
+          },
+          {
+            "keyword": "sistema de riego",
+            "theses": 2
+          },
+          {
+            "keyword": "visión artificial",
+            "theses": 2
+          },
+          {
+            "keyword": "acústica",
+            "theses": 1
+          },
+          {
+            "keyword": "adquisición de datos",
+            "theses": 1
+          }
+        ],
+        "mecanica": [
+          {
+            "keyword": "confiabilidad",
+            "theses": 7
+          },
+          {
+            "keyword": "disponibilidad",
+            "theses": 5
+          },
+          {
+            "keyword": "energía solar",
+            "theses": 5
+          },
+          {
+            "keyword": "eficiencia energética",
+            "theses": 4
+          },
+          {
+            "keyword": "mantenimiento",
+            "theses": 4
+          },
+          {
+            "keyword": "sistema fotovoltaico",
+            "theses": 4
+          },
+          {
+            "keyword": "visión artificial",
+            "theses": 4
+          },
+          {
+            "keyword": "automatización",
+            "theses": 3
+          },
+          {
+            "keyword": "caldera",
+            "theses": 3
+          },
+          {
+            "keyword": "eficiencia",
+            "theses": 3
+          }
+        ],
+        "minas": [
+          {
+            "keyword": "optimización",
+            "theses": 14
+          },
+          {
+            "keyword": "voladura",
+            "theses": 12
+          },
+          {
+            "keyword": "fragmentación",
+            "theses": 9
+          },
+          {
+            "keyword": "productividad",
+            "theses": 9
+          },
+          {
+            "keyword": "perforación",
+            "theses": 6
+          },
+          {
+            "keyword": "rendimiento",
+            "theses": 5
+          },
+          {
+            "keyword": "costos",
+            "theses": 4
+          },
+          {
+            "keyword": "malla de perforación",
+            "theses": 4
+          },
+          {
+            "keyword": "minería",
+            "theses": 4
+          },
+          {
+            "keyword": "seguridad minera",
+            "theses": 4
+          }
+        ]
+      },
+      "values_with_comma": 11,
+      "values_with_trailing_period": 94
+    },
+    "ocde": {
+      "theses_with_code": 746,
+      "theses_without_code": 0,
+      "distinct": 42,
+      "by_code": {
+        "2.11.04": 325,
+        "2.07.05": 77,
+        "2.03.00": 71,
+        "2.02.00": 51,
+        "2.02.04": 49,
+        "2.03.01": 35,
+        "2.00.00": 29,
+        "2.02.03": 26,
+        "2.02.01": 15,
+        "2.02.02": 10,
+        "2.11.00": 6,
+        "1.02.00": 5,
+        "2.04.02": 5,
+        "1.02.01": 4,
+        "2.03.03": 3,
+        "2.07.02": 3,
+        "2.11.02": 3,
+        "2.01.03": 2,
+        "2.07.00": 2,
+        "2.08.02": 2,
+        "2.10.01": 2,
+        "1.00.00": 1,
+        "1.01.01": 1,
+        "1.04.05": 1,
+        "1.05.00": 1,
+        "2.01.01": 1,
+        "2.01.05": 1,
+        "2.02.05": 1,
+        "2.03.02": 1,
+        "2.05.07": 1,
+        "2.06.01": 1,
+        "2.06.02": 1,
+        "2.07.03": 1,
+        "2.10.00": 1,
+        "3.03.00": 1,
+        "3.03.10": 1,
+        "5.00.00": 1,
+        "5.02.00": 1,
+        "5.02.04": 1,
+        "5.06.02": 1,
+        "5.08.00": 1,
+        "6.04.09": 1
+      },
+      "by_field": {
+        "2 Engineering and technology": 725,
+        "1 Natural sciences": 13,
+        "5 Social sciences": 5,
+        "3 Medical and health sciences": 2,
+        "6 Humanities and the arts": 1
+      },
+      "by_program": {
+        "sistemas": {
+          "2.02.04": 49,
+          "2.00.00": 7,
+          "1.02.00": 5,
+          "1.02.01": 3,
+          "2.02.03": 1
+        },
+        "industrial": {
+          "2.11.04": 324,
+          "2.04.02": 3,
+          "2.00.00": 2,
+          "1.05.00": 1,
+          "2.02.03": 1,
+          "2.07.05": 1,
+          "2.11.00": 1,
+          "2.11.02": 1,
+          "3.03.00": 1,
+          "3.03.10": 1,
+          "5.02.00": 1,
+          "5.02.04": 1,
+          "5.06.02": 1,
+          "5.08.00": 1
+        },
+        "electronica": {
+          "2.02.00": 25,
+          "2.02.01": 8,
+          "2.02.02": 5,
+          "2.02.03": 5,
+          "1.01.01": 1,
+          "2.02.05": 1,
+          "2.06.01": 1
+        },
+        "mecanica": {
+          "2.03.00": 71,
+          "2.03.01": 35,
+          "2.02.00": 26,
+          "2.02.03": 18,
+          "2.00.00": 13,
+          "2.02.01": 7,
+          "2.02.02": 5,
+          "2.03.03": 3,
+          "2.10.01": 2,
+          "2.11.00": 2,
+          "1.00.00": 1,
+          "2.01.01": 1,
+          "2.01.03": 1,
+          "2.01.05": 1,
+          "2.03.02": 1,
+          "2.06.02": 1,
+          "2.10.00": 1,
+          "2.11.02": 1,
+          "5.00.00": 1,
+          "6.04.09": 1
+        },
+        "minas": {
+          "2.07.05": 76,
+          "2.00.00": 7,
+          "2.07.02": 3,
+          "2.11.00": 3,
+          "2.04.02": 2,
+          "2.07.00": 2,
+          "2.08.02": 2,
+          "1.02.01": 1,
+          "1.04.05": 1,
+          "2.01.03": 1,
+          "2.02.03": 1,
+          "2.05.07": 1,
+          "2.07.03": 1,
+          "2.11.02": 1,
+          "2.11.04": 1
+        }
+      }
+    },
+    "languages": {
+      "spa": 746
+    },
+    "advisors": {
+      "theses_with_advisor": 746,
+      "theses_without_advisor": 0,
+      "theses_with_several_advisors": 0,
+      "distinct_advisors": 169,
+      "theses_per_advisor": {
+        "count": 169,
+        "mean": 4.414,
+        "min": 1.0,
+        "p25": 1.0,
+        "median": 2.0,
+        "p75": 6.0,
+        "p95": 14.0,
+        "max": 24.0
+      },
+      "advisors_by_theses": {
+        "1": 61,
+        "2-5": 63,
+        "6-10": 26,
+        "11-20": 15,
+        "21+": 4
+      },
+      "share_of_theses_with_top_advisors": 0.2547,
+      "theses_with_advisor_orcid": 714,
+      "distinct_advisor_orcids": 128,
+      "orcids_with_several_names": 44
+    },
+    "rights": {
+      "by_access": {
+        "open": 732,
+        "embargoed": 8,
+        "restricted": 6,
+        "metadata_only": 0,
+        "other": 0,
+        "(none)": 0
+      },
+      "embargoed_end_passed": 7,
+      "embargoed_end_pending": 1,
+      "embargoed_end_missing": 0,
+      "not_embargoed_with_end": 1
+    },
+    "duplicates": {
+      "groups": 2,
+      "records": 4,
+      "extra_records": 2
+    },
+    "other_items": {
+      "items": 20,
+      "by_type": {
+        "trabajoDeSuficienciaProfesional": 15,
+        "Trabajo de Suficiencia Profesional": 1,
+        "TrabajodeSuficienciaProfesional": 1,
+        "trabajo de suficiencia profesional": 1,
+        "trabajoAcademico": 1,
+        "trabajodesuficienciaprofesional": 1
+      },
+      "by_program": {
+        "sistemas": 2,
+        "industrial": 9,
+        "electronica": 9,
+        "mecanica": 0,
+        "minas": 0
+      },
+      "by_year": {
+        "2021": 4,
+        "2022": 5,
+        "2023": 7,
+        "2024": 2,
+        "2025": 1,
+        "2026": 1
+      },
+      "future_dated": 0
+    }
+  }
+}
