@@ -16,13 +16,28 @@ import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import date
-from typing import NamedTuple
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 from thematic_redundancy.corpus.snapshot import SnapshotRecord
 from thematic_redundancy.corpus.thesis_files import access_restriction, is_thesis
+from thematic_redundancy.preprocessing.light_cleaner import normalize_text
+from thematic_redundancy.preprocessing.title_suffix import (
+    NO_SUFFIX,
+    PLACE_SUFFIX_PATTERNS,
+    TITLE_SUFFIX_PATTERNS,
+    YEAR_SUFFIX_PATTERNS,
+    classify_title_suffix,
+)
+
+# The title suffix patterns and the place list live in the preprocessing package, which cuts
+# the suffixes that this profile counts. These names stay importable from here as well.
+from thematic_redundancy.preprocessing.title_suffix import PLACE_NAMES as PLACE_NAMES
+from thematic_redundancy.preprocessing.title_suffix import TEMPORAL_WORDS as TEMPORAL_WORDS
+from thematic_redundancy.preprocessing.title_suffix import TRAILING_PLACE as TRAILING_PLACE
+from thematic_redundancy.preprocessing.title_suffix import TRAILING_YEAR as TRAILING_YEAR
+from thematic_redundancy.preprocessing.title_suffix import TitleSuffix as TitleSuffix
 
 TYPE_KEY = "renati.type"
 ISSUED_KEY = "dc.date.issued"
@@ -140,13 +155,6 @@ class AbstractProfile(_ProfileModel):
     """Abstracts holding U+FFFD, the mark of a character lost to a wrong encoding."""
     with_keywords_section: int
     """Abstracts that mention ``Palabras clave``, so they likely embed their keywords."""
-
-
-class TitleSuffix(NamedTuple):
-    """Pattern of a title's ending, and the places in it, spelled as :data:`PLACE_NAMES`."""
-
-    pattern: str
-    places: tuple[str, ...]
 
 
 class TitleProfile(_ProfileModel):
@@ -343,14 +351,6 @@ def profile_metadata(
 
 
 # Text and statistics helpers
-
-
-def normalize_text(text: str) -> str:
-    """Return ``text`` in NFC, with every run of whitespace, line breaks included, as one space.
-
-    Accents and ñ are kept: NFC composes them, it never removes them.
-    """
-    return " ".join(unicodedata.normalize("NFC", text).split())
 
 
 def describe(values: Iterable[float]) -> Distribution | None:
@@ -651,210 +651,6 @@ def _length_profile(
 
 
 # Titles
-
-TITLE_SUFFIX_PATTERNS = (
-    "place_and_year",
-    "year_after_separator",
-    "year_after_temporal_word",
-    "year_after_other_word",
-    "place_after_separator",
-    "place_after_word",
-)
-"""How a title may end with a place, a year or both; see :func:`classify_title_suffix`."""
-NO_SUFFIX = "none"
-YEAR_SUFFIX_PATTERNS = frozenset(TITLE_SUFFIX_PATTERNS[:4])
-PLACE_SUFFIX_PATTERNS = frozenset({"place_and_year", "place_after_separator", "place_after_word"})
-
-PLACE_NAMES = (
-    "Perú",
-    # The 24 departments and the Constitutional Province of Callao, plus the spelling Cuzco.
-    "Amazonas",
-    "Áncash",
-    "Apurímac",
-    "Arequipa",
-    "Ayacucho",
-    "Cajamarca",
-    "Callao",
-    "Cusco",
-    "Cuzco",
-    "Huancavelica",
-    "Huánuco",
-    "Ica",
-    "Junín",
-    "La Libertad",
-    "Lambayeque",
-    "Lima",
-    "Loreto",
-    "Madre de Dios",
-    "Moquegua",
-    "Pasco",
-    "Piura",
-    "Puno",
-    "San Martín",
-    "Tacna",
-    "Tumbes",
-    "Ucayali",
-    # The other provinces of the Arequipa region.
-    "Camaná",
-    "Caravelí",
-    "Castilla",
-    "Caylloma",
-    "Condesuyos",
-    "Islay",
-    "La Unión",
-    # Districts of the province of Arequipa.
-    "Alto Selva Alegre",
-    "Cayma",
-    "Cerro Colorado",
-    "Characato",
-    "La Joya",
-    "Mariano Melgar",
-    "Miraflores",
-    "Paucarpata",
-    "Sabandía",
-    "Sachaca",
-    "Socabaya",
-    "Tiabaya",
-    "Uchumayo",
-    "Yanahuara",
-    "Yura",
-    # Other towns of southern Peru.
-    "Chivay",
-    "Espinar",
-    "Ilo",
-    "Juliaca",
-    "Majes",
-    "Matarani",
-    "Mollendo",
-)
-"""Gazetteer of the place words that a title suffix may hold. A name matches as written or in
-capitals, with or without the accents of its vowels; ñ always has to match."""
-
-TEMPORAL_WORDS = frozenset(
-    {
-        "al",
-        "año",
-        "años",
-        "periodo",
-        "periodos",
-        "período",
-        "períodos",
-        "ejercicio",
-        "desde",
-        "hasta",
-        "durante",
-    }
-)
-"""Words that introduce a trailing year, as in ``al 2021`` or ``periodo 2022``."""
-
-_VOWEL_SPELLINGS = {
-    "a": "aá",
-    "á": "aá",
-    "e": "eé",
-    "é": "eé",
-    "i": "ií",
-    "í": "ií",
-    "o": "oó",
-    "ó": "oó",
-    "u": "uúü",
-    "ú": "uúü",
-    "ü": "uúü",
-}
-
-
-def _spelling_pattern(spelling: str) -> str:
-    """Return a pattern for ``spelling`` in which each vowel may carry an accent or not."""
-    parts = []
-    for char in spelling:
-        vowels = _VOWEL_SPELLINGS.get(char.lower())
-        if vowels is not None:
-            parts.append(f"[{vowels.upper() if char.isupper() else vowels}]")
-        elif char.isspace():
-            parts.append(r"\s+")
-        else:
-            parts.append(re.escape(char))
-    return "".join(parts)
-
-
-def _place_pattern(name: str) -> str:
-    return f"{_spelling_pattern(name)}|{_spelling_pattern(name.upper())}"
-
-
-_PLACES_BY_LENGTH = sorted(PLACE_NAMES, key=len, reverse=True)
-_ANY_PLACE = "(?:" + "|".join(_place_pattern(name) for name in _PLACES_BY_LENGTH) + ")"
-_ONE_PLACE = re.compile(
-    "|".join(
-        f"(?P<p{index}>{_place_pattern(name)})" for index, name in enumerate(_PLACES_BY_LENGTH)
-    )
-)
-"""One place name; the number in the name of the group that matched indexes the gazetteer."""
-
-_DASHES = r"\-\N{HYPHEN}\N{EN DASH}\N{EM DASH}"
-_SEPARATOR = rf"\s*[,({_DASHES}]\s*"
-"""A comma, an opening parenthesis, a hyphen or a dash, with any spaces around it."""
-_GAP = rf"(?:{_SEPARATOR}|\s+)"
-_PLACES = rf"{_ANY_PLACE}(?:{_GAP}{_ANY_PLACE})*"
-_YEAR = rf"(?:19|20)[0-9]{{2}}(?:\s*[{_DASHES}/]\s*(?:(?:19|20)[0-9]{{2}}|[0-9]{{2}}))?"
-"""A year from 1900 to 2099, or a range such as ``2020-2021`` or ``2021-22``."""
-_END = r"[\s.)]*$"
-
-TRAILING_YEAR = re.compile(
-    rf"(?:(?<!\w)(?P<places>{_PLACES}))?"
-    rf"(?<![0-9])(?P<separator>{_SEPARATOR}|\s+)"
-    rf"(?P<year>{_YEAR}){_END}"
-)
-"""A year at the end of a title, maybe closed by a period or a parenthesis.
-
-The year follows a separator (see :data:`_SEPARATOR`) or a space, but never a digit, so
-``ISO 9001:2015`` and ``ISO 9001-2015`` do not count. One or more places may come right
-before it, joined by separators or spaces: ``, Arequipa 2023``, ``- Arequipa, Perú 2021``,
-``en Arequipa – 2024``."""
-
-TRAILING_PLACE = re.compile(rf"(?:(?P<separator>{_SEPARATOR})|\s+|^)(?P<places>{_PLACES}){_END}")
-"""One or more places at the end of a title, after a separator or a word."""
-
-
-def classify_title_suffix(title: str) -> TitleSuffix:
-    """Tell how a title ends: with places and a year, a year, places, or neither.
-
-    The patterns, tried in this order, are:
-
-    - ``place_and_year``: places right before a trailing year, as in ``, Arequipa 2023``;
-    - ``year_after_separator``: a year after a comma, a dash or a parenthesis, as in ``, 2025``;
-    - ``year_after_temporal_word``: a year after one of :data:`TEMPORAL_WORDS`;
-    - ``year_after_other_word``: a year after any other word;
-    - ``place_after_separator``: trailing places after a separator, as in ``, Moquegua``;
-    - ``place_after_word``: trailing places after a word, as in ``de Arequipa``;
-    - ``none``.
-
-    A place is a name of :data:`PLACE_NAMES`, so a place word missing from it is not seen,
-    and a place at the end of an organization's name counts as a place.
-    """
-    text = normalize_text(title)
-    match = TRAILING_YEAR.search(text)
-    if match is not None:
-        if match["places"]:
-            return TitleSuffix("place_and_year", _place_names(match["places"]))
-        if match["separator"].strip():
-            return TitleSuffix("year_after_separator", ())
-        previous = text[: match.start()].split()
-        if previous and previous[-1].strip(".,;:()\"'«»“”").casefold() in TEMPORAL_WORDS:
-            return TitleSuffix("year_after_temporal_word", ())
-        return TitleSuffix("year_after_other_word", ())
-    match = TRAILING_PLACE.search(text)
-    if match is not None:
-        pattern = "place_after_separator" if match["separator"] else "place_after_word"
-        return TitleSuffix(pattern, _place_names(match["places"]))
-    return TitleSuffix(NO_SUFFIX, ())
-
-
-def _place_names(text: str) -> tuple[str, ...]:
-    """Return the gazetteer names of the places in ``text``, in order and without repeats."""
-    names = []
-    for match in _ONE_PLACE.finditer(text):
-        if match.lastgroup is not None:
-            names.append(_PLACES_BY_LENGTH[int(match.lastgroup[1:])])
-    return tuple(dict.fromkeys(names))
 
 
 def title_profile(

@@ -1,0 +1,113 @@
+# Domain stopwords of the full cleaner (TF-IDF, c-TF-IDF and NPMI): one lemma per line.
+#
+# Source: results/eda/20261002T224412Z/stopword_candidates.json, written by
+# experiments/domain_stopwords.py. It ranks the 411 lemmas held by at least 5% of the 744
+# distinct theses (title without its place and year suffix, plus abstract), after spaCy's
+# Spanish stopwords. Curated by hand for task T11 on 2026-10-02.
+#
+# Criteria. A lemma is listed only when it carries no topic, because it:
+# - names the thesis genre: the document, its parts, aims and findings, or the type of
+#   research (tesis, objetivo, resultado, cuantitativo);
+# - is a verb that reports what the research did (permitir, obtener, analizar);
+# - names the institution, or the place or the time of the study (universidad, arequipa, año);
+# - or is a generic modifier or connector that spaCy's list lacks (principal, cuyo).
+# Frequent words that can tell topics apart stay out, even the most common ones: análisis,
+# estudio, metodología, implementación, diseño, proceso, sistema, trabajo, tiempo, costo,
+# productividad, mantenimiento. When in doubt, a word stays out.
+#
+# Lemmas are written as the full cleaner produces them: in lower case, with accents and ñ.
+
+# Thesis genre: the document, its aims and findings, and the type of research.
+tesis
+investigación
+presente
+objetivo
+general
+específico
+propuesta
+propuesto
+resultado
+conclusión
+capítulo
+finalidad
+propósito
+problemática
+tipo
+aplicado
+cuantitativo
+descriptivo
+experimental
+significativo
+
+# Organization and improvement, the frame of most theses.
+empresa
+mejora
+mejorar
+desarrollo
+desarrollar
+universidad
+
+# Verbs that report what the research did.
+permitir
+utilizar
+utilizado
+obtener
+obtenido
+identificar
+aplicar
+generar
+lograr
+presentar
+determinar
+proponer
+analizar
+evaluar
+# A form of evaluar that the lemmatizer leaves as it is.
+evaluó
+demostrar
+concluir
+mostrar
+plantear
+buscar
+evidenciar
+encontrar
+emplear
+considerar
+incluir
+establecer
+contribuir
+alcanzar
+basado
+
+# Place and time of the study.
+arequipa
+perú
+país
+región
+ciudad
+distrito
+sur
+ubicado
+año
+periodo
+mes
+
+# Generic modifiers and connectors that spaCy's list lacks.
+principal
+actual
+actualmente
+actualidad
+finalmente
+asimismo
+posteriormente
+necesario
+necesidad
+adecuado
+diverso
+positivo
+situación
+forma
+caso
+falta
+cuyo
+cabo

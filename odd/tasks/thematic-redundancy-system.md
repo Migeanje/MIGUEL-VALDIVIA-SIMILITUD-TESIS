@@ -417,18 +417,45 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
   - Data check (aggregate): 705 of the 746 theses have 1 author, 41 have 2, and every thesis has exactly 1 advisor. Hence `author_codes` is a tuple.
   - Tests: 202 new, RED → GREEN. 67 throwaway mutants were all caught. `ruff` clean. `pytest`: 638 passed, 1 skipped (independent re-run).
   - Notes for T12: check `doc_code` uniqueness across the dataset, and log a quality note when an ORCID fails its checksum.
-  - Commit: pending; the user commits in GitHub Desktop.
+  - Commit: `f21743f`, made by the user. Its tree `acaa52a…` is identical to the reviewed one.
+  - Reviews: medium risk, one lens, approved both before and after the commit.
+- [ ] **T08a** Ficha/storage follow-ups from the T08 reviews (non-blocking):
+  - Key creation must not depend on hard-link support. `os.link` fails on FAT/exFAT, some SMB shares and some container bind mounts, which matters for T29.
+  - fsync the key's parent directory after publishing it.
+  - The storage schema check should cover nullability and list item types, with tests for wrong list item types and for non-list columns.
+  - Route D. Risk M.
 - [ ] **T09** PDF text extraction with text-layer detection and an OCR fallback. Note from T05: 6 of 13 inspected items also carry DSpace's extracted full text (`*.pdf.txt` in a TEXT bundle). It could serve as a cross-check, but it was not fetched and is not authorized yet.
   - Route D. Risk M.
 - [ ] **T10** Objectives locator plus a manual verification sample (~60, stratified by program), producing an accuracy report (O05).
   - Route D. Risk M.
-- [ ] **T11** Light and full cleaners. They handle:
+- [x] **T11** Light and full cleaners. They handle:
   - title suffix stripping, header/footer removal and hyphenation;
   - domain stopwords (by document frequency, then manual review);
   - legal suffixes;
   - spaCy lemmatization (full cleaner only).
   - Accents and ñ are kept.
   - Route D. Risk M.
+  - Evidence (2026-10-03). Modules in `preprocessing/`:
+    - `light_cleaner.py`:
+      - runs without spaCy and is idempotent;
+      - unwraps lines in linear time, keeping sentence and paragraph breaks;
+      - joins words split by an end-of-line hyphen while keeping real compounds;
+      - normalizes quotes and dashes conservatively.
+    - `title_suffix.py`:
+      - holds the shared patterns, moved from `profile.py`; the 82 profile tests are unchanged and pass;
+      - strips repeatedly, never below 3 words, and returns a quality note.
+      - On real data: 397 titles stripped, 0 refused, 0 left with a suffix.
+    - `full_cleaner.py`:
+      - spaCy `es_core_news_md` lemmas, with spaCy and domain stopwords removed;
+      - legal suffixes (S.A.C., E.I.R.L., …), URLs and emails dropped;
+      - keeps "Lean", which spaCy mislemmatized as *leer* in 61 of 172 cases;
+      - throughput 25–76 docs/s.
+    - `stopwords.py` loads `config/stopwords_domain_es.txt`: 84 curated lemmas covering genre, reporting verbs, institution, place and time, and generic words.
+  - The candidates come from `experiments/domain_stopwords.py`. The output is aggregate only: 411 lemmas with DF ≥ 5% over 744 documents, after the D24 dedupe. Privacy: 0 hits.
+  - Tests: 124 new, RED → GREEN. `ruff` clean. `pytest`: 762 passed, 1 skipped (independent re-run).
+  - Moved to T09: header and footer removal, which needs page-level PDF text.
+  - For review at T16, once topics exist: borderline frequent words deliberately left out of the list, such as análisis (414), implementación (375), trabajo (332), estudio (315) and metodología (282).
+  - Commit: pending; the user commits in GitHub Desktop.
 - [ ] **T12** Build the fichas dataset, the exclusion log, and a quality report. Inclusion requires an exact `renati.type` fragment `#tesis` (746 in snapshot `20261002T224412Z`). Suficiencia profesional appears in 5 spellings and is excluded with its reason.
   - Route D. Risk M.
 
@@ -607,8 +634,43 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
 
 - 2026-10-03: T08 implemented and verified, including the `author_codes` change from measured data. Its commit was handed to the user.
 
+- 2026-10-03: The user committed T08 as `f21743f`. The post-commit review was approved, so the reviewed boundary is now `f21743f`. T08a was added.
+  - The user resumed the T05 download from a terminal, and it is running. The `.part` item `2cf456c1…` was re-downloaded and verified, which confirms safe resume after a hard kill.
+  - T11 started ahead of T09/T10, because it needs only metadata texts. Route: D. Trigger: new preprocessing modules, tests and a stopword-candidates script.
+
+- 2026-10-03: Session handoff to a new working session.
+  - Progress is about 22% of the 34 planned tasks. Phase 0 is done, Phase 1 is about 75% and Phase 2 is about 30%.
+  - The last reviewed boundary is `f21743f`.
+  - T11 is implemented but not yet committed. The T05 download is still running in the user's terminal.
+
 ## Next step
 
-The user resumes the T05 download from a terminal. In parallel: commit T08 (ficha schema). After the download: T06 (data card, no backup per D23).
+Resume checklist, in order:
+
+1. **Re-sync.**
+   - Read this document fully.
+   - Run `git status`, `git log -5`, `uv run pytest -q` and `uv run ruff check .`.
+   - Confirm HEAD is `f21743f` or later.
+2. **T11 (cleaners).** It was verified and reviewed in the previous session, and its commit was handed to the user.
+   - If HEAD already contains T11, run only the post-commit review check, using `--base-ref f21743f`.
+   - Otherwise, verify the uncommitted files, re-run the review, and hand the commit to the user.
+3. **T05 download.**
+   - Read `data/raw/20261002T224412Z/pdfs/manifest.json` and its `summary`. If it is still running, the user continues it in their terminal; it is resumable.
+   - When it finishes, record the final per-status counts and total size under T05.
+   - Investigate any `integrity_error`, `ambiguous` or `no_thesis_file` entries. Check this against T05a.
+4. **T06.** Write the data card: counts, rights, future-dated items, duplicates (D24) and PDF statuses. No backup (D23).
+5. **T09.** PDF text extraction, with text-layer detection and an OCR fallback.
+6. **T10.** Objectives locator. Manual check of about 60 theses stratified by program; target at least 90% correct (O05).
+7. **T12.** Build the fichas dataset:
+   - D24 dedupe;
+   - advisor codes keyed by ORCID;
+   - `author_codes`;
+   - an exclusion log;
+   - `doc_code` uniqueness;
+   - re-check the domain stopwords against the objectives text.
+
+Batched follow-ups, to be scheduled once Phase 2 is done: T02a, T04a, T05a, T07a, T08a.
+
+Pending user inputs: U1, U2 (before T19), U3 (month 3), U4, U5, U6. U8 is needed for any new download. After the download: T06 (data card, no backup per D23).
 
 Pending follow-ups, to be batched later: T02a, T04a, T05a, T07a.

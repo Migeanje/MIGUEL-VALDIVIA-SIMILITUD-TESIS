@@ -160,6 +160,35 @@ How it works:
   author, advisor and juror name, and ORCID of the snapshot. A single hit stops it with nothing
   written.
 
+## Text cleaning
+
+Two cleaning variants live in `src/thematic_redundancy/preprocessing/`:
+
+- **Light** (`clean_light`), the input of the embedding models. It joins hard-wrapped lines and
+  keeps a line break only where a sentence or a paragraph ends. It also rejoins words split by
+  a hyphen at a line end, collapses whitespace, and straightens curly quotes. Casing, accents,
+  ñ and punctuation stay, and it needs no language model.
+- **Full** (`clean_full`, `clean_full_batch`), the input of TF-IDF, c-TF-IDF and NPMI. It
+  light-cleans and lowercases the text, then lemmatizes it with spaCy `es_core_news_md`. It
+  drops spaCy's Spanish stopwords, the domain stopwords, punctuation, numbers, one-character
+  tokens, and legal suffixes such as S.A.C. or E.I.R.L. It returns lemma tokens, which
+  `join_tokens` turns into one string. Accents and ñ stay.
+
+`strip_title_suffix` cuts the trailing place and year of a title, such as `, Arequipa 2023`,
+and reports what it cut for the quality notes.
+
+The domain stopwords are in `config/stopwords_domain_es.txt`: genre and boilerplate lemmas
+such as `tesis` or `arequipa`, picked by hand. The file's header states the criteria. The
+candidates come from this script, which runs offline:
+
+```sh
+uv run python experiments/domain_stopwords.py
+```
+
+It writes `results/eda/<snapshot_id>/stopword_candidates.json`: each lemma found in at least 5%
+of the theses, with its document count. Like the metadata profile, it writes nothing if the
+output holds a title, an abstract, a person's name or an ORCID.
+
 ## Checks
 
 ```sh

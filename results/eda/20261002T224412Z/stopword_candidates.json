@@ -1,0 +1,2079 @@
+{
+  "provenance": {
+    "script": "experiments/domain_stopwords.py",
+    "snapshot_id": "20261002T224412Z",
+    "harvested_at": "2026-10-02T22:44:12Z",
+    "metadata_sha256": "d88839012df3e6f3bd7ee08f90c8e1f3b6588cf75386127dde52f429b4d9d932",
+    "config_sha256": "e6de0c5a5ab8d185c337fa37ab71bcfb3ac9e892a87e5f9b419649cde0045139",
+    "git_commit": "f21743f314eeda279e760ab30c9b87e2e0cb197a",
+    "git_uncommitted_changes": true,
+    "spacy_model": "es_core_news_md 3.8.0",
+    "spacy_version": "3.8.16"
+  },
+  "method": {
+    "theses": 746,
+    "documents": 744,
+    "duplicates_counted_once": 2,
+    "document_text": "title, light-cleaned and without its place and year suffix, followed by the light-cleaned abstract",
+    "tokens": "full cleaner with spaCy's Spanish stopwords and no domain stopwords",
+    "min_document_ratio": 0.05,
+    "candidates": 411
+  },
+  "candidates": [
+    {
+      "lemma": "presente",
+      "documents": 496,
+      "ratio": 0.6667
+    },
+    {
+      "lemma": "investigación",
+      "documents": 468,
+      "ratio": 0.629
+    },
+    {
+      "lemma": "objetivo",
+      "documents": 422,
+      "ratio": 0.5672
+    },
+    {
+      "lemma": "análisis",
+      "documents": 414,
+      "ratio": 0.5565
+    },
+    {
+      "lemma": "resultado",
+      "documents": 396,
+      "ratio": 0.5323
+    },
+    {
+      "lemma": "proceso",
+      "documents": 380,
+      "ratio": 0.5108
+    },
+    {
+      "lemma": "implementación",
+      "documents": 375,
+      "ratio": 0.504
+    },
+    {
+      "lemma": "diseño",
+      "documents": 370,
+      "ratio": 0.4973
+    },
+    {
+      "lemma": "mejora",
+      "documents": 361,
+      "ratio": 0.4852
+    },
+    {
+      "lemma": "sistema",
+      "documents": 337,
+      "ratio": 0.453
+    },
+    {
+      "lemma": "propuesta",
+      "documents": 336,
+      "ratio": 0.4516
+    },
+    {
+      "lemma": "empresa",
+      "documents": 335,
+      "ratio": 0.4503
+    },
+    {
+      "lemma": "trabajo",
+      "documents": 332,
+      "ratio": 0.4462
+    },
+    {
+      "lemma": "permitir",
+      "documents": 326,
+      "ratio": 0.4382
+    },
+    {
+      "lemma": "costo",
+      "documents": 321,
+      "ratio": 0.4315
+    },
+    {
+      "lemma": "estudio",
+      "documents": 315,
+      "ratio": 0.4234
+    },
+    {
+      "lemma": "tiempo",
+      "documents": 311,
+      "ratio": 0.418
+    },
+    {
+      "lemma": "utilizar",
+      "documents": 299,
+      "ratio": 0.4019
+    },
+    {
+      "lemma": "mejorar",
+      "documents": 291,
+      "ratio": 0.3911
+    },
+    {
+      "lemma": "metodología",
+      "documents": 282,
+      "ratio": 0.379
+    },
+    {
+      "lemma": "desarrollar",
+      "documents": 272,
+      "ratio": 0.3656
+    },
+    {
+      "lemma": "obtener",
+      "documents": 251,
+      "ratio": 0.3374
+    },
+    {
+      "lemma": "herramienta",
+      "documents": 246,
+      "ratio": 0.3306
+    },
+    {
+      "lemma": "identificar",
+      "documents": 234,
+      "ratio": 0.3145
+    },
+    {
+      "lemma": "económico",
+      "documents": 233,
+      "ratio": 0.3132
+    },
+    {
+      "lemma": "principal",
+      "documents": 232,
+      "ratio": 0.3118
+    },
+    {
+      "lemma": "reducir",
+      "documents": 227,
+      "ratio": 0.3051
+    },
+    {
+      "lemma": "desarrollo",
+      "documents": 224,
+      "ratio": 0.3011
+    },
+    {
+      "lemma": "gestión",
+      "documents": 222,
+      "ratio": 0.2984
+    },
+    {
+      "lemma": "proyecto",
+      "documents": 222,
+      "ratio": 0.2984
+    },
+    {
+      "lemma": "problema",
+      "documents": 218,
+      "ratio": 0.293
+    },
+    {
+      "lemma": "aplicar",
+      "documents": 215,
+      "ratio": 0.289
+    },
+    {
+      "lemma": "aplicación",
+      "documents": 213,
+      "ratio": 0.2863
+    },
+    {
+      "lemma": "tipo",
+      "documents": 213,
+      "ratio": 0.2863
+    },
+    {
+      "lemma": "generar",
+      "documents": 205,
+      "ratio": 0.2755
+    },
+    {
+      "lemma": "lograr",
+      "documents": 204,
+      "ratio": 0.2742
+    },
+    {
+      "lemma": "dato",
+      "documents": 203,
+      "ratio": 0.2728
+    },
+    {
+      "lemma": "arequipa",
+      "documents": 201,
+      "ratio": 0.2702
+    },
+    {
+      "lemma": "nivel",
+      "documents": 200,
+      "ratio": 0.2688
+    },
+    {
+      "lemma": "optimizar",
+      "documents": 197,
+      "ratio": 0.2648
+    },
+    {
+      "lemma": "base",
+      "documents": 196,
+      "ratio": 0.2634
+    },
+    {
+      "lemma": "evaluación",
+      "documents": 196,
+      "ratio": 0.2634
+    },
+    {
+      "lemma": "área",
+      "documents": 196,
+      "ratio": 0.2634
+    },
+    {
+      "lemma": "actual",
+      "documents": 194,
+      "ratio": 0.2608
+    },
+    {
+      "lemma": "control",
+      "documents": 192,
+      "ratio": 0.2581
+    },
+    {
+      "lemma": "finalmente",
+      "documents": 191,
+      "ratio": 0.2567
+    },
+    {
+      "lemma": "presentar",
+      "documents": 186,
+      "ratio": 0.25
+    },
+    {
+      "lemma": "eficiencia",
+      "documents": 185,
+      "ratio": 0.2487
+    },
+    {
+      "lemma": "modelo",
+      "documents": 185,
+      "ratio": 0.2487
+    },
+    {
+      "lemma": "basado",
+      "documents": 184,
+      "ratio": 0.2473
+    },
+    {
+      "lemma": "determinar",
+      "documents": 184,
+      "ratio": 0.2473
+    },
+    {
+      "lemma": "proponer",
+      "documents": 184,
+      "ratio": 0.2473
+    },
+    {
+      "lemma": "analizar",
+      "documents": 177,
+      "ratio": 0.2379
+    },
+    {
+      "lemma": "operativo",
+      "documents": 173,
+      "ratio": 0.2325
+    },
+    {
+      "lemma": "implementar",
+      "documents": 172,
+      "ratio": 0.2312
+    },
+    {
+      "lemma": "información",
+      "documents": 172,
+      "ratio": 0.2312
+    },
+    {
+      "lemma": "año",
+      "documents": 171,
+      "ratio": 0.2298
+    },
+    {
+      "lemma": "evaluar",
+      "documents": 169,
+      "ratio": 0.2272
+    },
+    {
+      "lemma": "beneficio",
+      "documents": 167,
+      "ratio": 0.2245
+    },
+    {
+      "lemma": "operación",
+      "documents": 167,
+      "ratio": 0.2245
+    },
+    {
+      "lemma": "valor",
+      "documents": 165,
+      "ratio": 0.2218
+    },
+    {
+      "lemma": "equipo",
+      "documents": 163,
+      "ratio": 0.2191
+    },
+    {
+      "lemma": "reducción",
+      "documents": 157,
+      "ratio": 0.211
+    },
+    {
+      "lemma": "demostrar",
+      "documents": 151,
+      "ratio": 0.203
+    },
+    {
+      "lemma": "minero",
+      "documents": 150,
+      "ratio": 0.2016
+    },
+    {
+      "lemma": "experimental",
+      "documents": 148,
+      "ratio": 0.1989
+    },
+    {
+      "lemma": "diseñar",
+      "documents": 144,
+      "ratio": 0.1935
+    },
+    {
+      "lemma": "optimización",
+      "documents": 143,
+      "ratio": 0.1922
+    },
+    {
+      "lemma": "técnica",
+      "documents": 143,
+      "ratio": 0.1922
+    },
+    {
+      "lemma": "producción",
+      "documents": 142,
+      "ratio": 0.1909
+    },
+    {
+      "lemma": "enfoque",
+      "documents": 141,
+      "ratio": 0.1895
+    },
+    {
+      "lemma": "tesis",
+      "documents": 141,
+      "ratio": 0.1895
+    },
+    {
+      "lemma": "personal",
+      "documents": 140,
+      "ratio": 0.1882
+    },
+    {
+      "lemma": "servicio",
+      "documents": 139,
+      "ratio": 0.1868
+    },
+    {
+      "lemma": "técnico",
+      "documents": 139,
+      "ratio": 0.1868
+    },
+    {
+      "lemma": "método",
+      "documents": 138,
+      "ratio": 0.1855
+    },
+    {
+      "lemma": "indicador",
+      "documents": 137,
+      "ratio": 0.1841
+    },
+    {
+      "lemma": "obtenido",
+      "documents": 135,
+      "ratio": 0.1815
+    },
+    {
+      "lemma": "calidad",
+      "documents": 133,
+      "ratio": 0.1788
+    },
+    {
+      "lemma": "alto",
+      "documents": 132,
+      "ratio": 0.1774
+    },
+    {
+      "lemma": "diagnóstico",
+      "documents": 131,
+      "ratio": 0.1761
+    },
+    {
+      "lemma": "plan",
+      "documents": 129,
+      "ratio": 0.1734
+    },
+    {
+      "lemma": "situación",
+      "documents": 128,
+      "ratio": 0.172
+    },
+    {
+      "lemma": "productividad",
+      "documents": 126,
+      "ratio": 0.1694
+    },
+    {
+      "lemma": "actividad",
+      "documents": 123,
+      "ratio": 0.1653
+    },
+    {
+      "lemma": "incrementar",
+      "documents": 123,
+      "ratio": 0.1653
+    },
+    {
+      "lemma": "mantenimiento",
+      "documents": 122,
+      "ratio": 0.164
+    },
+    {
+      "lemma": "concluir",
+      "documents": 120,
+      "ratio": 0.1613
+    },
+    {
+      "lemma": "inversión",
+      "documents": 120,
+      "ratio": 0.1613
+    },
+    {
+      "lemma": "mostrar",
+      "documents": 118,
+      "ratio": 0.1586
+    },
+    {
+      "lemma": "impacto",
+      "documents": 117,
+      "ratio": 0.1573
+    },
+    {
+      "lemma": "solución",
+      "documents": 116,
+      "ratio": 0.1559
+    },
+    {
+      "lemma": "material",
+      "documents": 114,
+      "ratio": 0.1532
+    },
+    {
+      "lemma": "factor",
+      "documents": 113,
+      "ratio": 0.1519
+    },
+    {
+      "lemma": "producto",
+      "documents": 113,
+      "ratio": 0.1519
+    },
+    {
+      "lemma": "propuesto",
+      "documents": 113,
+      "ratio": 0.1519
+    },
+    {
+      "lemma": "plantear",
+      "documents": 112,
+      "ratio": 0.1505
+    },
+    {
+      "lemma": "eléctrico",
+      "documents": 111,
+      "ratio": 0.1492
+    },
+    {
+      "lemma": "aplicado",
+      "documents": 110,
+      "ratio": 0.1478
+    },
+    {
+      "lemma": "buscar",
+      "documents": 109,
+      "ratio": 0.1465
+    },
+    {
+      "lemma": "evidenciar",
+      "documents": 109,
+      "ratio": 0.1465
+    },
+    {
+      "lemma": "general",
+      "documents": 108,
+      "ratio": 0.1452
+    },
+    {
+      "lemma": "forma",
+      "documents": 107,
+      "ratio": 0.1438
+    },
+    {
+      "lemma": "promedio",
+      "documents": 107,
+      "ratio": 0.1438
+    },
+    {
+      "lemma": "encontrar",
+      "documents": 103,
+      "ratio": 0.1384
+    },
+    {
+      "lemma": "software",
+      "documents": 103,
+      "ratio": 0.1384
+    },
+    {
+      "lemma": "viable",
+      "documents": 103,
+      "ratio": 0.1384
+    },
+    {
+      "lemma": "condición",
+      "documents": 102,
+      "ratio": 0.1371
+    },
+    {
+      "lemma": "necesario",
+      "documents": 102,
+      "ratio": 0.1371
+    },
+    {
+      "lemma": "necesidad",
+      "documents": 102,
+      "ratio": 0.1371
+    },
+    {
+      "lemma": "cuantitativo",
+      "documents": 101,
+      "ratio": 0.1358
+    },
+    {
+      "lemma": "incremento",
+      "documents": 101,
+      "ratio": 0.1358
+    },
+    {
+      "lemma": "perú",
+      "documents": 101,
+      "ratio": 0.1358
+    },
+    {
+      "lemma": "emplear",
+      "documents": 100,
+      "ratio": 0.1344
+    },
+    {
+      "lemma": "asimismo",
+      "documents": 99,
+      "ratio": 0.1331
+    },
+    {
+      "lemma": "significativo",
+      "documents": 99,
+      "ratio": 0.1331
+    },
+    {
+      "lemma": "prueba",
+      "documents": 98,
+      "ratio": 0.1317
+    },
+    {
+      "lemma": "recurso",
+      "documents": 98,
+      "ratio": 0.1317
+    },
+    {
+      "lemma": "viabilidad",
+      "documents": 98,
+      "ratio": 0.1317
+    },
+    {
+      "lemma": "ciudad",
+      "documents": 97,
+      "ratio": 0.1304
+    },
+    {
+      "lemma": "cliente",
+      "documents": 97,
+      "ratio": 0.1304
+    },
+    {
+      "lemma": "falta",
+      "documents": 97,
+      "ratio": 0.1304
+    },
+    {
+      "lemma": "procedimiento",
+      "documents": 97,
+      "ratio": 0.1304
+    },
+    {
+      "lemma": "seguridad",
+      "documents": 97,
+      "ratio": 0.1304
+    },
+    {
+      "lemma": "unidad",
+      "documents": 96,
+      "ratio": 0.129
+    },
+    {
+      "lemma": "finalidad",
+      "documents": 95,
+      "ratio": 0.1277
+    },
+    {
+      "lemma": "capacitación",
+      "documents": 93,
+      "ratio": 0.125
+    },
+    {
+      "lemma": "organización",
+      "documents": 93,
+      "ratio": 0.125
+    },
+    {
+      "lemma": "adecuado",
+      "documents": 92,
+      "ratio": 0.1237
+    },
+    {
+      "lemma": "considerar",
+      "documents": 92,
+      "ratio": 0.1237
+    },
+    {
+      "lemma": "crítico",
+      "documents": 92,
+      "ratio": 0.1237
+    },
+    {
+      "lemma": "cumplir",
+      "documents": 92,
+      "ratio": 0.1237
+    },
+    {
+      "lemma": "flujo",
+      "documents": 92,
+      "ratio": 0.1237
+    },
+    {
+      "lemma": "variable",
+      "documents": 92,
+      "ratio": 0.1237
+    },
+    {
+      "lemma": "carga",
+      "documents": 90,
+      "ratio": 0.121
+    },
+    {
+      "lemma": "real",
+      "documents": 90,
+      "ratio": 0.121
+    },
+    {
+      "lemma": "incluir",
+      "documents": 89,
+      "ratio": 0.1196
+    },
+    {
+      "lemma": "ubicado",
+      "documents": 89,
+      "ratio": 0.1196
+    },
+    {
+      "lemma": "capacidad",
+      "documents": 88,
+      "ratio": 0.1183
+    },
+    {
+      "lemma": "causa",
+      "documents": 88,
+      "ratio": 0.1183
+    },
+    {
+      "lemma": "sector",
+      "documents": 88,
+      "ratio": 0.1183
+    },
+    {
+      "lemma": "conclusión",
+      "documents": 86,
+      "ratio": 0.1156
+    },
+    {
+      "lemma": "desempeño",
+      "documents": 86,
+      "ratio": 0.1156
+    },
+    {
+      "lemma": "tecnología",
+      "documents": 86,
+      "ratio": 0.1156
+    },
+    {
+      "lemma": "tomar",
+      "documents": 86,
+      "ratio": 0.1156
+    },
+    {
+      "lemma": "afectar",
+      "documents": 85,
+      "ratio": 0.1142
+    },
+    {
+      "lemma": "aumentar",
+      "documents": 85,
+      "ratio": 0.1142
+    },
+    {
+      "lemma": "establecer",
+      "documents": 85,
+      "ratio": 0.1142
+    },
+    {
+      "lemma": "observación",
+      "documents": 85,
+      "ratio": 0.1142
+    },
+    {
+      "lemma": "periodo",
+      "documents": 85,
+      "ratio": 0.1142
+    },
+    {
+      "lemma": "interno",
+      "documents": 84,
+      "ratio": 0.1129
+    },
+    {
+      "lemma": "lean",
+      "documents": 84,
+      "ratio": 0.1129
+    },
+    {
+      "lemma": "ahorro",
+      "documents": 83,
+      "ratio": 0.1116
+    },
+    {
+      "lemma": "problemática",
+      "documents": 83,
+      "ratio": 0.1116
+    },
+    {
+      "lemma": "planta",
+      "documents": 82,
+      "ratio": 0.1102
+    },
+    {
+      "lemma": "contribuir",
+      "documents": 81,
+      "ratio": 0.1089
+    },
+    {
+      "lemma": "eficiente",
+      "documents": 81,
+      "ratio": 0.1089
+    },
+    {
+      "lemma": "continuo",
+      "documents": 80,
+      "ratio": 0.1075
+    },
+    {
+      "lemma": "diverso",
+      "documents": 80,
+      "ratio": 0.1075
+    },
+    {
+      "lemma": "ingeniería",
+      "documents": 80,
+      "ratio": 0.1075
+    },
+    {
+      "lemma": "positivo",
+      "documents": 80,
+      "ratio": 0.1075
+    },
+    {
+      "lemma": "punto",
+      "documents": 80,
+      "ratio": 0.1075
+    },
+    {
+      "lemma": "alcanzar",
+      "documents": 79,
+      "ratio": 0.1062
+    },
+    {
+      "lemma": "caso",
+      "documents": 79,
+      "ratio": 0.1062
+    },
+    {
+      "lemma": "diagrama",
+      "documents": 79,
+      "ratio": 0.1062
+    },
+    {
+      "lemma": "distribución",
+      "documents": 79,
+      "ratio": 0.1062
+    },
+    {
+      "lemma": "energía",
+      "documents": 79,
+      "ratio": 0.1062
+    },
+    {
+      "lemma": "parámetro",
+      "documents": 79,
+      "ratio": 0.1062
+    },
+    {
+      "lemma": "cantidad",
+      "documents": 78,
+      "ratio": 0.1048
+    },
+    {
+      "lemma": "componente",
+      "documents": 77,
+      "ratio": 0.1035
+    },
+    {
+      "lemma": "utilizado",
+      "documents": 77,
+      "ratio": 0.1035
+    },
+    {
+      "lemma": "demanda",
+      "documents": 75,
+      "ratio": 0.1008
+    },
+    {
+      "lemma": "hora",
+      "documents": 75,
+      "ratio": 0.1008
+    },
+    {
+      "lemma": "descriptivo",
+      "documents": 74,
+      "ratio": 0.0995
+    },
+    {
+      "lemma": "importante",
+      "documents": 74,
+      "ratio": 0.0995
+    },
+    {
+      "lemma": "mes",
+      "documents": 74,
+      "ratio": 0.0995
+    },
+    {
+      "lemma": "riesgo",
+      "documents": 74,
+      "ratio": 0.0995
+    },
+    {
+      "lemma": "estrategia",
+      "documents": 73,
+      "ratio": 0.0981
+    },
+    {
+      "lemma": "rentabilidad",
+      "documents": 73,
+      "ratio": 0.0981
+    },
+    {
+      "lemma": "representar",
+      "documents": 73,
+      "ratio": 0.0981
+    },
+    {
+      "lemma": "cálculo",
+      "documents": 72,
+      "ratio": 0.0968
+    },
+    {
+      "lemma": "productivo",
+      "documents": 72,
+      "ratio": 0.0968
+    },
+    {
+      "lemma": "propósito",
+      "documents": 72,
+      "ratio": 0.0968
+    },
+    {
+      "lemma": "pérdida",
+      "documents": 72,
+      "ratio": 0.0968
+    },
+    {
+      "lemma": "abordar",
+      "documents": 71,
+      "ratio": 0.0954
+    },
+    {
+      "lemma": "encuesta",
+      "documents": 70,
+      "ratio": 0.0941
+    },
+    {
+      "lemma": "indicar",
+      "documents": 70,
+      "ratio": 0.0941
+    },
+    {
+      "lemma": "tir",
+      "documents": 70,
+      "ratio": 0.0941
+    },
+    {
+      "lemma": "5s",
+      "documents": 69,
+      "ratio": 0.0927
+    },
+    {
+      "lemma": "relación",
+      "documents": 69,
+      "ratio": 0.0927
+    },
+    {
+      "lemma": "deficiencia",
+      "documents": 68,
+      "ratio": 0.0914
+    },
+    {
+      "lemma": "ejecución",
+      "documents": 68,
+      "ratio": 0.0914
+    },
+    {
+      "lemma": "elaborar",
+      "documents": 68,
+      "ratio": 0.0914
+    },
+    {
+      "lemma": "muestra",
+      "documents": 68,
+      "ratio": 0.0914
+    },
+    {
+      "lemma": "posteriormente",
+      "documents": 68,
+      "ratio": 0.0914
+    },
+    {
+      "lemma": "transporte",
+      "documents": 68,
+      "ratio": 0.0914
+    },
+    {
+      "lemma": "estandarización",
+      "documents": 67,
+      "ratio": 0.0901
+    },
+    {
+      "lemma": "falla",
+      "documents": 67,
+      "ratio": 0.0901
+    },
+    {
+      "lemma": "atención",
+      "documents": 66,
+      "ratio": 0.0887
+    },
+    {
+      "lemma": "clave",
+      "documents": 66,
+      "ratio": 0.0887
+    },
+    {
+      "lemma": "garantizar",
+      "documents": 66,
+      "ratio": 0.0887
+    },
+    {
+      "lemma": "disminuir",
+      "documents": 65,
+      "ratio": 0.0874
+    },
+    {
+      "lemma": "específico",
+      "documents": 65,
+      "ratio": 0.0874
+    },
+    {
+      "lemma": "mecánico",
+      "documents": 65,
+      "ratio": 0.0874
+    },
+    {
+      "lemma": "simulación",
+      "documents": 65,
+      "ratio": 0.0874
+    },
+    {
+      "lemma": "alternativa",
+      "documents": 64,
+      "ratio": 0.086
+    },
+    {
+      "lemma": "ambiental",
+      "documents": 64,
+      "ratio": 0.086
+    },
+    {
+      "lemma": "ciclo",
+      "documents": 64,
+      "ratio": 0.086
+    },
+    {
+      "lemma": "funcionamiento",
+      "documents": 64,
+      "ratio": 0.086
+    },
+    {
+      "lemma": "función",
+      "documents": 64,
+      "ratio": 0.086
+    },
+    {
+      "lemma": "observar",
+      "documents": 64,
+      "ratio": 0.086
+    },
+    {
+      "lemma": "relacionado",
+      "documents": 64,
+      "ratio": 0.086
+    },
+    {
+      "lemma": "consumo",
+      "documents": 63,
+      "ratio": 0.0847
+    },
+    {
+      "lemma": "financiero",
+      "documents": 63,
+      "ratio": 0.0847
+    },
+    {
+      "lemma": "medición",
+      "documents": 63,
+      "ratio": 0.0847
+    },
+    {
+      "lemma": "red",
+      "documents": 63,
+      "ratio": 0.0847
+    },
+    {
+      "lemma": "campo",
+      "documents": 62,
+      "ratio": 0.0833
+    },
+    {
+      "lemma": "entorno",
+      "documents": 62,
+      "ratio": 0.0833
+    },
+    {
+      "lemma": "fase",
+      "documents": 62,
+      "ratio": 0.0833
+    },
+    {
+      "lemma": "frente",
+      "documents": 62,
+      "ratio": 0.0833
+    },
+    {
+      "lemma": "identificación",
+      "documents": 62,
+      "ratio": 0.0833
+    },
+    {
+      "lemma": "programa",
+      "documents": 62,
+      "ratio": 0.0833
+    },
+    {
+      "lemma": "basar",
+      "documents": 61,
+      "ratio": 0.082
+    },
+    {
+      "lemma": "brindar",
+      "documents": 61,
+      "ratio": 0.082
+    },
+    {
+      "lemma": "comunicación",
+      "documents": 61,
+      "ratio": 0.082
+    },
+    {
+      "lemma": "correcto",
+      "documents": 61,
+      "ratio": 0.082
+    },
+    {
+      "lemma": "industrial",
+      "documents": 61,
+      "ratio": 0.082
+    },
+    {
+      "lemma": "mantener",
+      "documents": 61,
+      "ratio": 0.082
+    },
+    {
+      "lemma": "trabajador",
+      "documents": 61,
+      "ratio": 0.082
+    },
+    {
+      "lemma": "usuario",
+      "documents": 61,
+      "ratio": 0.082
+    },
+    {
+      "lemma": "anual",
+      "documents": 60,
+      "ratio": 0.0806
+    },
+    {
+      "lemma": "comparación",
+      "documents": 60,
+      "ratio": 0.0806
+    },
+    {
+      "lemma": "entrevista",
+      "documents": 60,
+      "ratio": 0.0806
+    },
+    {
+      "lemma": "estructura",
+      "documents": 60,
+      "ratio": 0.0806
+    },
+    {
+      "lemma": "instalación",
+      "documents": 60,
+      "ratio": 0.0806
+    },
+    {
+      "lemma": "seguimiento",
+      "documents": 60,
+      "ratio": 0.0806
+    },
+    {
+      "lemma": "zona",
+      "documents": 60,
+      "ratio": 0.0806
+    },
+    {
+      "lemma": "cambio",
+      "documents": 59,
+      "ratio": 0.0793
+    },
+    {
+      "lemma": "manual",
+      "documents": 59,
+      "ratio": 0.0793
+    },
+    {
+      "lemma": "mercado",
+      "documents": 59,
+      "ratio": 0.0793
+    },
+    {
+      "lemma": "sur",
+      "documents": 59,
+      "ratio": 0.0793
+    },
+    {
+      "lemma": "índice",
+      "documents": 59,
+      "ratio": 0.0793
+    },
+    {
+      "lemma": "actualmente",
+      "documents": 58,
+      "ratio": 0.078
+    },
+    {
+      "lemma": "error",
+      "documents": 58,
+      "ratio": 0.078
+    },
+    {
+      "lemma": "físico",
+      "documents": 58,
+      "ratio": 0.078
+    },
+    {
+      "lemma": "monitoreo",
+      "documents": 58,
+      "ratio": 0.078
+    },
+    {
+      "lemma": "planificación",
+      "documents": 58,
+      "ratio": 0.078
+    },
+    {
+      "lemma": "rendimiento",
+      "documents": 58,
+      "ratio": 0.078
+    },
+    {
+      "lemma": "teórico",
+      "documents": 58,
+      "ratio": 0.078
+    },
+    {
+      "lemma": "directo",
+      "documents": 57,
+      "ratio": 0.0766
+    },
+    {
+      "lemma": "elemento",
+      "documents": 57,
+      "ratio": 0.0766
+    },
+    {
+      "lemma": "norma",
+      "documents": 57,
+      "ratio": 0.0766
+    },
+    {
+      "lemma": "selección",
+      "documents": 57,
+      "ratio": 0.0766
+    },
+    {
+      "lemma": "cabo",
+      "documents": 56,
+      "ratio": 0.0753
+    },
+    {
+      "lemma": "elaboración",
+      "documents": 56,
+      "ratio": 0.0753
+    },
+    {
+      "lemma": "energético",
+      "documents": 56,
+      "ratio": 0.0753
+    },
+    {
+      "lemma": "etapa",
+      "documents": 56,
+      "ratio": 0.0753
+    },
+    {
+      "lemma": "identificado",
+      "documents": 56,
+      "ratio": 0.0753
+    },
+    {
+      "lemma": "óptimo",
+      "documents": 56,
+      "ratio": 0.0753
+    },
+    {
+      "lemma": "acción",
+      "documents": 55,
+      "ratio": 0.0739
+    },
+    {
+      "lemma": "definir",
+      "documents": 55,
+      "ratio": 0.0739
+    },
+    {
+      "lemma": "conocimiento",
+      "documents": 54,
+      "ratio": 0.0726
+    },
+    {
+      "lemma": "contar",
+      "documents": 54,
+      "ratio": 0.0726
+    },
+    {
+      "lemma": "decisión",
+      "documents": 54,
+      "ratio": 0.0726
+    },
+    {
+      "lemma": "desarrollado",
+      "documents": 54,
+      "ratio": 0.0726
+    },
+    {
+      "lemma": "disponibilidad",
+      "documents": 54,
+      "ratio": 0.0726
+    },
+    {
+      "lemma": "línea",
+      "documents": 54,
+      "ratio": 0.0726
+    },
+    {
+      "lemma": "menor",
+      "documents": 54,
+      "ratio": 0.0726
+    },
+    {
+      "lemma": "mina",
+      "documents": 54,
+      "ratio": 0.0726
+    },
+    {
+      "lemma": "módulo",
+      "documents": 54,
+      "ratio": 0.0726
+    },
+    {
+      "lemma": "orientado",
+      "documents": 54,
+      "ratio": 0.0726
+    },
+    {
+      "lemma": "potencial",
+      "documents": 54,
+      "ratio": 0.0726
+    },
+    {
+      "lemma": "requerir",
+      "documents": 54,
+      "ratio": 0.0726
+    },
+    {
+      "lemma": "agua",
+      "documents": 53,
+      "ratio": 0.0712
+    },
+    {
+      "lemma": "aspecto",
+      "documents": 53,
+      "ratio": 0.0712
+    },
+    {
+      "lemma": "cumplimiento",
+      "documents": 53,
+      "ratio": 0.0712
+    },
+    {
+      "lemma": "describir",
+      "documents": 53,
+      "ratio": 0.0712
+    },
+    {
+      "lemma": "estratégico",
+      "documents": 53,
+      "ratio": 0.0712
+    },
+    {
+      "lemma": "tarea",
+      "documents": 53,
+      "ratio": 0.0712
+    },
+    {
+      "lemma": "toma",
+      "documents": 53,
+      "ratio": 0.0712
+    },
+    {
+      "lemma": "alcance",
+      "documents": 52,
+      "ratio": 0.0699
+    },
+    {
+      "lemma": "aumento",
+      "documents": 52,
+      "ratio": 0.0699
+    },
+    {
+      "lemma": "estándar",
+      "documents": 52,
+      "ratio": 0.0699
+    },
+    {
+      "lemma": "futuro",
+      "documents": 52,
+      "ratio": 0.0699
+    },
+    {
+      "lemma": "inicial",
+      "documents": 52,
+      "ratio": 0.0699
+    },
+    {
+      "lemma": "registro",
+      "documents": 52,
+      "ratio": 0.0699
+    },
+    {
+      "lemma": "sensor",
+      "documents": 52,
+      "ratio": 0.0699
+    },
+    {
+      "lemma": "utilización",
+      "documents": 52,
+      "ratio": 0.0699
+    },
+    {
+      "lemma": "minería",
+      "documents": 51,
+      "ratio": 0.0685
+    },
+    {
+      "lemma": "población",
+      "documents": 51,
+      "ratio": 0.0685
+    },
+    {
+      "lemma": "tasa",
+      "documents": 51,
+      "ratio": 0.0685
+    },
+    {
+      "lemma": "venta",
+      "documents": 51,
+      "ratio": 0.0685
+    },
+    {
+      "lemma": "consistir",
+      "documents": 50,
+      "ratio": 0.0672
+    },
+    {
+      "lemma": "medida",
+      "documents": 50,
+      "ratio": 0.0672
+    },
+    {
+      "lemma": "medir",
+      "documents": 50,
+      "ratio": 0.0672
+    },
+    {
+      "lemma": "vida",
+      "documents": 50,
+      "ratio": 0.0672
+    },
+    {
+      "lemma": "asegurar",
+      "documents": 49,
+      "ratio": 0.0659
+    },
+    {
+      "lemma": "construcción",
+      "documents": 49,
+      "ratio": 0.0659
+    },
+    {
+      "lemma": "documental",
+      "documents": 49,
+      "ratio": 0.0659
+    },
+    {
+      "lemma": "estimar",
+      "documents": 49,
+      "ratio": 0.0659
+    },
+    {
+      "lemma": "oportunidad",
+      "documents": 49,
+      "ratio": 0.0659
+    },
+    {
+      "lemma": "práctica",
+      "documents": 49,
+      "ratio": 0.0659
+    },
+    {
+      "lemma": "temperatura",
+      "documents": 49,
+      "ratio": 0.0659
+    },
+    {
+      "lemma": "calcular",
+      "documents": 48,
+      "ratio": 0.0645
+    },
+    {
+      "lemma": "capítulo",
+      "documents": 48,
+      "ratio": 0.0645
+    },
+    {
+      "lemma": "demora",
+      "documents": 48,
+      "ratio": 0.0645
+    },
+    {
+      "lemma": "industria",
+      "documents": 48,
+      "ratio": 0.0645
+    },
+    {
+      "lemma": "instrumento",
+      "documents": 48,
+      "ratio": 0.0645
+    },
+    {
+      "lemma": "inventario",
+      "documents": 48,
+      "ratio": 0.0645
+    },
+    {
+      "lemma": "laboral",
+      "documents": 48,
+      "ratio": 0.0645
+    },
+    {
+      "lemma": "logístico",
+      "documents": 48,
+      "ratio": 0.0645
+    },
+    {
+      "lemma": "matriz",
+      "documents": 48,
+      "ratio": 0.0645
+    },
+    {
+      "lemma": "persona",
+      "documents": 48,
+      "ratio": 0.0645
+    },
+    {
+      "lemma": "porcentaje",
+      "documents": 48,
+      "ratio": 0.0645
+    },
+    {
+      "lemma": "situacional",
+      "documents": 48,
+      "ratio": 0.0645
+    },
+    {
+      "lemma": "suministro",
+      "documents": 48,
+      "ratio": 0.0645
+    },
+    {
+      "lemma": "distinto",
+      "documents": 47,
+      "ratio": 0.0632
+    },
+    {
+      "lemma": "efectivo",
+      "documents": 47,
+      "ratio": 0.0632
+    },
+    {
+      "lemma": "empleado",
+      "documents": 47,
+      "ratio": 0.0632
+    },
+    {
+      "lemma": "existente",
+      "documents": 47,
+      "ratio": 0.0632
+    },
+    {
+      "lemma": "fabricación",
+      "documents": 47,
+      "ratio": 0.0632
+    },
+    {
+      "lemma": "integral",
+      "documents": 47,
+      "ratio": 0.0632
+    },
+    {
+      "lemma": "respuesta",
+      "documents": 47,
+      "ratio": 0.0632
+    },
+    {
+      "lemma": "trabajar",
+      "documents": 47,
+      "ratio": 0.0632
+    },
+    {
+      "lemma": "conjunto",
+      "documents": 46,
+      "ratio": 0.0618
+    },
+    {
+      "lemma": "integrar",
+      "documents": 46,
+      "ratio": 0.0618
+    },
+    {
+      "lemma": "preventivo",
+      "documents": 46,
+      "ratio": 0.0618
+    },
+    {
+      "lemma": "recuperación",
+      "documents": 46,
+      "ratio": 0.0618
+    },
+    {
+      "lemma": "rentable",
+      "documents": 46,
+      "ratio": 0.0618
+    },
+    {
+      "lemma": "requerimiento",
+      "documents": 46,
+      "ratio": 0.0618
+    },
+    {
+      "lemma": "sol",
+      "documents": 46,
+      "ratio": 0.0618
+    },
+    {
+      "lemma": "digital",
+      "documents": 45,
+      "ratio": 0.0605
+    },
+    {
+      "lemma": "evaluó",
+      "documents": 45,
+      "ratio": 0.0605
+    },
+    {
+      "lemma": "región",
+      "documents": 45,
+      "ratio": 0.0605
+    },
+    {
+      "lemma": "ambiente",
+      "documents": 44,
+      "ratio": 0.0591
+    },
+    {
+      "lemma": "confiabilidad",
+      "documents": 44,
+      "ratio": 0.0591
+    },
+    {
+      "lemma": "importancia",
+      "documents": 44,
+      "ratio": 0.0591
+    },
+    {
+      "lemma": "llegar",
+      "documents": 44,
+      "ratio": 0.0591
+    },
+    {
+      "lemma": "país",
+      "documents": 44,
+      "ratio": 0.0591
+    },
+    {
+      "lemma": "potencia",
+      "documents": 44,
+      "ratio": 0.0591
+    },
+    {
+      "lemma": "puesto",
+      "documents": 44,
+      "ratio": 0.0591
+    },
+    {
+      "lemma": "retorno",
+      "documents": 44,
+      "ratio": 0.0591
+    },
+    {
+      "lemma": "salud",
+      "documents": 44,
+      "ratio": 0.0591
+    },
+    {
+      "lemma": "satisfacción",
+      "documents": 44,
+      "ratio": 0.0591
+    },
+    {
+      "lemma": "comparar",
+      "documents": 43,
+      "ratio": 0.0578
+    },
+    {
+      "lemma": "contexto",
+      "documents": 43,
+      "ratio": 0.0578
+    },
+    {
+      "lemma": "crecimiento",
+      "documents": 43,
+      "ratio": 0.0578
+    },
+    {
+      "lemma": "efecto",
+      "documents": 43,
+      "ratio": 0.0578
+    },
+    {
+      "lemma": "estimado",
+      "documents": 43,
+      "ratio": 0.0578
+    },
+    {
+      "lemma": "fortalecer",
+      "documents": 43,
+      "ratio": 0.0578
+    },
+    {
+      "lemma": "perforación",
+      "documents": 43,
+      "ratio": 0.0578
+    },
+    {
+      "lemma": "plazo",
+      "documents": 43,
+      "ratio": 0.0578
+    },
+    {
+      "lemma": "recolección",
+      "documents": 43,
+      "ratio": 0.0578
+    },
+    {
+      "lemma": "revisión",
+      "documents": 43,
+      "ratio": 0.0578
+    },
+    {
+      "lemma": "seleccionar",
+      "documents": 43,
+      "ratio": 0.0578
+    },
+    {
+      "lemma": "validar",
+      "documents": 43,
+      "ratio": 0.0578
+    },
+    {
+      "lemma": "característica",
+      "documents": 42,
+      "ratio": 0.0565
+    },
+    {
+      "lemma": "constituir",
+      "documents": 42,
+      "ratio": 0.0565
+    },
+    {
+      "lemma": "deficiente",
+      "documents": 42,
+      "ratio": 0.0565
+    },
+    {
+      "lemma": "diario",
+      "documents": 42,
+      "ratio": 0.0565
+    },
+    {
+      "lemma": "entrega",
+      "documents": 42,
+      "ratio": 0.0565
+    },
+    {
+      "lemma": "escenario",
+      "documents": 42,
+      "ratio": 0.0565
+    },
+    {
+      "lemma": "establecido",
+      "documents": 42,
+      "ratio": 0.0565
+    },
+    {
+      "lemma": "facilitar",
+      "documents": 42,
+      "ratio": 0.0565
+    },
+    {
+      "lemma": "lugar",
+      "documents": 42,
+      "ratio": 0.0565
+    },
+    {
+      "lemma": "requerido",
+      "documents": 42,
+      "ratio": 0.0565
+    },
+    {
+      "lemma": "seguir",
+      "documents": 42,
+      "ratio": 0.0565
+    },
+    {
+      "lemma": "tecnológico",
+      "documents": 42,
+      "ratio": 0.0565
+    },
+    {
+      "lemma": "universidad",
+      "documents": 42,
+      "ratio": 0.0565
+    },
+    {
+      "lemma": "confirmar",
+      "documents": 41,
+      "ratio": 0.0551
+    },
+    {
+      "lemma": "cuyo",
+      "documents": 41,
+      "ratio": 0.0551
+    },
+    {
+      "lemma": "dedicado",
+      "documents": 41,
+      "ratio": 0.0551
+    },
+    {
+      "lemma": "directamente",
+      "documents": 41,
+      "ratio": 0.0551
+    },
+    {
+      "lemma": "disminución",
+      "documents": 41,
+      "ratio": 0.0551
+    },
+    {
+      "lemma": "eliminar",
+      "documents": 41,
+      "ratio": 0.0551
+    },
+    {
+      "lemma": "fundamental",
+      "documents": 41,
+      "ratio": 0.0551
+    },
+    {
+      "lemma": "marco",
+      "documents": 41,
+      "ratio": 0.0551
+    },
+    {
+      "lemma": "máquina",
+      "documents": 41,
+      "ratio": 0.0551
+    },
+    {
+      "lemma": "precisión",
+      "documents": 41,
+      "ratio": 0.0551
+    },
+    {
+      "lemma": "prototipo",
+      "documents": 41,
+      "ratio": 0.0551
+    },
+    {
+      "lemma": "sostenibilidad",
+      "documents": 41,
+      "ratio": 0.0551
+    },
+    {
+      "lemma": "superior",
+      "documents": 41,
+      "ratio": 0.0551
+    },
+    {
+      "lemma": "voladura",
+      "documents": 41,
+      "ratio": 0.0551
+    },
+    {
+      "lemma": "almacenamiento",
+      "documents": 40,
+      "ratio": 0.0538
+    },
+    {
+      "lemma": "almacén",
+      "documents": 40,
+      "ratio": 0.0538
+    },
+    {
+      "lemma": "ausencia",
+      "documents": 40,
+      "ratio": 0.0538
+    },
+    {
+      "lemma": "distrito",
+      "documents": 40,
+      "ratio": 0.0538
+    },
+    {
+      "lemma": "ishikawa",
+      "documents": 40,
+      "ratio": 0.0538
+    },
+    {
+      "lemma": "máximo",
+      "documents": 40,
+      "ratio": 0.0538
+    },
+    {
+      "lemma": "ocasionar",
+      "documents": 40,
+      "ratio": 0.0538
+    },
+    {
+      "lemma": "sostenible",
+      "documents": 40,
+      "ratio": 0.0538
+    },
+    {
+      "lemma": "asociado",
+      "documents": 39,
+      "ratio": 0.0524
+    },
+    {
+      "lemma": "avance",
+      "documents": 39,
+      "ratio": 0.0524
+    },
+    {
+      "lemma": "convencional",
+      "documents": 39,
+      "ratio": 0.0524
+    },
+    {
+      "lemma": "enfocado",
+      "documents": 39,
+      "ratio": 0.0524
+    },
+    {
+      "lemma": "generación",
+      "documents": 39,
+      "ratio": 0.0524
+    },
+    {
+      "lemma": "ingreso",
+      "documents": 39,
+      "ratio": 0.0524
+    },
+    {
+      "lemma": "metro",
+      "documents": 39,
+      "ratio": 0.0524
+    },
+    {
+      "lemma": "mineral",
+      "documents": 39,
+      "ratio": 0.0524
+    },
+    {
+      "lemma": "profesional",
+      "documents": 39,
+      "ratio": 0.0524
+    },
+    {
+      "lemma": "raíz",
+      "documents": 39,
+      "ratio": 0.0524
+    },
+    {
+      "lemma": "resultar",
+      "documents": 39,
+      "ratio": 0.0524
+    },
+    {
+      "lemma": "actualidad",
+      "documents": 38,
+      "ratio": 0.0511
+    },
+    {
+      "lemma": "ayudar",
+      "documents": 38,
+      "ratio": 0.0511
+    },
+    {
+      "lemma": "corte",
+      "documents": 38,
+      "ratio": 0.0511
+    },
+    {
+      "lemma": "materia",
+      "documents": 38,
+      "ratio": 0.0511
+    },
+    {
+      "lemma": "ofrecer",
+      "documents": 38,
+      "ratio": 0.0511
+    },
+    {
+      "lemma": "programación",
+      "documents": 38,
+      "ratio": 0.0511
+    },
+    {
+      "lemma": "solar",
+      "documents": 38,
+      "ratio": 0.0511
+    },
+    {
+      "lemma": "transversal",
+      "documents": 38,
+      "ratio": 0.0511
+    },
+    {
+      "lemma": "velocidad",
+      "documents": 38,
+      "ratio": 0.0511
+    }
+  ]
+}
