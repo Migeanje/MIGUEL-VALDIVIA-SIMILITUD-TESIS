@@ -3,7 +3,8 @@
 # Source: results/eda/20261002T224412Z/stopword_candidates.json, written by
 # experiments/domain_stopwords.py. It ranks the 411 lemmas held by at least 5% of the 744
 # distinct theses (title without its place and year suffix, plus abstract), after spaCy's
-# Spanish stopwords. Curated by hand for task T11 on 2026-10-02.
+# Spanish stopwords. Curated by hand for task T11 on 2026-10-02 and revised for T11a on
+# 2026-10-03.
 #
 # Criteria. A lemma is listed only when it carries no topic, because it:
 # - names the thesis genre: the document, its parts, aims and findings, or the type of
@@ -13,7 +14,8 @@
 # - or is a generic modifier or connector that spaCy's list lacks (principal, cuyo).
 # Frequent words that can tell topics apart stay out, even the most common ones: análisis,
 # estudio, metodología, implementación, diseño, proceso, sistema, trabajo, tiempo, costo,
-# productividad, mantenimiento. When in doubt, a word stays out.
+# productividad, mantenimiento. So do frequent words that fit no criterion above: empresa,
+# mejora, mejorar, desarrollo, desarrollar. When in doubt, a word stays out.
 #
 # Lemmas are written as the full cleaner produces them: in lower case, with accents and ñ.
 
@@ -38,14 +40,6 @@ cuantitativo
 descriptivo
 experimental
 significativo
-
-# Organization and improvement, the frame of most theses.
-empresa
-mejora
-mejorar
-desarrollo
-desarrollar
-universidad
 
 # Verbs that report what the research did.
 permitir
@@ -79,7 +73,8 @@ contribuir
 alcanzar
 basado
 
-# Place and time of the study.
+# Institution, place and time of the study.
+universidad
 arequipa
 perú
 país

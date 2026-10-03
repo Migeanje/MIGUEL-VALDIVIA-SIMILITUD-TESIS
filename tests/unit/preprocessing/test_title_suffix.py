@@ -293,10 +293,14 @@ def test_quality_note_fits_a_ficha_quality_note_even_for_a_very_long_suffix() ->
 
     note = strip_title_suffix(title).quality_note
 
-    assert NOTE_MAX_LENGTH == QUALITY_NOTE_MAX_LENGTH
     assert note is not None
-    assert len(note) <= NOTE_MAX_LENGTH
+    assert len(note) <= QUALITY_NOTE_MAX_LENGTH
     assert note.startswith("title suffix removed (place_and_year):")
+
+
+def test_the_note_length_limit_equals_the_ficha_quality_note_limit() -> None:
+    # preprocessing may not import corpus, so the limit is written twice; this keeps it equal.
+    assert NOTE_MAX_LENGTH == QUALITY_NOTE_MAX_LENGTH
 
 
 # Classification, at its new home

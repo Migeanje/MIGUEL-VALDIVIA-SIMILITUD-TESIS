@@ -284,6 +284,8 @@ PLACE_KIND_WORDS = frozenset(
 """Words that name the kind of place before a place name, as in ``la ciudad de Arequipa`` or
 ``el sur del Perú``. They hang at the end of a title once the place is cut."""
 
+# The same limit as QUALITY_NOTE_MAX_LENGTH in corpus/ficha.py, written again because corpus
+# imports preprocessing and not the other way round. A unit test keeps the two equal.
 NOTE_MAX_LENGTH = 200
 """Longest :attr:`StrippedTitle.quality_note`: the longest quality note that a ficha takes."""
 

@@ -141,7 +141,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     print(
         f"Full cleaner: {len(documents)} documents in {seconds:.1f} s "
-        f"({len(documents) / seconds:.1f} documents/s, batch size {DEFAULT_BATCH_SIZE}); "
+        f"({_throughput(len(documents), seconds)}, batch size {DEFAULT_BATCH_SIZE}); "
         f"model load {load_seconds:.1f} s"
     )
     print(
@@ -219,6 +219,17 @@ def privacy_problems(
     return problems
 
 
+def _throughput(documents: int, seconds: float) -> str:
+    """Return the documents cleaned per second, or say it is unavailable.
+
+    It is unavailable when the clock measured no time, as an empty snapshot or a coarse
+    clock can give. The output is written by then, so the run still ends normally.
+    """
+    if seconds > 0:
+        return f"{documents / seconds:.1f} documents/s"
+    return "throughput unavailable"
+
+
 def _person_name_words(records: Iterable[SnapshotRecord]) -> frozenset[str]:
     """Return the lower-case words of every author, advisor and juror name."""
     words = set()
@@ -276,16 +287,39 @@ def _git(project_root: Path, *arguments: str) -> str | None:
 
 
 def _write_atomically(path: Path, content: bytes) -> None:
-    """Write ``content`` to a staged file beside ``path``, then move it into place."""
+    """Write ``content`` to a staged file beside ``path``, then move it into place durably.
+
+    The staged file is flushed to the disk before the move, and its directory after it, so
+    readers and a crash find the previous output or the new one, never a partial one.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, staged = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     try:
         with os.fdopen(descriptor, "wb") as file:
             file.write(content)
+            file.flush()
+            os.fsync(file.fileno())
         os.replace(staged, path)
     except BaseException:
         Path(staged).unlink(missing_ok=True)
         raise
+    _fsync_directory(path.parent)
+
+
+def _fsync_directory(directory: Path) -> None:
+    """Flush the entries of ``directory`` to the disk, so that a file moved into it stays.
+
+    POSIX systems need this after a rename. Windows cannot open a directory as a file, so
+    there, as wherever the directory cannot be opened, the step is skipped.
+    """
+    try:
+        descriptor = os.open(directory, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 if __name__ == "__main__":

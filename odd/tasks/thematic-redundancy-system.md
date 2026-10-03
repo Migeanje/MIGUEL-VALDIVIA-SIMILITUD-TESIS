@@ -1,7 +1,7 @@
 # Feature: Thematic Redundancy System (MVP)
 
 - **Locator:** `odd/tasks/thematic-redundancy-system.md`
-- **Status:** Plan approved by the user on 2026-10-02, including O02 and O08 (direct commits on `main`). T01 is implemented and verified, and is being committed.
+- **Status (2026-10-03):** Plan approved by the user on 2026-10-02, including O02 and O08 (direct commits on `main`). Phase 0 is done. T04, T05, T07, T08 and T11 are done. T11a is in progress. Next: T06.
 - **Source:** the thesis plan v3 `Plan_de_Tesis_UCSM_v3_Directiva.pdf` (119 pages, kept outside the repo), plus the decisions recorded below.
 
 ## Objective
@@ -327,7 +327,7 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
   - Make offset paging stable with a unique tiebreak, or a listing that does not depend on undefined order among items with the same `dc.date.issued`. The current snapshot is unaffected: 766 unique uuids, reconciled with each listing total and with the faculty total.
   - Enforce, or clearly document, reconciliation against the faculty-wide total, which is currently only recorded.
   - Route D. Risk M.
-- [ ] **T05** Thesis PDF downloader. It picks the thesis bitstream by name (excluding `*.RT.pdf` and `Autorización_*`), rate-limits, resumes, and records sha256. Embargoed/restricted items are skipped with a reason. **Needs U8.**
+- [x] **T05** Thesis PDF downloader. It picks the thesis bitstream by name (excluding `*.RT.pdf` and `Autorización_*`), rate-limits, resumes, and records sha256. Embargoed/restricted items are skipped with a reason. **Needs U8.**
   - Route D. Risk H.
   - Accept: every included item has exactly one thesis PDF or a recorded reason.
   - Evidence, implementation (2026-10-02):
@@ -347,11 +347,34 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - 65.3 MB in 20 requests and 114 s. All 10 were verified independently.
     - A rerun made 0 requests.
     - Extrapolated total: 4.5–10 GB, about 2.5–4.5 h at 1 request/s.
-  - Full run: started in the background on 2026-10-02. It is resumable.
-  - Open decision: 7 of the 8 embargoed theses have a `dc.date.embargoEnd` already past (2022–2025). They are skipped without any request. Fetching them needs a separate authorization.
+  - Full run, closing evidence (2026-10-03). It finished at 2026-10-03T12:18:20Z and covers all 746 `#tesis` items:
+    - 731 thesis PDFs on disk, 11,401,121,329 bytes (11.40 GB).
+    - 14 `restricted`: 8 embargoed (COAR `c_f1cf`) and 6 restricted (`c_16ec`). Of the 8 embargoes, 7 have already ended (2022-02-19, 2022-08-19, 2022-10-29, 2022-11-22, 2024-01-13, 2025-05-03, 2025-12-19) and 1 ends on 2027-03-18.
+    - 1 `no_thesis_file` (industrial): the item has no ORIGINAL bundle.
+    - 0 errors. The 3 `ConnectTimeout` errors of the interrupted run were retried and downloaded.
+    - Per program (PDF + restricted + no file): sistemas 63 + 2; industrial 330 + 9 + 1; electronica 46; mecanica 189 + 3; minas 103.
+  - Independent verification (2026-10-03):
+    - All 731 files were re-hashed. Each passes the `%PDF` header check, its size equals `sizeBytes`, its sha256 equals the manifest, and its MD5 equals the server checksum.
+    - The manifest's item uuids equal the 746 `#tesis` uuids in the metadata.
+    - The only extra file is the OS lock file `.lock`, which is harmless.
+    - The acceptance criterion is met.
+  - Open decision: 7 of the 8 embargoed theses have a `dc.date.embargoEnd` already past (2022–2025). They are skipped without any request. Fetching them needs a separate authorization. Recommendation: do not fetch them for now; they stay in the census through their metadata (title and abstract).
+  - Findings on the downloaded files (2026-10-03). T06, T09 and T12 point here.
+    - **Wrong file in the repository.** The sistemas item with handle `20.500.12920/11777` carries a byte-identical copy of the PDF of item `20.500.12920/11776`, yet their metadata differ entirely: abstract similarity 0.017, and the share of the item's own title words found in the PDF's first 4 pages is 0.0, against 1.0 for 11776. Planned handling: T12 treats 11777 as metadata-only (no PDF text; objectives fall back to title + abstract per O05) with a quality note, and T06 lists it.
+    - **D24 pairs and their PDFs.** The mecanica pair has byte-identical PDFs. The industrial pair has two different PDFs (4.5 MB and 4.6 MB), so T12's canonical rule must also choose which PDF to keep.
+    - **Title check.** Title-word coverage over the first 4 pages has a median of 1.0, and 718 of 731 PDFs reach 0.9 or more. 4 are below 0.5: 11777 (the wrong file), and handles 11240, 10952 and 11177, whose PDFs hold their own full abstract. Those 3 are the right files with a different cover title.
+    - **Valid own PDF.** 728 of the 744 distinct theses have one. 16 are metadata-only: 14 restricted, 1 without a file, 1 wrong file.
+    - **Text layer (for T09):**
+      - 141,076 pages in total; per thesis, median 174, p95 343, min 65, max 695.
+      - 8,616 pages (6.1%) have fewer than 50 characters, and 8,595 of them hold images.
+      - Documents: 604 text (<10% low-text pages), 126 mixed (10–80%), 1 scanned (≥80%, mecanica). Mixed by program: mecanica 56, industrial 37, minas 15, electronica 12, sistemas 6.
+      - 0 encrypted files. Median file size 6.96 MB, max 412 MB. Every PDF has a text layer on its first 4 pages.
+      - Implication: OCR selectively (only the sections the pipeline needs), and run long jobs as resumable CLIs in the user's own terminal.
+    - **Models.** The mpnet model is not cached; only MiniLM is (about 480 MB). Downloading it from Hugging Face before T13 needs the user's authorization.
   - Size: about 3,400 authored lines, about 1,760 of them tests and fixtures. Commit slices:
     - A: port, adapter, fixture, `test_dspace`.
     - B: selection rules, manifest, use case, CLI, their tests, README, plan doc.
+  - Commit: `54173b8`, made by the user. Its tree `dd756e9…` is identical to the reviewed one, and the post-commit review was approved.
 - [ ] **T05a** Downloader follow-ups from the T05 reviews (non-blocking):
   - Classify deterministic integrity failures (unsupported checksum algorithm, a stale listing producing a size or checksum mismatch) so they neither retry forever nor trip the stop after 3 consecutive failures.
   - Add tests for refusing a PDF manifest that belongs to another snapshot.
@@ -359,6 +382,7 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
   - Route D. Risk M.
 - [ ] **T06** Freeze the snapshot and write the data card (no backup, per D23) (counts by program and year, embargo list). The card must flag records whose `dc.date.issued` lies after the snapshot date. As of 2026-10-02 some items carry future dates (2026-12-04, 2026-12-01). The temporal split (T27) must handle them explicitly.
   - Route I. Risk P.
+  - Also list the T05 findings (2026-10-03): the PDF statuses, the wrong-file item 11777, the D24 PDF note and the 7 expired embargoes.
 - [x] **T07** EDA notebook: program/year distribution, abstract token lengths, keywords, title suffix patterns.
   - Route D. Risk P.
   - Evidence (2026-10-03):
@@ -426,6 +450,7 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
   - Route D. Risk M.
 - [ ] **T09** PDF text extraction with text-layer detection and an OCR fallback. Note from T05: 6 of 13 inspected items also carry DSpace's extracted full text (`*.pdf.txt` in a TEXT bundle). It could serve as a cross-check, but it was not fetched and is not authorized yet.
   - Route D. Risk M.
+  - Inputs: the T05 text-layer findings (2026-10-03), which call for selective OCR; and header and footer removal, moved here from T11. Long runs go in the user's terminal.
 - [ ] **T10** Objectives locator plus a manual verification sample (~60, stratified by program), producing an accuracy report (O05).
   - Route D. Risk M.
 - [x] **T11** Light and full cleaners. They handle:
@@ -450,14 +475,35 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
       - legal suffixes (S.A.C., E.I.R.L., …), URLs and emails dropped;
       - keeps "Lean", which spaCy mislemmatized as *leer* in 61 of 172 cases;
       - throughput 25–76 docs/s.
-    - `stopwords.py` loads `config/stopwords_domain_es.txt`: 84 curated lemmas covering genre, reporting verbs, institution, place and time, and generic words.
+    - `stopwords.py` loads `config/stopwords_domain_es.txt`: 79 curated lemmas covering genre, reporting verbs, institution, place and time, and generic words. It shipped with 84; T11a removed 5.
   - The candidates come from `experiments/domain_stopwords.py`. The output is aggregate only: 411 lemmas with DF ≥ 5% over 744 documents, after the D24 dedupe. Privacy: 0 hits.
   - Tests: 124 new, RED → GREEN. `ruff` clean. `pytest`: 762 passed, 1 skipped (independent re-run).
   - Moved to T09: header and footer removal, which needs page-level PDF text.
-  - For review at T16, once topics exist: borderline frequent words deliberately left out of the list, such as análisis (414), implementación (375), trabajo (332), estudio (315) and metodología (282).
+  - For review at T16, once topics exist: borderline frequent words deliberately left out of the list, such as análisis (414), implementación (375), trabajo (332), estudio (315) and metodología (282). Also the 5 that T11a removed: mejora (361), empresa (335), mejorar (291), desarrollar (272) and desarrollo (224).
+  - Commit: `e9f4f70`, made by the user. Its tree `4daf041…` is identical to the reviewed one.
+  - Reviews: high risk, four lenses, approved both before and after the commit.
+- [ ] **T11a** Follow-ups from the T11 reviews and the user's observations (2026-10-03):
+  - A1. Privacy gate tests: `privacy_problems` of `experiments/domain_stopwords.py` is the only barrier between the snapshot text and the published results file, and it had no test.
+  - A2. Tests for the D24 dedupe (`distinct_theses`) and the document builder (`thesis_document`).
+  - A3. Prove each characterization test of A1 and A2 can fail, with throwaway mutants.
+  - A4. Guard the throughput report: an empty snapshot or zero elapsed time raised `ZeroDivisionError` after the output was written.
+  - A5. Durable publish: fsync the staged file before `os.replace`, and the parent directory after it, tolerating platforms that cannot open a directory (Windows).
+  - A6. `NOTE_MAX_LENGTH` in `title_suffix.py` repeats `QUALITY_NOTE_MAX_LENGTH` of `corpus/ficha.py`, because `preprocessing` may not import `corpus`. Comment why, and keep a test that holds the two equal.
+  - B. Stopword list: the "Organization and improvement" group fits none of the file's criteria. `universidad` moves to the institution, place and time group; `empresa`, `mejora`, `mejorar`, `desarrollo` and `desarrollar` leave the list ("When in doubt, a word stays out"); 84 → 79 lemmas.
+  - Route D. Trigger: tests plus script plus config plus plan, 4+ non-trivial files. Risk M.
+  - Evidence (2026-10-03):
+    - B: RED, the new test `test_the_curated_list_leaves_out_frequent_words_that_fit_no_criterion` failed on the shipped list (1 failed, 15 passed). GREEN after the edit (16 passed). The list now holds 79 lemmas, `universidad` included. The header lists the 5 removed words among the frequent words that stay out.
+    - A1/A2: 22 characterization tests with synthetic records (privacy gate 11, dedupe 8, document builder 3). They passed on the existing code. 23 throwaway mutants were all caught, for example: leak check disabled, sensitive strings of no record, a leak message that echoes the leak, an empty lemma allowed, the 40-character bound as `>=` or `+ 1`, tabs not counted as whitespace, `any` instead of `all` in the dedupe key, no case folding, no whitespace or NFC folding, accents folded away, the kept order reversed, a key that ignores the title or the abstract, the last value instead of the first, the title suffix kept, title or abstract not light-cleaned, and the abstract always appended.
+    - A4: RED, `ZeroDivisionError` in both cases (two theses, and an empty snapshot) with a clock that stands still. GREEN: the run exits 0, writes the output, and prints "throughput unavailable". A second test pins the documents-per-second figure. Mutants: `>=` instead of `>`, and "always unavailable"; both caught.
+    - A5: RED, the recorded calls were only `replace`. GREEN: flush and fsync of the staged file (3 bytes on disk at fsync time), `replace`, then the directory open, fsync and close; a directory that cannot be opened is skipped. The repo had no directory-fsync helper to reuse (T08a lists one for the key file), so the script has its own `_fsync_directory`. 6 mutants caught: no fsync, no flush, no directory fsync, open failure not tolerated, descriptor not closed, directory flushed before the move.
+    - A6: the comment was added, and the equality check moved into its own test, `test_the_note_length_limit_equals_the_ficha_quality_note_limit`. Mutants 199 and 250 were both caught.
+    - Every mutant ran with a fresh bytecode cache. A same-size mutant restored within the same second can leave a stale `.pyc` that still looks valid.
+    - Checks: `pytest` 791 passed, 1 skipped (762 + 29 new). `ruff check` and `ruff format --check` are clean.
+    - Size: about 590 authored changed lines, 428 of them in `test_domain_stopwords.py` and 97 in this plan (T05 closing evidence included). This exceeds the 400-line guide, because the characterization tests cover each branch of the privacy gate and the dedupe.
   - Commit: pending; the user commits in GitHub Desktop.
 - [ ] **T12** Build the fichas dataset, the exclusion log, and a quality report. Inclusion requires an exact `renati.type` fragment `#tesis` (746 in snapshot `20261002T224412Z`). Suficiencia profesional appears in 5 spellings and is excluded with its reason.
   - Route D. Risk M.
+  - Inputs from the T05 findings (2026-10-03): 11777 is metadata-only with a quality note, and the D24 canonical rule must also choose the industrial pair's PDF.
 
 ### P3 — Representation and topic map (M3–M5)
 - [ ] **T13** Sentence-aligned chunker that is valid for both tokenizers. Property tests check that every chunk fits both tokenizers and no text is lost.
@@ -643,34 +689,37 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
   - The last reviewed boundary is `f21743f`.
   - T11 is implemented but not yet committed. The T05 download is still running in the user's terminal.
 
+- 2026-10-03: The user committed T11 as `e9f4f70`. The post-commit review was approved, so the reviewed boundary is now `e9f4f70`. T11a was added from the review findings and the user's observations on the stopword list.
+
+- 2026-10-03: The T05 download finished at 12:18:20Z and was verified independently.
+  - All 746 `#tesis` items are covered: 731 PDFs (11.40 GB), 14 restricted, 1 without a file, 0 errors.
+  - Findings, recorded under T05: item 11777 carries the wrong file; the industrial D24 pair has two different PDFs; 728 of the 744 distinct theses have a valid own PDF; 126 PDFs are mixed text/image and 1 is scanned, so T09 should OCR selectively.
+
+- 2026-10-03: T11a started. Route: D. Trigger: new tests, script fixes, the stopword list and the plan.
+
 ## Next step
 
 Resume checklist, in order:
 
 1. **Re-sync.**
    - Read this document fully.
-   - Run `git status`, `git log -5`, `uv run pytest -q` and `uv run ruff check .`.
-   - Confirm HEAD is `f21743f` or later.
-2. **T11 (cleaners).** It was verified and reviewed in the previous session, and its commit was handed to the user.
-   - If HEAD already contains T11, run only the post-commit review check, using `--base-ref f21743f`.
-   - Otherwise, verify the uncommitted files, re-run the review, and hand the commit to the user.
-3. **T05 download.**
-   - Read `data/raw/20261002T224412Z/pdfs/manifest.json` and its `summary`. If it is still running, the user continues it in their terminal; it is resumable.
-   - When it finishes, record the final per-status counts and total size under T05.
-   - Investigate any `integrity_error`, `ambiguous` or `no_thesis_file` entries. Check this against T05a.
-4. **T06.** Write the data card: counts, rights, future-dated items, duplicates (D24) and PDF statuses. No backup (D23).
-5. **T09.** PDF text extraction, with text-layer detection and an OCR fallback.
-6. **T10.** Objectives locator. Manual check of about 60 theses stratified by program; target at least 90% correct (O05).
-7. **T12.** Build the fichas dataset:
-   - D24 dedupe;
+   - Run `git status`, `git log -5`, `uv run pytest -q`, `uv run ruff check .` and `uv run ruff format --check .`.
+   - Confirm that HEAD contains T11a, or that T11a is still uncommitted.
+2. **T11a.**
+   - If it is uncommitted: verify it, run the pre-commit review, and hand the commit to the user.
+   - If it is committed: run the post-commit review check from base `e9f4f70`.
+3. **T06.** Write the data card, including the PDF statuses, the wrong-file item, the D24 PDF note and the expired embargoes. No backup (D23).
+4. **T09.** PDF text extraction with text-layer detection, selective OCR, and header and footer removal (moved from T11). Long runs go in the user's terminal.
+5. **T10.** Objectives locator. Manual check of about 60 theses stratified by program; target at least 90% correct (O05).
+6. **T12.** Build the fichas dataset:
+   - D24 dedupe, including the industrial pair's PDF choice;
+   - 11777 as metadata-only;
    - advisor codes keyed by ORCID;
    - `author_codes`;
-   - an exclusion log;
+   - the exclusion log;
    - `doc_code` uniqueness;
    - re-check the domain stopwords against the objectives text.
 
 Batched follow-ups, to be scheduled once Phase 2 is done: T02a, T04a, T05a, T07a, T08a.
 
-Pending user inputs: U1, U2 (before T19), U3 (month 3), U4, U5, U6. U8 is needed for any new download. After the download: T06 (data card, no backup per D23).
-
-Pending follow-ups, to be batched later: T02a, T04a, T05a, T07a.
+Pending user inputs: U1; U2 (before T19); U3 (month 3); U4, which must be agreed before any topic result exists, so before T16; U5; U6; U8 for any new download, including the mpnet model before T13 and, optionally, the 7 expired-embargo PDFs.
