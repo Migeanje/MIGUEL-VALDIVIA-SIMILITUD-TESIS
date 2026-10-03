@@ -75,9 +75,9 @@ Institutional integrity tools such as Turnitin detect textual overlap. They do n
 | D19 | Code architecture is hexagonal-lite with a screaming layout. Notebooks only orchestrate | The experiment requires swappable components |
 | D20 | Project repository: this repo, the single official repo for the whole system (remote `origin` on GitHub). No push without a user decision | Confirmed by the user 2026-10-02. One repo is enough; the user creates any extra repo on request |
 | D21 | The earlier `TesisSimilitud` repo (Feb 2025) is ignored entirely | The user says it was only a test |
-| D24 | Deduplicate exact duplicate records before anything else | T07 found 2 pairs of `#tesis` records with identical title, abstract, author, advisor and date under different item uuids, so there are 744 distinct theses, not 746. T12 keeps one canonical record per pair (rule fixed in T12) and logs the other as `duplicate_of`. Duplicates never enter the labeled pairs (T20) or the redundancy evaluation, where they would be trivial positives |
-| D23 | No backup copy of the raw snapshot; U7 is dropped | User decision 2026-10-03, risk R8 accepted. Partial mitigation: the metadata and PDF manifests record item uuids, bitstream uuids and sha256, so a later re-harvest can be diffed and documented |
 | D22 | Always construct BERTopic with `language="spanish"` (never the default) | With `embedding_model=None`, BERTopic 0.17.4 keeps `language="english"` and strips every character outside `[A-Za-z0-9 ]` before c-TF-IDF, so `fragmentación` becomes `fragmentacin`. Found and proven by the T02 smoke test |
+| D23 | No backup copy of the raw snapshot; U7 is dropped | User decision 2026-10-03, risk R8 accepted. Partial mitigation: the metadata and PDF manifests record item uuids, bitstream uuids and sha256, so a later re-harvest can be diffed and documented |
+| D24 | Deduplicate exact duplicate records before anything else | T07 found 2 pairs of `#tesis` records with identical title, abstract, author, advisor and date under different item uuids, so there are 744 distinct theses, not 746. T12 keeps one canonical record per pair (rule fixed in T12) and logs the other as `duplicate_of`. Duplicates never enter the labeled pairs (T20) or the redundancy evaluation, where they would be trivial positives |
 
 D15, labeled set, in detail:
 - ≈120 pairs drawn from four pools: SBERT-high, TF-IDF-high, mid-range, and random.
@@ -377,11 +377,47 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - 716 of 746 abstracts are hard-wrapped, with 85.7% of breaks in mid-sentence, so T11 must unwrap them.
     - 44 advisor ORCIDs map to several name variants, so advisors must be identified by ORCID (T08/T12).
     - The mpnet tokenizer is not cached yet, so D09's check under both tokenizers is pending (T13).
-  - Commit: pending; the user commits in GitHub Desktop.
+  - Commit: `96c410c`, made by the user. Its tree `c1257fc…` is identical to the reviewed one.
+  - Reviews: high risk, four lenses, approved both before and after the commit.
+- [ ] **T07a** EDA script follow-ups from the T07 reviews (non-blocking):
+  - Write the outputs atomically (stage, then publish) so a failed write leaves no half-written results.
+  - Guard against empty programs or years in `observations()`.
+  - Derive the mpnet-tokenizer note at runtime instead of hardcoding it.
+  - Tie the "top advisors" text to its constant.
+  - Name the year-suffix patterns explicitly.
+  - Add tests for the privacy write gate.
+  - Document that text drawn inside the PNG figures is outside the gate's string search.
+  - Route D. Risk M.
 
 ### P2 — Data preparation (M2–M3)
-- [ ] **T08** Ficha schema (pydantic) and its parquet adapter. It holds the Anexo B fields plus: handle URL, snapshot id, keywords, OCDE code, objectives status, section source, include/exclude with reason, file hash.
+- [x] **T08** Ficha schema (pydantic) and its parquet adapter. It holds the Anexo B fields plus: handle URL, snapshot id, keywords, OCDE code, objectives status, section source, include/exclude with reason, file hash.
   - Route D. Risk M.
+  - Evidence (2026-10-03):
+    - `corpus/ficha.py` defines a frozen `Ficha` (`extra="forbid"`, inputs hidden in errors). Fields:
+      - item uuid; `doc_code`, derived as `DOC-` + 8 hex of sha256(uuid);
+      - handle URL, snapshot id, document type with the raw renati type;
+      - title, abstract, objectives and objectives status;
+      - program, raw issue date and year, the future-dated flag, keywords, OCDE codes, language;
+      - rights and embargo end;
+      - `advisor_code`, a single code;
+      - `author_codes`, a tuple of at most 5 in repository order;
+      - PDF status and sha256, source format, section source;
+      - `include`, exclusion reason, `duplicate_of`, quality notes.
+    - Cross-field rules:
+      - exclusion iff not included;
+      - `duplicate_of` iff the reason is `duplicate`;
+      - `non_thesis_type` iff the document type is not tesis (D01);
+      - objectives text iff the status is extracted or manual;
+      - `pdf_sha256` iff the PDF is on disk.
+  - `corpus/anonymize.py`:
+    - keyed HMAC-SHA256 pseudonyms. The MAC includes the prefix, so ADV and AUT codes cannot be linked to each other.
+    - Person identity uses a checksummed ORCID first and falls back to the normalized name; accents are dropped only for matching.
+    - A 32-byte key lives under gitignored `data/interim/`. It is created once and never overwritten.
+  - `shared/storage.py`: a table-store port plus a parquet adapter. Writes are atomic. UUIDs, tuples, None, booleans and accents round-trip. A schema mismatch raises `SchemaMismatchError`.
+  - Data check (aggregate): 705 of the 746 theses have 1 author, 41 have 2, and every thesis has exactly 1 advisor. Hence `author_codes` is a tuple.
+  - Tests: 202 new, RED → GREEN. 67 throwaway mutants were all caught. `ruff` clean. `pytest`: 638 passed, 1 skipped (independent re-run).
+  - Notes for T12: check `doc_code` uniqueness across the dataset, and log a quality note when an ORCID fails its checksum.
+  - Commit: pending; the user commits in GitHub Desktop.
 - [ ] **T09** PDF text extraction with text-layer detection and an OCR fallback. Note from T05: 6 of 13 inspected items also carry DSpace's extracted full text (`*.pdf.txt` in a TEXT bundle). It could serve as a cross-check, but it was not fetched and is not authorized yet.
   - Route D. Risk M.
 - [ ] **T10** Objectives locator plus a manual verification sample (~60, stratified by program), producing an accuracy report (O05).
@@ -565,6 +601,14 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
 
 - 2026-10-03: T07 implemented and verified. D24 (deduplication) was added. Notes for T08, T11, T12 and T13 are recorded under T07. The commit was handed to the user. The T05 download was at 434 of 746 (6.57 GB), with 1 `no_thesis_file`.
 
+- 2026-10-03: The user committed T07 as `96c410c`. The post-commit review was approved, so the reviewed boundary is now `96c410c`. T07a was added. The plan's stale next step was fixed, and the decision rows were reordered.
+  - The background T05 download stopped at the tool's maximum time limit, at 470 of 746 (7.22 GB). One `.part` was left over; the downloader overwrites it when it retries that item.
+  - The session must not relaunch a job that hit the maximum limit, so the user resumes it from a terminal with the same CLI. It is resumable.
+
+- 2026-10-03: T08 implemented and verified, including the `author_codes` change from measured data. Its commit was handed to the user.
+
 ## Next step
 
-Finish the T05 full download (relaunch if the background time limit cuts it), then T06 (data card). Next is T06: freeze, back up (U7 location still needed from the user), and write the data card. T04a and T02a are pending follow-ups.
+The user resumes the T05 download from a terminal. In parallel: commit T08 (ficha schema). After the download: T06 (data card, no backup per D23).
+
+Pending follow-ups, to be batched later: T02a, T04a, T05a, T07a.

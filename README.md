@@ -195,6 +195,9 @@ work offline with `HF_HUB_OFFLINE=1`.
   `renati.advisor.dni`) are dropped at ingestion, before anything is written. The snapshot
   manifest lists the dropped keys.
 - Author names are never shown in the app or in reports, and user queries are never persisted.
+- Fichas never store a person's name. Advisors and authors appear only as codes keyed by a local
+  secret, `data/interim/pseudonym.key`, which is created on first use and never committed.
+  Without it, the codes can be neither re-derived nor reversed.
 - `results/` holds aggregates only. The metadata profile refuses to write an output that holds a
   title, an abstract, a person's name or an ORCID from the snapshot.
 
