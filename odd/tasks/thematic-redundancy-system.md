@@ -1,7 +1,7 @@
 # Feature: Thematic Redundancy System (MVP)
 
 - **Locator:** `odd/tasks/thematic-redundancy-system.md`
-- **Status (2026-10-03):** Plan approved by the user on 2026-10-02, including O02 and O08 (direct commits on `main`). Phase 0 is done. T04, T05, T07, T08 and T11 are done. T11a is in progress. Next: T06.
+- **Status (2026-10-03):** Plan approved by the user on 2026-10-02, including O02 and O08 (direct commits on `main`). Phase 0 is done. T04, T05, T07, T08, T11 and T11a are done. T06 is done and awaits the user's commit. Next: T09.
 - **Source:** the thesis plan v3 `Plan_de_Tesis_UCSM_v3_Directiva.pdf` (119 pages, kept outside the repo), plus the decisions recorded below.
 
 ## Objective
@@ -380,9 +380,22 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
   - Add tests for refusing a PDF manifest that belongs to another snapshot.
   - Add tests for keeping a matching on-disk file while a previous manifest entry exists, whether it was an error or had a different bitstream.
   - Route D. Risk M.
-- [ ] **T06** Freeze the snapshot and write the data card (no backup, per D23) (counts by program and year, embargo list). The card must flag records whose `dc.date.issued` lies after the snapshot date. As of 2026-10-02 some items carry future dates (2026-12-04, 2026-12-01). The temporal split (T27) must handle them explicitly.
-  - Route I. Risk P.
+- [x] **T06** Freeze the snapshot and write the data card (no backup, per D23) (counts by program and year, embargo list). The card must flag records whose `dc.date.issued` lies after the snapshot date. As of 2026-10-02 some items carry future dates (2026-12-04, 2026-12-01). The temporal split (T27) must handle them explicitly.
+  - Route D (planned as I). Trigger: a new data card computed from the raw data, plus plan and README edits. Risk P.
   - Also list the T05 findings (2026-10-03): the PDF statuses, the wrong-file item 11777, the D24 PDF note and the 7 expired embargoes.
+  - Evidence (2026-10-03):
+    - The card is `results/snapshot/20261002T224412Z/data_card.md`: aggregates, handles and program keys only. The README's "Corpus snapshot" section points to it.
+    - Freeze digests (SHA-256): `metadata.jsonl` `d8883901…d932` (equal to the snapshot manifest's), `manifest.json` `1ed0c205…94c8`, `pdfs/manifest.json` `4a1ecdba…816a`. Combined PDF digest `9c72910d…4586`: the SHA-256 of the sorted lines `<item_uuid> <pdf_sha256>\n` of the 731 PDFs, with the recipe in the card. The re-hashed files and the manifest's values give the same digest.
+    - Every number was recomputed from the files, and each matches the T04, T05 and T07 evidence: 766 records (746 `#tesis`, 19 suficiencia, 1 trabajo académico); 744 distinct theses; the program × year table equals the metadata profile; 2 future-dated theses (`16433` 2026-12-01 and `16319` 2026-12-04, both industrial, open, with a PDF); rights 732 / 8 / 6; 731 PDFs, 11,401,121,329 bytes, all 731 re-hashed OK; 728 of 744 with a valid own PDF; 141,076 pages, median 174; 8,616 low-text pages; 604 text, 126 mixed, 1 scanned (`15595`).
+    - No numeric mismatch. Notes on method:
+      - The low-text count depends on the definition: 8,616 with the stripped text under 50 characters (the card's rule), 7,270 with the raw text, 10,070 with all whitespace removed.
+      - The title check gives 718 PDFs at 0.9 or more with alphanumeric tokens (the card's rule), and 720 with letter-only tokens; the 4 below 0.5 are the same either way.
+      - The abstract similarity 0.017 of 11777 was not recomputed. The card uses an abstract-token check instead: 1.0 for 11776 and for the 3 right files with a different cover title, 0.25 for 11777.
+      - The live-repository count change (765 → 766) cannot be recomputed from the files, so the card cites the progress log without the numbers.
+    - New details in the card: one open thesis (`12050`) carries a past `dc.date.embargoEnd`; both future-dated theses were accessioned in early 2026; the 20 non-thesis records are all open; the largest PDF is 412 MB (`15113`).
+    - Privacy: the scan of the card and of the added plan and README lines for every title, abstract, abstract sentence of 40+ characters, author, advisor and juror name, and ORCID found 0 hits.
+    - Checks: `pytest` 791 passed, 1 skipped (no code changed). `ruff check` and `ruff format --check` are clean. `ruff format` also checks Python code blocks inside Markdown, so the card's digest snippet follows ruff style; run from the repository root, it prints the combined digest above.
+    - Size: 366 authored changed lines, 313 of them the new card.
 - [x] **T07** EDA notebook: program/year distribution, abstract token lengths, keywords, title suffix patterns.
   - Route D. Risk P.
   - Evidence (2026-10-03):
@@ -482,7 +495,7 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
   - For review at T16, once topics exist: borderline frequent words deliberately left out of the list, such as análisis (414), implementación (375), trabajo (332), estudio (315) and metodología (282). Also the 5 that T11a removed: mejora (361), empresa (335), mejorar (291), desarrollar (272) and desarrollo (224).
   - Commit: `e9f4f70`, made by the user. Its tree `4daf041…` is identical to the reviewed one.
   - Reviews: high risk, four lenses, approved both before and after the commit.
-- [ ] **T11a** Follow-ups from the T11 reviews and the user's observations (2026-10-03):
+- [x] **T11a** Follow-ups from the T11 reviews and the user's observations (2026-10-03):
   - A1. Privacy gate tests: `privacy_problems` of `experiments/domain_stopwords.py` is the only barrier between the snapshot text and the published results file, and it had no test.
   - A2. Tests for the D24 dedupe (`distinct_theses`) and the document builder (`thesis_document`).
   - A3. Prove each characterization test of A1 and A2 can fail, with throwaway mutants.
@@ -500,7 +513,12 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - Every mutant ran with a fresh bytecode cache. A same-size mutant restored within the same second can leave a stale `.pyc` that still looks valid.
     - Checks: `pytest` 791 passed, 1 skipped (762 + 29 new). `ruff check` and `ruff format --check` are clean.
     - Size: about 590 authored changed lines, 428 of them in `test_domain_stopwords.py` and 97 in this plan (T05 closing evidence included). This exceeds the 400-line guide, because the characterization tests cover each branch of the privacy gate and the dedupe.
-  - Commit: pending; the user commits in GitHub Desktop.
+  - Commit: `633dfd2`, made by the user. Its tree `1b22471…` is identical to the reviewed one.
+  - Reviews: medium risk, one lens, approved both before and after the commit.
+- [ ] **T11b** Follow-ups from the T11a reviews (non-blocking):
+  - `_fsync_directory` in `experiments/domain_stopwords.py` tolerates only a failure to open the directory. An `OSError` from `os.fsync` on an opened directory (EINVAL on some network, FUSE or overlay filesystems) propagates after `os.replace` has already published the output, which contradicts its docstring. Tolerate it, and add a test. Both reviews raised it.
+  - The documents-per-second test couples to the number of `perf_counter` readings in `main`. Assert only the format, or control the two readings that bracket the cleaner.
+  - Route D. Risk M.
 - [ ] **T12** Build the fichas dataset, the exclusion log, and a quality report. Inclusion requires an exact `renati.type` fragment `#tesis` (746 in snapshot `20261002T224412Z`). Suficiencia profesional appears in 5 spellings and is excluded with its reason.
   - Route D. Risk M.
   - Inputs from the T05 findings (2026-10-03): 11777 is metadata-only with a quality note, and the D24 canonical rule must also choose the industrial pair's PDF.
@@ -697,6 +715,10 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
 
 - 2026-10-03: T11a started. Route: D. Trigger: new tests, script fixes, the stopword list and the plan.
 
+- 2026-10-03: The user committed T11a as `633dfd2`. The post-commit review was approved, so the reviewed boundary is now `633dfd2`. T11b was added from the review findings.
+
+- 2026-10-03: T06 started. Route: D (the plan said I). Trigger: a new data card computed from the raw data, plus plan and README edits.
+
 ## Next step
 
 Resume checklist, in order:
@@ -704,14 +726,13 @@ Resume checklist, in order:
 1. **Re-sync.**
    - Read this document fully.
    - Run `git status`, `git log -5`, `uv run pytest -q`, `uv run ruff check .` and `uv run ruff format --check .`.
-   - Confirm that HEAD contains T11a, or that T11a is still uncommitted.
-2. **T11a.**
-   - If it is uncommitted: verify it, run the pre-commit review, and hand the commit to the user.
-   - If it is committed: run the post-commit review check from base `e9f4f70`.
-3. **T06.** Write the data card, including the PDF statuses, the wrong-file item, the D24 PDF note and the expired embargoes. No backup (D23).
-4. **T09.** PDF text extraction with text-layer detection, selective OCR, and header and footer removal (moved from T11). Long runs go in the user's terminal.
-5. **T10.** Objectives locator. Manual check of about 60 theses stratified by program; target at least 90% correct (O05).
-6. **T12.** Build the fichas dataset:
+   - Confirm that HEAD contains T06, or that T06 is still uncommitted.
+2. **T06.**
+   - If it is uncommitted: verify it, and hand the commit to the user.
+   - If it is committed: run the post-commit check from base `633dfd2`.
+3. **T09.** PDF text extraction with text-layer detection, selective OCR, and header and footer removal (moved from T11). Long runs go in the user's terminal.
+4. **T10.** Objectives locator. Manual check of about 60 theses stratified by program; target at least 90% correct (O05).
+5. **T12.** Build the fichas dataset:
    - D24 dedupe, including the industrial pair's PDF choice;
    - 11777 as metadata-only;
    - advisor codes keyed by ORCID;
@@ -720,6 +741,6 @@ Resume checklist, in order:
    - `doc_code` uniqueness;
    - re-check the domain stopwords against the objectives text.
 
-Batched follow-ups, to be scheduled once Phase 2 is done: T02a, T04a, T05a, T07a, T08a.
+Batched follow-ups, to be scheduled once Phase 2 is done: T02a, T04a, T05a, T07a, T08a, T11b.
 
 Pending user inputs: U1; U2 (before T19); U3 (month 3); U4, which must be agreed before any topic result exists, so before T16; U5; U6; U8 for any new download, including the mpnet model before T13 and, optionally, the 7 expired-embargo PDFs.

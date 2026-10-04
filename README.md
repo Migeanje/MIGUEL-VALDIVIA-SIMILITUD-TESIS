@@ -80,6 +80,10 @@ The harvest is polite to the server:
   times, with exponential backoff.
 - It reads metadata only. The PDFs come from a separate command, below.
 
+The frozen snapshot `20261002T224412Z` is described in its data card,
+[`results/snapshot/20261002T224412Z/data_card.md`](results/snapshot/20261002T224412Z/data_card.md):
+freeze digests, counts by program and year, access rights, PDF statuses, and known issues.
+
 ## Thesis PDFs
 
 Once a snapshot exists, fetch the PDF of each of its theses:
