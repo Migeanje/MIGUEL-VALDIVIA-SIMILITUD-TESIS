@@ -37,6 +37,7 @@ from thematic_redundancy.corpus.snapshot import (
     encode_records,
     write_snapshot,
 )
+from thematic_redundancy.extraction import text_manifest as manifest_module
 from thematic_redundancy.extraction.extract_text import (
     ExtractionInProgressError,
     ExtractionReport,
@@ -46,7 +47,7 @@ from thematic_redundancy.extraction.extract_text import (
 from thematic_redundancy.extraction.page_text import PageText
 from thematic_redundancy.extraction.pdf_reader import PdfPages, PdfReadError, TextLayer
 from thematic_redundancy.extraction.pymupdf_reader import PyMuPdfReader
-from thematic_redundancy.extraction.text_manifest import ExtractionSettings
+from thematic_redundancy.extraction.text_manifest import EXTRACTION_VERSION, ExtractionSettings
 from thematic_redundancy.shared.config import AppConfig, load_config
 from thematic_redundancy.shared.storage import ParquetTableStore
 
@@ -300,6 +301,27 @@ def rewrite_pdf(project_root: Path, number: int, spec: Sequence[PageSpec]) -> No
     write_pdf_manifest(manifest_path, manifest.model_copy(update={"items": items}))
 
 
+def drop_from_pdf_manifest(project_root: Path, number: int, how: str) -> None:
+    """Take the PDF of thesis ``number`` out of the PDF manifest: record the thesis as
+    ``restricted``, or remove its entry. The PDF file itself stays on disk."""
+    manifest_path = raw_dir(project_root) / "pdfs" / "manifest.json"
+    manifest = PdfManifest.model_validate_json(manifest_path.read_bytes())
+    items = dict(manifest.items)
+    if how == "removed":
+        del items[item_uuid(number)]
+    else:
+        items[item_uuid(number)] = PdfEntry(
+            program_key=items[item_uuid(number)].program_key,
+            status="restricted",
+            reason="rights_restricted",
+            checked_at=RUN_TIME,
+        )
+    write_pdf_manifest(
+        manifest_path,
+        manifest.model_copy(update={"items": items, "summary": summarize_pdfs(items)}),
+    )
+
+
 def thesis(pages: int = 6) -> list[PageSpec]:
     return [thesis_page(number) for number in range(1, pages + 1)]
 
@@ -479,6 +501,27 @@ def test_changed_settings_extract_every_pdf_again(
     assert text_manifest(tmp_path)["summary"]["stale"] == 0
 
 
+def test_page_records_made_by_older_extraction_rules_are_extracted_again(
+    config: AppConfig,
+    tmp_path: Path,
+    reader: SpyReader,
+    clock: FakeClock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_test_snapshot(tmp_path, {1: thesis(), 2: thesis()})
+    with monkeypatch.context() as patch:
+        patch.setattr(manifest_module, "EXTRACTION_VERSION", 1)  # The rules of T09.
+        run(config, tmp_path, reader, clock)
+    reader.opened.clear()
+
+    report = run(config, tmp_path, reader, clock)  # Same settings, newer rules.
+
+    assert outcomes(report) == [(item_uuid(1), "ok", False), (item_uuid(2), "ok", False)]
+    assert reader.opened == [item_uuid(1), item_uuid(2)]
+    assert text_manifest(tmp_path)["settings"]["extraction_version"] == EXTRACTION_VERSION
+    assert text_manifest(tmp_path)["summary"]["stale"] == 0
+
+
 def test_a_new_download_of_a_pdf_is_extracted_again(
     config: AppConfig, tmp_path: Path, reader: SpyReader, clock: FakeClock
 ) -> None:
@@ -525,6 +568,29 @@ def test_a_pdf_that_no_longer_matches_the_pdf_manifest_is_an_error(
     assert outcomes(report) == [(item_uuid(1), "error", False), (item_uuid(2), "ok", True)]
     assert entry_of(tmp_path, 1)["reason"] == "pdf_changed"
     assert not pages_path(tmp_path, 1).exists()  # Stale page records do not survive.
+
+
+@pytest.mark.parametrize("how", ["restricted", "removed"])
+def test_an_entry_whose_pdf_left_the_pdf_manifest_is_kept_as_orphaned_outside_the_totals(
+    config: AppConfig, tmp_path: Path, reader: SpyReader, clock: FakeClock, how: str
+) -> None:
+    write_test_snapshot(tmp_path, {1: thesis(), 2: thesis(7), 3: thesis()})
+    run(config, tmp_path, reader, clock)
+    drop_from_pdf_manifest(tmp_path, 2, how)
+    reader.opened.clear()
+    plans: list[Any] = []
+
+    report = run(config, tmp_path, reader, clock, on_start=plans.append)
+
+    assert outcomes(report) == [(item_uuid(1), "ok", True), (item_uuid(3), "ok", True)]
+    assert plans[0].orphaned == (item_uuid(2),)
+    summary = text_manifest(tmp_path)["summary"]
+    assert (summary["items"], summary["ok"], summary["pages"]) == (2, 2, 12)
+    assert summary["orphaned"] == 1
+    assert summary["by_program"] == {"sistemas": {"ok": 2}}
+    assert report.manifest.summary == manifest_module.TextSummary.model_validate(summary)
+    assert entry_of(tmp_path, 2)["pages"] == 7  # The entry is kept, and so is its page file.
+    assert len(stored_pages(tmp_path, 2)) == 7
 
 
 # --- Failures and interruptions ----------------------------------------------------------
@@ -766,6 +832,22 @@ def test_cli_writes_a_summary_file_of_numbers_only(
     assert summary["ocr_seconds_per_page"] == OCR_SECONDS
     assert MARKER not in summary_path.read_text(encoding="utf-8")
     assert str(item_uuid(1)) not in summary_path.read_text(encoding="utf-8")
+
+
+def test_cli_reports_orphaned_entries_and_leaves_them_out_of_the_totals(
+    cli_root: Path, reader: SpyReader, clock: FakeClock, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_test_snapshot(cli_root, {1: thesis(), 2: thesis(), 3: thesis()})
+    assert cli(cli_root, reader, clock) == 0
+    drop_from_pdf_manifest(cli_root, 2, "restricted")
+    capsys.readouterr()
+
+    assert cli(cli_root, reader, clock) == 0
+
+    out = capsys.readouterr().out
+    assert out.splitlines()[0].startswith(f"Snapshot {SNAPSHOT_ID}: 2 of 2 thesis PDFs")
+    assert re.search(rf"^Orphaned: 1 entries .*: {item_uuid(2)}$", out, re.M)
+    assert "2 PDFs, 2 ok, 0 errors, 0 with older settings, 1 orphaned" in out
 
 
 @pytest.mark.parametrize(

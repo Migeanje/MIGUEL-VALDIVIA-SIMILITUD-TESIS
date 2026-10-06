@@ -519,7 +519,33 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - B: the port, the PyMuPDF adapter, the synthetic-PDF helper, the adapter tests and the OCR smoke test (≈500). B depends on A.
     - C: the manifest, the use case, the CLI, their tests, the README and this evidence (≈2,000). C gets a `size:exception` recommendation: one resumable CLI whose tests share one set of fakes, 43% of it tests.
   - Full run: pending in the user's terminal (command in the README). T09 stays unchecked until it is done and verified.
+  - Commit: `3b05679`, made by the user as one commit. Its tree `8451eb4…` is identical to the reviewed one.
+  - Reviews: medium risk, one lens, approved before the commit. The user declined the post-commit review for this candidate.
+- [ ] **T09a** Fixes from the T09 review, needed before the full run. The settings fingerprint covers code only through a rules version raised by hand, and T09 left it at 1, so a later fix would not extract the PDFs again.
+  - Route D. Risk M.
+  - Trigger for route D: a rule fix plus manifest and fingerprint changes, with tests, across 3 or more files.
+  - R3-001 (warning), `page_text.py`: an edge line of digits only goes only when it is a page number. Bare page numbers made `#` a running key, which also dropped a year such as `2024` at the foot of a cover page, or any other all-digit edge line. Running lines with words, such as `Página 12`, behave as before.
+  - R3-003 (suggestion), `extract_text.py` and `text_manifest.py`: an entry whose item the PDF manifest no longer lists as on disk (restricted or removed since) is `orphaned`. A run reports it when it starts, and the summary counts it as `orphaned` and leaves it out of every other total. The entry and its page file are kept; nothing is deleted automatically.
+  - R3-002 (suggestion): the skip trusts the PDF manifest's SHA-256 and does not hash the PDF on disk. This is kept by design, since the snapshot is frozen (T06). The README now says a rerun extracts again when the PDF manifest's record of the PDF changed, and points to the data card's combined PDF digest for verifying the files; the docstrings say the same.
+  - Rules version: `EXTRACTION_VERSION` in `text_manifest.py`, already part of the settings fingerprint, goes from 1 (T09) to 2. Its docstring lists the versions and says to raise it whenever the page-text rules change, and `page_text.py` points to it. Documented in the README.
+  - Evidence (2026-10-05):
+    - R3-001: RED 1 failed (the year was dropped), 59 passed → GREEN 60 passed.
+    - Rules version and R3-003: RED 4 failed, 35 passed. The rules-version test failed because both PDFs were skipped; the orphan tests failed because there was no orphan report. GREEN: 111 passed in `tests/unit/extraction/`.
+    - Sample re-run, numbers only: the same 10 PDFs as T09, through `--only` with the 10 items of the T09 manifest.
+      - All 10 were extracted again because of rules version 2: 10 extracted, 0 skipped, 0 failed.
+      - Running lines removed: 2,333 → 2,322 (−11). That is one line kept per PDF, two in one PDF.
+      - Otherwise the same: 1,638 pages (1,535 text layer, 103 OCR, 0 empty), 139 low-text, OCR 103 tried and 0 failed, 6 MuPDF warnings.
+      - Seconds: 1,233.8 wall, of which 1,226.3 OCR, so 11.9 s per OCR page. The scanned PDF took 1,138.0 s (13.2 s per page), and the other 17 OCR pages took 5.4 s each.
+      - That OCR speed is about 2.6 times slower than in T09 (4.6 s per page) on the same pages, so machine conditions vary widely. At this speed the full run's OCR would take about 6.5 h instead of 2.2–2.7 h; it resumes, so it can be split.
+      - A second run skipped all 10 in 0.1 s. Stderr held 4 lines, all Tesseract diagnostics without text.
+    - Checks:
+      - `pytest`: 923 passed, 1 skipped (918 + 5 new).
+      - `pytest -m smoke`: 16 passed.
+      - `ruff check` and `ruff format --check` are clean.
+      - Attribution scan of the added lines: 0 hits. Privacy scan of the changed files against the metadata titles, abstract sentences and names: 0 hits.
   - Commit: pending; the user commits in GitHub Desktop.
+- [ ] **T09b** Move the OS lock and the atomic JSON write, which `extraction/` repeats from `download_pdfs` and `pdf_manifest`, into `shared/` and reuse them (follow-up from T09, non-blocking).
+  - Route D. Risk M.
 - [ ] **T10** Objectives locator plus a manual verification sample (~60, stratified by program), producing an accuracy report (O05).
   - Route D. Risk M.
 - [x] **T11** Light and full cleaners. They handle:
@@ -779,6 +805,10 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
 
 - 2026-10-05: T09 implemented and verified on a 10-PDF sample. The session ended mid-sample, and the next run resumed it. Its commits are handed to the user, and the full run is pending in the user's terminal.
 
+- 2026-10-05: The user committed T09 as `3b05679`. The post-commit review was declined for this candidate, so the reviewed boundary is now `3b05679`.
+  - T09a started. Route: D. Trigger: a rule fix plus manifest and fingerprint changes, with tests, across 3 or more files.
+  - The full run waits for T09a, because the fingerprint covers code only through a rules version raised by hand, so a later fix would not extract the PDFs again.
+
 ## Next step
 
 Resume checklist, in order:
@@ -786,11 +816,12 @@ Resume checklist, in order:
 1. **Re-sync.**
    - Read this document fully.
    - Run `git status`, `git log -5`, `uv run pytest -q`, `uv run ruff check .` and `uv run ruff format --check .`.
-   - Confirm whether HEAD contains the T09 commits.
-2. **T09 commit handoff.** Hand the user the three slices A, B and C listed under T09, with their file lists and Conventional Commit messages; the user commits in GitHub Desktop.
+   - Confirm whether HEAD contains the T09a commit.
+2. **T09a commit handoff, or its post-commit check.** If T09a is not committed, hand the user its file list and Conventional Commit message; the user commits in GitHub Desktop. Once it is committed, run its post-commit check from base `3b05679`.
 3. **T09 full run, in the user's terminal.**
-   - `uv run python -m thematic_redundancy.extraction.extract_text --summary-out results/extraction/20261002T224412Z/summary.json` (about 3 h; it resumes if stopped).
-   - Then verify the manifest (731 PDFs, 0 errors, 0 stale), commit the numbers-only summary, and check T09.
+   - `uv run python -m thematic_redundancy.extraction.extract_text --summary-out results/extraction/20261002T224412Z/summary.json` (about 3 h, or up to about 6.5 h at the OCR speed of the T09a sample; it resumes if stopped).
+   - Then verify the manifest (731 PDFs, 0 errors, 0 stale, 0 orphaned) and commit the numbers-only summary.
+   - Close T09 with the run's summary numbers, and record them in the processing-cost ledger (none exists yet).
 4. **T10.** Objectives locator. Manual check of about 60 theses stratified by program; target at least 90% correct (O05).
 5. **T12.** Build the fichas dataset:
    - D24 dedupe, including the industrial pair's PDF choice;
@@ -801,6 +832,6 @@ Resume checklist, in order:
    - `doc_code` uniqueness;
    - re-check the domain stopwords against the objectives text.
 
-Batched follow-ups, to be scheduled once Phase 2 is done: T02a, T04a, T05a, T07a, T08a, T11b.
+Batched follow-ups, to be scheduled once Phase 2 is done: T02a, T04a, T05a, T07a, T08a, T09b, T11b.
 
 Pending user inputs: U1; U2 (before T19); U3 (month 3); U4, which must be agreed before any topic result exists, so before T16; U5; U6; U8 for any new download, including the mpnet model before T13 and, optionally, the 7 expired-embargo PDFs.

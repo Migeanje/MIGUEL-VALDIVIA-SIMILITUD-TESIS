@@ -13,7 +13,13 @@ port and hands the results to these functions, so every rule is plain text in, t
   :func:`line_key` occurs at the edges of at least ``header_footer.min_share`` of the
   document's pages with text, and the document has at least ``header_footer.min_pages`` such
   pages. A standalone page number at the edge of a page (:func:`is_page_number`) goes too.
-  A page whose only line is a running line keeps it.
+  An edge line of digits only goes only when it is a page number: bare page numbers make
+  ``#`` a running key, which a year such as ``2024`` shares. A page whose only line is a
+  running line keeps it.
+
+Any change to these rules that alters the page records must raise
+:data:`~thematic_redundancy.extraction.text_manifest.EXTRACTION_VERSION`, so that a rerun
+extracts every PDF again.
 """
 
 import math
@@ -41,6 +47,10 @@ TextSource = Literal["text_layer", "ocr", "empty"]
 Count = Annotated[StrictInt, Field(ge=0)]
 
 _DIGITS = re.compile(r"\d+")
+
+_DIGITS_ONLY = re.compile(r"\d+(?:\s+\d+)*")
+"""A line of digits only, such as ``12``, ``2024`` or ``1500``, once stripped; its
+:func:`line_key` holds only ``#``."""
 
 _PAGE_NUMBER = re.compile(
     r"[-–—]?\s*(?:p[aá]g(?:ina|\.)?\s*)?(?:(?P<arabic>\d{1,3})|(?P<roman>[ivxlcdm]{1,7}))"
@@ -167,15 +177,19 @@ def remove_running_lines(texts: Sequence[str], settings: HeaderFooterConfig) -> 
         if sum(1 for line in lines if line.strip()) <= 1:
             dropped: set[int] = set()
         else:
-            dropped = {
-                index
-                for index in indices
-                if line_key(lines[index]) in running or is_page_number(lines[index])
-            }
+            dropped = {index for index in indices if _is_dropped(lines[index], running)}
         kept = [line for index, line in enumerate(lines) if index not in dropped]
         cleaned.append("\n".join(kept).strip())
         removed.append(len(dropped))
     return CleanedPages(texts=tuple(cleaned), removed=tuple(removed))
+
+
+def _is_dropped(line: str, running: frozenset[str]) -> bool:
+    """Tell whether an edge line goes: a page number always does, and a running line does
+    unless it holds digits only, since a year shares the key ``#`` of bare page numbers."""
+    if is_page_number(line):
+        return True
+    return line_key(line) in running and _DIGITS_ONLY.fullmatch(line.strip()) is None
 
 
 def _edge_indices(lines: Sequence[str], edge_lines: int) -> frozenset[int]:

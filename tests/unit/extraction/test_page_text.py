@@ -243,6 +243,20 @@ def test_page_numbers_are_removed_only_at_the_edges_of_a_page() -> None:
     assert cleaned.removed == (2,)
 
 
+def test_an_edge_line_of_digits_only_goes_only_when_it_is_a_page_number() -> None:
+    # Bare page numbers make "#" a running key, which a year or any other number shares.
+    pages = [page(*body(number), str(number + 10)) for number in range(1, 7)]
+    pages[0] = page(*body(1), "2024")  # A cover page with its year at the foot.
+    pages[1] = page("1500", *body(2), "12")
+
+    cleaned = remove_running_lines(pages, FIVE_PAGES)
+
+    assert cleaned.texts[0] == page(*body(1), "2024")
+    assert cleaned.texts[1] == page("1500", *body(2))
+    assert cleaned.texts[2:] == tuple(page(*body(number)) for number in range(3, 7))
+    assert cleaned.removed == (0, 1, 1, 1, 1, 1)
+
+
 def test_blank_lines_left_at_the_ends_of_a_page_are_trimmed() -> None:
     pages = [page("", "  ", "Página 1", "", *body(1), "", "  ")]
 

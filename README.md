@@ -163,7 +163,7 @@ What happens to each page:
 | Text layer | Read in reading order: blocks top to bottom, a blank line between blocks | — |
 | Low-text page | Under 50 characters once stripped, the data card's measure | `extraction.min_text_chars` |
 | OCR | Only low-text pages among the first 100 pages of a PDF; the whole page at 300 dpi in `spa+eng` | `extraction.ocr_window_pages`, `ocr` |
-| Running lines | A line among the first or last 3 lines of a page that repeats on at least 30% of the pages with text, ignoring case, spacing and numbers, so `Página 12` matches `Página 13`. Standalone page numbers at those edges go too | `extraction.header_footer` |
+| Running lines | A line among the first or last 3 lines of a page that repeats on at least 30% of the pages with text, ignoring case, spacing and numbers, so `Página 12` matches `Página 13`. Standalone page numbers at those edges go too. A line of digits only goes only when it is a page number (at most 3 digits), so a year such as `2024` stays | `extraction.header_footer` |
 
 **Why an OCR window (D25).** The objectives come early: the first page that mentions
 "objetivo general" has a median index of 7 and a P99 of 102. The window cuts OCR from about
@@ -173,8 +173,19 @@ characters, or is `empty`. To OCR more, widen the window and run the command aga
 How a run behaves:
 
 - **Resumable.** The manifest is rewritten atomically after every PDF. A rerun skips each PDF
-  whose page file is unchanged and was made from the same PDF with the same settings. It
-  extracts a PDF again when the PDF, a setting or the page file changed.
+  whose page file is unchanged and was made from the same PDF, with the same settings and
+  extraction rules. It extracts a PDF again when the PDF manifest's record of the PDF (its
+  SHA-256), a setting, the extraction rules version or the page file changed. The skip trusts
+  the PDF manifest and does not hash the PDFs on disk, because the snapshot is frozen; to
+  verify the files on disk, use the combined PDF digest in the data card's freeze record.
+- **Versioned rules.** The settings fingerprint includes `EXTRACTION_VERSION`
+  (`extraction/text_manifest.py`). It is raised whenever a code change alters the page
+  records, such as a page-text rule, so the next run extracts every PDF again. Version 2 keeps
+  an edge line of digits only, such as a year, unless it is a page number.
+- **Orphaned entries.** An entry whose PDF `pdfs/manifest.json` no longer lists as on disk,
+  such as a thesis restricted since, is reported as `orphaned` when the run starts and in the
+  summary. It is kept, and so is its page file, but it is left out of every other total.
+  Nothing is deleted automatically.
 - **Isolated failures.** A PDF that cannot be read is recorded as `error` (`unreadable_pdf`,
   `pdf_missing` or `pdf_changed`) and the run goes on; the next run tries it again. A page whose
   OCR fails keeps its text layer. MuPDF's warnings are counted per PDF instead of printed.

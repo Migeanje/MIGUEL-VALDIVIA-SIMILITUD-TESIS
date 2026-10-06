@@ -4,14 +4,15 @@ The page texts of snapshot ``<snapshot_id>`` live in ``data/interim/<snapshot_id
 one Parquet table of :class:`~thematic_redundancy.extraction.page_text.PageText` records per
 thesis PDF, named after its item: ``pages/<item uuid>.parquet``. ``pages/manifest.json``
 holds a :class:`TextManifest`: the settings of the latest run, one :class:`TextEntry` per PDF
-looked at, in snapshot order, and a summary of them. The manifest holds counts only, never
-text.
+looked at, in snapshot order, and a summary of them. An entry whose PDF the PDF manifest no
+longer lists as on disk is kept, with its page file, but counted only as ``orphaned``. The
+manifest holds counts only, never text.
 """
 
 import hashlib
 import os
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from pathlib import Path
 from typing import Annotated, Literal, Self
 from uuid import UUID
@@ -37,9 +38,14 @@ PAGES_DIR_NAME = "pages"
 
 TEXT_MANIFEST_FILE_NAME = "manifest.json"
 
-EXTRACTION_VERSION = 1
-"""Version of the extraction rules; raise it whenever a change of the code alters the page
-records, so that every PDF is extracted again."""
+EXTRACTION_VERSION = 2
+"""Version of the extraction rules, part of the settings fingerprint that decides whether a
+PDF is skipped. Raise it whenever a change of the code alters the page records, such as a
+change of the page-text rules, so that every PDF is extracted again:
+
+- 1: the first rules (T09);
+- 2: an edge line of digits only, such as a year, goes only when it is a page number (T09a).
+"""
 
 TextStatus = Literal["ok", "error"]
 """Outcome of the latest extraction of a PDF:
@@ -146,13 +152,17 @@ class TextEntry(_TextModel):
 
 
 class TextSummary(_TextModel):
-    """Counts over every entry of a manifest."""
+    """Counts over the entries of a manifest whose PDF the PDF manifest still lists as on
+    disk; the other entries are only counted as ``orphaned``."""
 
     items: Count
     ok: Count
     error: Count
     stale: Count
     """``ok`` entries extracted with other settings than the manifest's."""
+    orphaned: Count = 0
+    """Entries kept, with their page files, although the PDF manifest no longer lists their
+    PDF as on disk, such as an item restricted since; they count nowhere else."""
     pages: Count
     text_layer_pages: Count
     ocr_pages: Count
@@ -209,24 +219,31 @@ _COUNTED = (
 """Entry fields that a summary adds up."""
 
 
-def summarize(entries: Mapping[UUID, TextEntry], fingerprint: str) -> TextSummary:
+def summarize(
+    entries: Mapping[UUID, TextEntry], fingerprint: str, available: Collection[UUID]
+) -> TextSummary:
     """Count ``entries`` by status and by program, and add up their page counts and times;
-    ``fingerprint`` is the one of the current settings."""
+    ``fingerprint`` is the one of the current settings.
+
+    Only the entries of the ``available`` items, whose PDF the PDF manifest lists as on
+    disk, are counted; the others are only counted as ``orphaned``.
+    """
+    current = [entry for item, entry in entries.items() if item in available]
     by_program: dict[str, Counter[str]] = {}
-    for entry in entries.values():
+    for entry in current:
         by_program.setdefault(entry.program_key, Counter())[entry.status] += 1
-    statuses = Counter(entry.status for entry in entries.values())
+    statuses = Counter(entry.status for entry in current)
     return TextSummary(
-        items=len(entries),
+        items=len(current),
         ok=statuses["ok"],
         error=statuses["error"],
         stale=sum(
-            entry.status == "ok" and entry.config_fingerprint != fingerprint
-            for entry in entries.values()
+            entry.status == "ok" and entry.config_fingerprint != fingerprint for entry in current
         ),
-        **{name: sum(getattr(entry, name) for entry in entries.values()) for name in _COUNTED},
-        seconds=round(sum(entry.seconds for entry in entries.values()), 3),
-        ocr_seconds=round(sum(entry.ocr_seconds for entry in entries.values()), 3),
+        orphaned=len(entries) - len(current),
+        **{name: sum(getattr(entry, name) for entry in current) for name in _COUNTED},
+        seconds=round(sum(entry.seconds for entry in current), 3),
+        ocr_seconds=round(sum(entry.ocr_seconds for entry in current), 3),
         by_program={program: dict(counts) for program, counts in by_program.items()},
     )
 

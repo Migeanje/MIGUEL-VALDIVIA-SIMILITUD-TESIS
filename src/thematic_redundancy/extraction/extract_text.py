@@ -5,8 +5,10 @@ takes every thesis whose PDF is on disk (``downloaded`` or ``already_present``),
 order. Business rules such as the D24 duplicates or the wrong file of item 11777 belong to
 the fichas (T12), so every PDF is extracted. For each PDF it:
 
-1. skips it when its page records are on disk, unchanged, and were made from the same PDF
-   (SHA-256) with the same settings (:class:`ExtractionSettings` fingerprint);
+1. skips it when its page records are on disk, unchanged, and were made from the PDF whose
+   SHA-256 the PDF manifest records, with the same settings and extraction rules
+   (:class:`ExtractionSettings` fingerprint). The skip does not hash the PDF on disk: the
+   snapshot is frozen, and the data card's combined PDF digest verifies its files;
 2. checks the PDF against the SHA-256 that the PDF manifest records;
 3. reads the text layer of every page; a low-text page among the first
    ``extraction.ocr_window_pages`` pages is OCR'd as well (D25);
@@ -17,7 +19,9 @@ the fichas (T12), so every PDF is extracted. For each PDF it:
 A PDF that cannot be read is recorded as ``error`` and the run goes on; a page whose OCR
 fails keeps its text layer. The manifest ``pages/manifest.json`` is replaced atomically after
 every PDF, so an interrupted run loses nothing, and running the command again resumes it.
-One run at a time may use a pages directory.
+An entry whose PDF the PDF manifest no longer lists as on disk is ``orphaned``: it is kept,
+with its page records, but left out of the totals. One run at a time may use a pages
+directory.
 
 Run it after the PDF download; it takes hours, so run it in your own terminal::
 
@@ -31,7 +35,7 @@ import json
 import sys
 import time
 from collections import Counter
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -71,6 +75,7 @@ from thematic_redundancy.extraction.text_manifest import (
     ExtractionSettings,
     TextEntry,
     TextManifest,
+    TextSummary,
     pages_file_name,
     read_text_manifest,
     summarize,
@@ -122,6 +127,8 @@ class ExtractionPlan:
     """Thesis PDFs on disk in the snapshot, selected or not."""
     selected: tuple[SelectedPdf, ...]
     """PDFs that the run will look at, in order."""
+    orphaned: tuple[UUID, ...]
+    """Items of the text manifest whose PDF the PDF manifest no longer lists as on disk."""
 
 
 @dataclass(frozen=True)
@@ -215,7 +222,11 @@ def extract_texts(
     with _exclusive_run(pages_dir):
         _remove_partial_files(pages_dir)
         manifests = _ManifestStore(
-            pages_dir / TEXT_MANIFEST_FILE_NAME, snapshot_id, settings, tuple(pdf_manifest.items)
+            pages_dir / TEXT_MANIFEST_FILE_NAME,
+            snapshot_id,
+            settings,
+            order=tuple(pdf_manifest.items),
+            available=frozenset(available),
         )
         extractor = _PdfExtractor(
             reader,
@@ -233,6 +244,7 @@ def extract_texts(
                     pages_dir=pages_dir,
                     pdfs=len(available),
                     selected=tuple(SelectedPdf(item, pdf.program_key) for item, pdf in selected),
+                    orphaned=manifests.orphaned(),
                 )
             )
         outcomes: list[ItemOutcome] = []
@@ -288,14 +300,21 @@ def _select(
 
 
 class _ManifestStore:
-    """The entries of the text manifest, saved to disk after every change."""
+    """The entries of the text manifest, saved to disk after every change.
+
+    An entry whose item is not ``available``, because the PDF manifest no longer lists its
+    PDF as on disk, is orphaned: it is kept, and so is its page file, but the summary leaves
+    it out of the totals. Nothing is deleted automatically.
+    """
 
     def __init__(
         self,
         path: Path,
         snapshot_id: str,
         settings: ExtractionSettings,
+        *,
         order: Sequence[UUID],
+        available: Collection[UUID],
     ) -> None:
         saved = read_text_manifest(path)
         if saved is not None and saved.snapshot_id != snapshot_id:
@@ -307,6 +326,7 @@ class _ManifestStore:
         self._saved = saved
         self._entries: dict[UUID, TextEntry] = dict(saved.items) if saved is not None else {}
         self._order = {item: index for index, item in enumerate(order)}
+        self._available = available
         self._snapshot_id = snapshot_id
         self._settings = settings
         self._fingerprint = settings.fingerprint()
@@ -314,30 +334,43 @@ class _ManifestStore:
     def entry(self, item: UUID) -> TextEntry | None:
         return self._entries.get(item)
 
+    def orphaned(self) -> tuple[UUID, ...]:
+        """Return the orphaned items, in snapshot order."""
+        return tuple(item for item in self._sorted() if item not in self._available)
+
     def save(self, item: UUID, entry: TextEntry, now: datetime) -> None:
         self._entries[item] = entry
         self._saved = self._build(now)
         write_text_manifest(self._path, self._saved)
 
     def manifest(self, now: datetime) -> TextManifest:
-        """Return the manifest as saved; it is written when none exists yet, or when it
-        holds the settings of another run."""
-        if self._saved is None or self._saved.config_fingerprint != self._fingerprint:
+        """Return the manifest as saved; it is written when none exists yet, when it holds
+        the settings of another run, or when its summary is out of date, such as after an
+        item became orphaned."""
+        if (
+            self._saved is None
+            or self._saved.config_fingerprint != self._fingerprint
+            or self._saved.summary != self._summary(self._sorted())
+        ):
             self._saved = self._build(now)
             write_text_manifest(self._path, self._saved)
         return self._saved
 
-    def _build(self, now: datetime) -> TextManifest:
+    def _sorted(self) -> dict[UUID, TextEntry]:
         last = len(self._order)
-        entries = dict(
-            sorted(self._entries.items(), key=lambda item: self._order.get(item[0], last))
-        )
+        return dict(sorted(self._entries.items(), key=lambda item: self._order.get(item[0], last)))
+
+    def _summary(self, entries: Mapping[UUID, TextEntry]) -> TextSummary:
+        return summarize(entries, self._fingerprint, self._available)
+
+    def _build(self, now: datetime) -> TextManifest:
+        entries = self._sorted()
         return TextManifest(
             snapshot_id=self._snapshot_id,
             settings=self._settings,
             config_fingerprint=self._fingerprint,
             updated_at=now,
-            summary=summarize(entries, self._fingerprint),
+            summary=self._summary(entries),
             items=entries,
         )
 
@@ -375,8 +408,12 @@ class _PdfExtractor:
         self._ocr_seconds = 0.0
 
     def is_current(self, item: UUID, pdf: PdfEntry, previous: TextEntry) -> bool:
-        """Tell whether the saved page records of ``item`` still stand: made from this PDF
-        with these settings, and unchanged on disk."""
+        """Tell whether the saved page records of ``item`` still stand: made from the PDF
+        whose SHA-256 the PDF manifest records, with these settings, and unchanged on disk.
+
+        The PDF on disk is not hashed here, since the snapshot is frozen and the data card's
+        combined PDF digest verifies its files; a PDF that is extracted is checked first.
+        """
         if (
             previous.status != "ok"
             or previous.pdf_sha256 != pdf.sha256
@@ -577,6 +614,13 @@ class _Console:
             f"page texts in {plan.pages_dir}",
             flush=True,
         )
+        if plan.orphaned:
+            print(
+                f"Orphaned: {len(plan.orphaned)} entries whose PDF the PDF manifest no longer "
+                "lists as on disk, kept with their page files and left out of the totals: "
+                f"{', '.join(str(item) for item in plan.orphaned)}",
+                flush=True,
+            )
 
     def item(self, position: int, outcome: ItemOutcome) -> None:
         width = len(str(self._total))
@@ -629,7 +673,8 @@ def _summary(report: ExtractionReport) -> str:
             f"{per_page}",
             f"Header/footer lines removed: {sum(entry.lines_removed for entry in extracted):,}",
             f"Manifest {report.manifest_path}: {totals.items} PDFs, {totals.ok} ok, "
-            f"{totals.error} errors, {totals.stale} with older settings",
+            f"{totals.error} errors, {totals.stale} with older settings, "
+            f"{totals.orphaned} orphaned",
         ]
     )
 
