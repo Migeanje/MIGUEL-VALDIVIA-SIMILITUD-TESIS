@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from thematic_redundancy.extraction.ocr_assets import FETCH_COMMAND, language_codes
+from thematic_redundancy.extraction.pymupdf_reader import PyMuPdfReader
 from thematic_redundancy.shared.config import AppConfig, load_config
 
 if TYPE_CHECKING:
@@ -89,3 +90,21 @@ def test_builtin_tesseract_reads_spanish_accents_from_a_page_without_text() -> N
 
     missing = KEY_WORDS - words_of(text)
     assert not missing, f"OCR lost {sorted(missing)}; it read {text!r}"
+
+
+def test_the_pdf_reader_ocrs_a_scanned_page_with_the_configured_settings(tmp_path: Path) -> None:
+    config = load_config(DEFAULT_CONFIG_PATH)
+    configured_tessdata_dir(config)
+    scan = image_only_document()
+    path = tmp_path / "scan.pdf"
+    scan.save(path)
+
+    with PyMuPdfReader.from_config(config, PROJECT_ROOT).open(path) as pages:
+        layer = pages.text_layer(0)
+        text = pages.ocr_text(0)
+
+    assert (layer.text, layer.chars) == ("", 0)  # A low-text page: only OCR can read it.
+    missing = KEY_WORDS - words_of(text)
+    assert not missing, f"OCR lost {sorted(missing)}; it read {text!r}"
+    # Reading order keeps the two source lines in order.
+    assert text.index("Optimización") < text.index("Análisis")

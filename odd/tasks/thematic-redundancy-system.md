@@ -78,6 +78,7 @@ Institutional integrity tools such as Turnitin detect textual overlap. They do n
 | D22 | Always construct BERTopic with `language="spanish"` (never the default) | With `embedding_model=None`, BERTopic 0.17.4 keeps `language="english"` and strips every character outside `[A-Za-z0-9 ]` before c-TF-IDF, so `fragmentación` becomes `fragmentacin`. Found and proven by the T02 smoke test |
 | D23 | No backup copy of the raw snapshot; U7 is dropped | User decision 2026-10-03, risk R8 accepted. Partial mitigation: the metadata and PDF manifests record item uuids, bitstream uuids and sha256, so a later re-harvest can be diffed and documented |
 | D24 | Deduplicate exact duplicate records before anything else | T07 found 2 pairs of `#tesis` records with identical title, abstract, author, advisor and date under different item uuids, so there are 744 distinct theses, not 746. T12 keeps one canonical record per pair (rule fixed in T12) and logs the other as `duplicate_of`. Duplicates never enter the labeled pairs (T20) or the redundancy evaluation, where they would be trivial positives |
+| D25 | OCR is selective: only low-text pages among the first `extraction.ocr_window_pages` pages (default 100) of a PDF are OCR'd. Other low-text pages keep their few text-layer characters, or are `empty`, with their low-text flag | The PDF text serves only the objectives (T10); title and abstract come from metadata (D03, D09). Measured 2026-10-03: the first text-layer page with "objetivo general" was found in 658 of 731 PDFs, at median page index 7, P95 25, P99 102. The window cuts OCR from about 8,600 low-text pages to about 1,960. It is configurable, so a wider pass can run later |
 
 D15, labeled set, in detail:
 - ≈120 pairs drawn from four pools: SBERT-high, TF-IDF-high, mid-range, and random.
@@ -159,6 +160,8 @@ Python 3.13 · uv · pymupdf 1.28 · pdfplumber 0.11 (fallback) · httpx 0.28 ·
 | programs.collection_uuid | sistemas `695b14ab-e5b2-49b5-9edf-f709e883b73b`, industrial `f0217548-ce48-4bae-b163-21b5e2504ef6`, electronica `a8bdd7c0-f1aa-4797-b04e-112e27f60da3`, mecanica `cf0ca97e-9b81-484d-a325-611b8a8d8223`, minas `9d9ecbe5-56c5-4cdf-81a3-b9a3736a47b3` (added in T04) |
 | repository | `page_size` 100 (1–1000), `request_interval_seconds` 1.0 (1.0–60.0), `max_retries` 3 (0–10) (added in T04) |
 | ocr | `spa+eng`, 300 dpi, `full=True` on pages without a text layer |
+| extraction | `min_text_chars` 50 (≥1): a page under 50 stripped characters is low-text. `ocr_window_pages` 100 (≥0; 0 turns OCR off) (D25). (added in T09) |
+| extraction.header_footer | `edge_lines` 3 (1–10), `min_share` 0.3 (>0–1), `min_pages` 5 (≥2): a line among the first or last 3 non-empty lines of a page that repeats on at least 30% of the pages with text, in a PDF with at least 5 such pages, is a running line (added in T09) |
 | chunk.max_tokens | 128 under both tokenizers, special tokens included |
 | doc_vector | equal-weight mean of the section vectors, L2-normalized |
 | models | paraphrase-multilingual-MiniLM-L12-v2, paraphrase-multilingual-mpnet-base-v2 |
@@ -464,6 +467,59 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
 - [ ] **T09** PDF text extraction with text-layer detection and an OCR fallback. Note from T05: 6 of 13 inspected items also carry DSpace's extracted full text (`*.pdf.txt` in a TEXT bundle). It could serve as a cross-check, but it was not fetched and is not authorized yet.
   - Route D. Risk M.
   - Inputs: the T05 text-layer findings (2026-10-03), which call for selective OCR; and header and footer removal, moved here from T11. Long runs go in the user's terminal.
+  - Trigger for route D: new extraction modules, CLI, config and tests.
+  - Evidence (2026-10-05), implementation. Modules in `extraction/` (D19):
+    - `page_text.py`, pure rules with no PyMuPDF import:
+      - the low-text test and the OCR decision (low-text and page index below the window, D25);
+      - line keys that fold case, whitespace and digits, so `Página 12` matches `Página 13`;
+      - page numbers: arabic up to 3 digits, lower-case roman, `Página N`, `N de M`;
+      - running header/footer removal across one document, never emptying a one-line page;
+      - the `PageText` record: page index, text, source (`text_layer`, `ocr` or `empty`), char count, low-text flag, OCR attempted and failed, lines removed.
+    - `pdf_reader.py`: the port (a page's text layer, OCR of one page, a warning count) and its two errors.
+    - `pymupdf_reader.py`: the adapter.
+      - One MuPDF text page per page gives both the data card's low-text measure (content order) and the text in reading order (blocks sorted top to bottom, a blank line between blocks).
+      - OCR is `get_textpage_ocr(full=True)` with the tessdata path from config.
+      - Every PyMuPDF exception becomes `PdfReadError` or `OcrError`, and MuPDF's messages are counted instead of printed.
+    - `text_manifest.py`: the manifest model, the settings fingerprint and atomic JSON writes.
+    - `extract_text.py`: the use case and the CLI `python -m thematic_redundancy.extraction.extract_text` (`--project-root`, `--snapshot-id`, `--limit`, `--only`, `--summary-out`).
+  - Outputs, gitignored:
+    - `data/interim/<snapshot>/pages/<item uuid>.parquet`: one `PageText` per page, written atomically through the table-store port.
+    - `pages/manifest.json`: per PDF, the status, the PDF and output SHA-256, the settings fingerprint, pages by source, low-text pages, OCR tried and failed, unreadable pages, lines removed, MuPDF warnings, seconds and OCR seconds. Counts only, never text.
+  - Behavior:
+    - A rerun skips a PDF whose output is unchanged and was made from the same PDF SHA-256 with the same fingerprint.
+    - A PDF whose bytes no longer match the PDF manifest is an `error` (`pdf_changed`) and loses its stale output. A corrupt PDF is `unreadable_pdf`, and the run goes on.
+    - A page whose text layer cannot be read counts as unreadable; an OCR failure keeps the text layer.
+    - An OS lock (`pages/.lock`) allows one run at a time, a run first deletes partial files, and Ctrl+C exits with 130 and nothing half-written.
+  - Design choices:
+    - A low-text page outside the window keeps its few text-layer characters (`text_layer`, low-text flag) instead of being blanked, so a separator page such as a chapter title survives for T10. Only a page left with no text is `empty`.
+    - Every PDF is extracted, 11777 and the D24 pairs included, because T09 works per file. This supersedes the data card's line "T09 must not extract its PDF": T12 ignores the text of 11777.
+    - Follow-up (non-blocking): the OS lock and the atomic JSON write repeat those of `download_pdfs`. Move both into `shared/` and reuse them; that was outside this task's edit surface.
+  - Test-first evidence:
+    - Config: RED 22 failed → GREEN 123 passed, 1 skipped.
+    - `page_text`: RED was a collection error. A stubbed skeleton then failed per behavior (OCR decision 2, page numbers 13, running lines and records 10), and each behavior went GREEN in turn: 58 passed.
+    - A share bug was caught test-first. In floating point 0.14 × 50 is 7.000000000000001, so the rule asked for 8 pages instead of 7. RED 1 failed → GREEN with exact decimal arithmetic, 59 passed.
+    - Adapter: RED `ModuleNotFoundError` → GREEN 12 passed.
+    - Use case and CLI: their tests were written before the module but first ran after it, so 20 throwaway mutants, each with a fresh bytecode cache, give the RED evidence. They cover skip logic (4), error isolation (3), page isolation (2), atomic writes (2), the lock, the OCR window, reading order, the low-text measure, the adapter's error mapping (2), the encrypted-PDF check, and the running-line guards (2). 19 were caught; the 1 survivor was an equivalent mutant, and the redundant check behind it was removed.
+    - Smoke: real OCR through the adapter on a rasterized Spanish page, accents and ñ included.
+  - Sample run, numbers only: 10 PDFs, 2 per program, with the fully scanned `15595` as mecanica's second.
+    - 1,638 pages: 1,535 text layer, 103 OCR, 0 empty. 139 are low-text, 36 of them past the window. OCR: 103 tried, 0 failed. 2,333 running lines removed, 6 MuPDF warnings, 0 errors.
+    - Seconds per PDF: 0.9, 1.5, 2.0, 7.4, 8.2, 8.9, 9.9, 18.0 and 71.2, then 355.3 for the scanned PDF (87 pages, 86 OCR).
+    - Seconds per OCR page: 4.6 overall; 4.1 on the scanned PDF; 7.1 on the 17 pages of the other PDFs, spread from 1 to 17 s. Re-timed alone, 3 of the slowest pages took 3.8 s each, so the first session ran under slower machine conditions.
+    - Work without OCR: 0.0056 s per page (hashing, text layer, header/footer removal, Parquet).
+    - Resume: the session ended after 7 PDFs; the next run skipped those 7 and extracted the other 3. A third run did no work (10 skipped, 0.1 s).
+    - Tesseract prints short diagnostics on some pages, such as "Line cannot be recognized!!". They hold no text.
+  - Full-run estimate: about 13 min of text work (141,076 pages × 0.0056 s) plus OCR of about 1,960 pages at 4–5 s (2.2–2.7 h), so about 3 h. Under the slower conditions of the first session it could reach about 5.5 h. The run resumes, so it can be split.
+  - Options to shorten it, each a config decision for the user (none taken): `ocr.languages: spa` saved 31% of the time for 1% fewer characters on 3 pages; 200 dpi saved 11%; a window of 60 pages means 1,353 OCR pages, and one of 30 pages 994.
+  - Checks:
+    - `pytest`: 918 passed, 1 skipped (791 + 127 new).
+    - `pytest -m smoke`: 16 passed (15 + 1 new).
+    - `ruff check` and `ruff format --check` are clean.
+  - Size: about 3,200 authored changed lines, about 1,540 of them tests. Slice plan, three commits in order:
+    - A: config and the pure page-text rules: `config.py`, `default.yaml`, `test_config.py`, `page_text.py`, `test_page_text.py`, and the plan's D25 and config rows (≈680 lines).
+    - B: the port, the PyMuPDF adapter, the synthetic-PDF helper, the adapter tests and the OCR smoke test (≈500). B depends on A.
+    - C: the manifest, the use case, the CLI, their tests, the README and this evidence (≈2,000). C gets a `size:exception` recommendation: one resumable CLI whose tests share one set of fakes, 43% of it tests.
+  - Full run: pending in the user's terminal (command in the README). T09 stays unchecked until it is done and verified.
+  - Commit: pending; the user commits in GitHub Desktop.
 - [ ] **T10** Objectives locator plus a manual verification sample (~60, stratified by program), producing an accuracy report (O05).
   - Route D. Risk M.
 - [x] **T11** Light and full cleaners. They handle:
@@ -719,6 +775,10 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
 
 - 2026-10-03: T06 started. Route: D (the plan said I). Trigger: a new data card computed from the raw data, plus plan and README edits.
 
+- 2026-10-03: T09 started. Route: D. Trigger: new extraction modules, CLI, config and tests. D25 (selective OCR window) was added.
+
+- 2026-10-05: T09 implemented and verified on a 10-PDF sample. The session ended mid-sample, and the next run resumed it. Its commits are handed to the user, and the full run is pending in the user's terminal.
+
 ## Next step
 
 Resume checklist, in order:
@@ -726,11 +786,11 @@ Resume checklist, in order:
 1. **Re-sync.**
    - Read this document fully.
    - Run `git status`, `git log -5`, `uv run pytest -q`, `uv run ruff check .` and `uv run ruff format --check .`.
-   - Confirm that HEAD contains T06, or that T06 is still uncommitted.
-2. **T06.**
-   - If it is uncommitted: verify it, and hand the commit to the user.
-   - If it is committed: run the post-commit check from base `633dfd2`.
-3. **T09.** PDF text extraction with text-layer detection, selective OCR, and header and footer removal (moved from T11). Long runs go in the user's terminal.
+   - Confirm whether HEAD contains the T09 commits.
+2. **T09 commit handoff.** Hand the user the three slices A, B and C listed under T09, with their file lists and Conventional Commit messages; the user commits in GitHub Desktop.
+3. **T09 full run, in the user's terminal.**
+   - `uv run python -m thematic_redundancy.extraction.extract_text --summary-out results/extraction/20261002T224412Z/summary.json` (about 3 h; it resumes if stopped).
+   - Then verify the manifest (731 PDFs, 0 errors, 0 stale), commit the numbers-only summary, and check T09.
 4. **T10.** Objectives locator. Manual check of about 60 theses stratified by program; target at least 90% correct (O05).
 5. **T12.** Build the fichas dataset:
    - D24 dedupe, including the industrial pair's PDF choice;

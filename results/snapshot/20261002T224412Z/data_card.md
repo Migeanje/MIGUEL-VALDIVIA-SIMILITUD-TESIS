@@ -298,8 +298,8 @@ are far longer, so they go into resumable CLIs run in the user's own terminal.
   explicitly (section 4).
 - **Duplicate pairs (2, D24):** T12 keeps one canonical record per pair, logs the other as
   `duplicate_of`, and picks the industrial pair's PDF (section 5).
-- **Wrong file (`20.500.12920/11777`):** T12 treats it as metadata-only with a quality note; T09
-  must not extract its PDF (section 7).
+- **Wrong file (`20.500.12920/11777`):** T12 treats it as metadata-only with a quality note. T09
+  extracts every PDF file, this one included, and T12 discards that text (section 7).
 - **Metadata-only theses (16):** 14 restricted, 1 without a file, 1 wrong file; T10 falls back to
   title and abstract for their objectives (O05).
 - **Expired embargoes (7):** not fetched; fetching them needs U8. They stay as metadata-only.

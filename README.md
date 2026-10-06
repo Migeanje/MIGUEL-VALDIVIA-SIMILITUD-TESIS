@@ -134,6 +134,63 @@ It is as polite as the harvest: one request at a time, at least
 follows redirects only within the repository's host. It sends about two requests per thesis:
 one to list the item's files and one to download the thesis.
 
+## PDF text extraction
+
+Once the PDFs are on disk, extract their text page by page. A full run takes about 3 hours
+on the development laptop, almost all of it OCR, and can stop and resume at any point, so
+start it in your own terminal:
+
+```sh
+uv run python -m thematic_redundancy.extraction.extract_text
+```
+
+The pipeline needs PDF text only to find the objectives (T10); titles and abstracts come from
+the metadata. The command reads the snapshot harvested last (`--snapshot-id` picks another
+one), takes every PDF that `pdfs/manifest.json` lists as on disk, and writes into
+`data/interim/<snapshot_id>/pages/`, which is gitignored:
+
+- `<item uuid>.parquet`: one record per page. It holds the page text, its source
+  (`text_layer`, `ocr` or `empty`), its length, a low-text flag, whether OCR was attempted or
+  failed, and how many running lines were removed.
+- `manifest.json`: one entry per PDF, plus a summary. An entry holds the status, the SHA-256 of
+  the PDF and of its page file, the settings fingerprint, pages by source, OCR pages tried and
+  failed, lines removed, library warnings and seconds. It holds counts only, never text.
+
+What happens to each page:
+
+| Step | Rule | Settings |
+|---|---|---|
+| Text layer | Read in reading order: blocks top to bottom, a blank line between blocks | — |
+| Low-text page | Under 50 characters once stripped, the data card's measure | `extraction.min_text_chars` |
+| OCR | Only low-text pages among the first 100 pages of a PDF; the whole page at 300 dpi in `spa+eng` | `extraction.ocr_window_pages`, `ocr` |
+| Running lines | A line among the first or last 3 lines of a page that repeats on at least 30% of the pages with text, ignoring case, spacing and numbers, so `Página 12` matches `Página 13`. Standalone page numbers at those edges go too | `extraction.header_footer` |
+
+**Why an OCR window (D25).** The objectives come early: the first page that mentions
+"objetivo general" has a median index of 7 and a P99 of 102. The window cuts OCR from about
+8,600 low-text pages to about 1,960. A low-text page outside it keeps its few text-layer
+characters, or is `empty`. To OCR more, widen the window and run the command again.
+
+How a run behaves:
+
+- **Resumable.** The manifest is rewritten atomically after every PDF. A rerun skips each PDF
+  whose page file is unchanged and was made from the same PDF with the same settings. It
+  extracts a PDF again when the PDF, a setting or the page file changed.
+- **Isolated failures.** A PDF that cannot be read is recorded as `error` (`unreadable_pdf`,
+  `pdf_missing` or `pdf_changed`) and the run goes on; the next run tries it again. A page whose
+  OCR fails keeps its text layer. MuPDF's warnings are counted per PDF instead of printed.
+- **Interruptible.** Ctrl+C stops the run without half-written files; run the command again to
+  resume.
+- **Guarded.** Only one run at a time may use a pages directory.
+- **Bounded.** `--limit N` takes the first N PDFs in snapshot order, and `--only UUID ...` the
+  PDFs of those items.
+- **Quiet about text.** Each PDF prints one line of counts, with an ETA, and the run ends with a
+  summary. `--summary-out results/extraction/<snapshot_id>/summary.json` also writes the
+  manifest's settings and counts, without items or text. Tesseract may print short
+  diagnostics such as `Line cannot be recognized!!`; they hold no text and need no action.
+
+Every PDF is extracted, including the D24 duplicates and the wrong file of item 11777; choosing
+which text a thesis uses is the job of the fichas (T12).
+
 ## Metadata profile
 
 Profile the metadata of a snapshot, offline:
@@ -233,6 +290,8 @@ work offline with `HF_HUB_OFFLINE=1`.
   Without it, the codes can be neither re-derived nor reversed.
 - `results/` holds aggregates only. The metadata profile refuses to write an output that holds a
   title, an abstract, a person's name or an ORCID from the snapshot.
+- Extracted page texts live only under the gitignored `data/interim/`. The extraction manifest
+  and its summary hold counts only.
 
 ## Plan
 

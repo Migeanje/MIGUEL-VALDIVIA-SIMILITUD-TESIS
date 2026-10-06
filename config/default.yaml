@@ -45,6 +45,19 @@ ocr:
   languages: spa+eng
   dpi: 300
 
+# PDF text extraction. A page whose text layer has fewer than min_text_chars characters,
+# stripped, is low-text. Only the low-text pages among the first ocr_window_pages pages of a
+# document are OCR'd (D25). A running header or footer is a line among the first or last
+# edge_lines non-empty lines of a page that repeats on at least min_share of the pages with
+# text, in a document with at least min_pages such pages.
+extraction:
+  min_text_chars: 50
+  ocr_window_pages: 100
+  header_footer:
+    edge_lines: 3
+    min_share: 0.3
+    min_pages: 5
+
 # Token budget per chunk, special tokens included, under both tokenizers.
 chunking:
   max_tokens: 128

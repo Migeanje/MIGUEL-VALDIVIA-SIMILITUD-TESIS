@@ -85,6 +85,10 @@ def test_default_config_loads_with_the_declared_plan_values() -> None:
         "Ingeniería Mecánica, Mecánica-Eléctrica y Mecatrónica"
     )
     assert (config.ocr.languages, config.ocr.dpi) == ("spa+eng", 300)
+    assert (config.extraction.min_text_chars, config.extraction.ocr_window_pages) == (50, 100)
+    header_footer = config.extraction.header_footer
+    assert (header_footer.edge_lines, header_footer.min_pages) == (3, 5)
+    assert header_footer.min_share == pytest.approx(0.3)
     assert config.chunking.max_tokens == 128
     assert config.embedding.models == (
         "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
@@ -187,7 +191,15 @@ def test_kmeans_sweep_with_bounds_outside_the_contract_is_rejected(
         KMeansConfig(k_start=k_start, k_stop=k_stop, k_step=k_step)
 
 
-@pytest.mark.parametrize("dotted_key", ["unexpected_key", "umap.unexpected_key"])
+@pytest.mark.parametrize(
+    "dotted_key",
+    [
+        "unexpected_key",
+        "umap.unexpected_key",
+        "extraction.unexpected_key",
+        "extraction.header_footer.unexpected_key",
+    ],
+)
 def test_unknown_keys_are_rejected(
     raw_default: dict[str, Any], tmp_path: Path, dotted_key: str
 ) -> None:
@@ -202,8 +214,9 @@ def test_unknown_keys_are_rejected(
     [
         ("seeds: [7, 13, 21, 42, 73]\n", "seeds: [1, 2, 3, 4, 5]\n", "seeds"),
         ("  n_neighbors: 15\n", "  n_neighbors: 30\n", "n_neighbors"),
+        ("    min_share: 0.3\n", "    min_share: 0.9\n", "min_share"),
     ],
-    ids=["seeds", "umap.n_neighbors"],
+    ids=["seeds", "umap.n_neighbors", "extraction.header_footer.min_share"],
 )
 def test_keys_written_twice_are_rejected(
     tmp_path: Path, written_line: str, repeated_line: str, key: str
@@ -417,6 +430,13 @@ def test_harvest_settings_take_their_defaults_when_omitted(
         ("repository.max_retries", 11),
         ("ocr.dpi", 71),
         ("ocr.dpi", 601),
+        ("extraction.min_text_chars", 0),
+        ("extraction.ocr_window_pages", -1),
+        ("extraction.header_footer.edge_lines", 0),
+        ("extraction.header_footer.edge_lines", 11),
+        ("extraction.header_footer.min_share", 0.0),
+        ("extraction.header_footer.min_share", 1.1),
+        ("extraction.header_footer.min_pages", 1),
         ("chunking.max_tokens", 15),
         ("embedding.models", []),
         ("embedding.models", ["org/model", "org/model"]),
@@ -455,6 +475,10 @@ def test_values_outside_the_contract_are_rejected(
         ("kmeans.k_step", 2.0, "int_type"),
         ("seeds", ["7", 13, 21, 42, 73], "int_type"),
         ("recommender.mmr_lambda", "0.7", "float_type"),
+        ("extraction.min_text_chars", "50", "int_type"),
+        ("extraction.ocr_window_pages", 100.0, "int_type"),
+        ("extraction.header_footer.edge_lines", True, "int_type"),
+        ("extraction.header_footer.min_share", "0.3", "float_type"),
     ],
 )
 def test_numeric_fields_refuse_values_of_another_type(
@@ -525,6 +549,13 @@ def test_the_global_safe_loader_still_reads_plain_exponents_as_text() -> None:
         ("repository.max_retries", 10),
         ("ocr.dpi", 72),
         ("ocr.dpi", 600),
+        ("extraction.min_text_chars", 1),
+        ("extraction.ocr_window_pages", 0),
+        ("extraction.header_footer.edge_lines", 1),
+        ("extraction.header_footer.edge_lines", 10),
+        ("extraction.header_footer.min_share", 1.0),
+        ("extraction.header_footer.min_share", 1),
+        ("extraction.header_footer.min_pages", 2),
         ("chunking.max_tokens", 16),
         ("umap.min_dist", 0),
         ("hdbscan.min_cluster_sizes", [2]),

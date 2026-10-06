@@ -172,6 +172,30 @@ class OcrConfig(_FrozenModel):
     dpi: Annotated[StrictInt, Field(ge=72, le=600)]
 
 
+class HeaderFooterConfig(_FrozenModel):
+    """Running header and footer removal: lines at the top or the bottom of the pages of one
+    document that repeat on many of its pages."""
+
+    edge_lines: Annotated[StrictInt, Field(ge=1, le=10)]
+    """Non-empty lines inspected at the top, and again at the bottom, of each page."""
+    min_share: Annotated[StrictFloat, Field(gt=0.0, le=1.0)]
+    """Smallest share of a document's pages with text on which a line must repeat."""
+    min_pages: Annotated[StrictInt, Field(ge=2)]
+    """Fewest pages with text that a document needs before repeated lines are looked for."""
+
+
+class ExtractionConfig(_FrozenModel):
+    """PDF text extraction: low-text pages, the OCR window (D25), and header/footer removal."""
+
+    min_text_chars: PositiveInt
+    """A page whose text layer has fewer characters, stripped of surrounding whitespace, is
+    low-text."""
+    ocr_window_pages: NonNegativeInt
+    """Only the low-text pages among the first this many pages of a document are OCR'd;
+    0 turns OCR off."""
+    header_footer: HeaderFooterConfig
+
+
 class ChunkingConfig(_FrozenModel):
     """Sentence-aligned chunk budget, special tokens included, under both tokenizers."""
 
@@ -271,6 +295,7 @@ class AppConfig(_FrozenModel):
     repository: RepositoryConfig
     snapshot: SnapshotConfig
     ocr: OcrConfig
+    extraction: ExtractionConfig
     chunking: ChunkingConfig
     embedding: EmbeddingConfig
     umap: UmapConfig
