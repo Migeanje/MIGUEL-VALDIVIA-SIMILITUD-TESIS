@@ -308,3 +308,5 @@ work offline with `HF_HUB_OFFLINE=1`.
 
 Scope, decisions, and the task checklist live in
 [`odd/tasks/thematic-redundancy-system.md`](odd/tasks/thematic-redundancy-system.md).
+Processing times, request counts, data sizes and costs are recorded in
+[`docs/processing_costs.md`](docs/processing_costs.md), one row per long or measured operation.

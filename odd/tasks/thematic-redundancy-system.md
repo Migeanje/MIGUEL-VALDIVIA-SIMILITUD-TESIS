@@ -521,7 +521,7 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
   - Full run: pending in the user's terminal (command in the README). T09 stays unchecked until it is done and verified.
   - Commit: `3b05679`, made by the user as one commit. Its tree `8451eb4…` is identical to the reviewed one.
   - Reviews: medium risk, one lens, approved before the commit. The user declined the post-commit review for this candidate.
-- [ ] **T09a** Fixes from the T09 review, needed before the full run. The settings fingerprint covers code only through a rules version raised by hand, and T09 left it at 1, so a later fix would not extract the PDFs again.
+- [x] **T09a** Fixes from the T09 review, needed before the full run. The settings fingerprint covers code only through a rules version raised by hand, and T09 left it at 1, so a later fix would not extract the PDFs again.
   - Route D. Risk M.
   - Trigger for route D: a rule fix plus manifest and fingerprint changes, with tests, across 3 or more files.
   - R3-001 (warning), `page_text.py`: an edge line of digits only goes only when it is a page number. Bare page numbers made `#` a running key, which also dropped a year such as `2024` at the foot of a cover page, or any other all-digit edge line. Running lines with words, such as `Página 12`, behave as before.
@@ -543,8 +543,15 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
       - `pytest -m smoke`: 16 passed.
       - `ruff check` and `ruff format --check` are clean.
       - Attribution scan of the added lines: 0 hits. Privacy scan of the changed files against the metadata titles, abstract sentences and names: 0 hits.
-  - Commit: pending; the user commits in GitHub Desktop.
-- [ ] **T09b** Move the OS lock and the atomic JSON write, which `extraction/` repeats from `download_pdfs` and `pdf_manifest`, into `shared/` and reuse them (follow-up from T09, non-blocking).
+  - Commit: `7334e66`, made by the user. Its tree `0a7fd20…` is identical to the reviewed one.
+  - Reviews: medium risk, one lens, approved before the commit. The post-commit check found it under the slice budget, so it stays pending in the slice.
+  - Finding (non-blocking), moved to T09b: edge lines of digits only.
+- [ ] **T09b** Follow-ups from the T09 and T09a reviews (non-blocking):
+  - Move the OS lock and the atomic JSON write, which `extraction/` repeats from `download_pdfs` and `pdf_manifest`, into `shared/` and reuse them (from T09).
+  - Edge lines of digits only (from the T09a review):
+    - A running footer made of digits only, such as `2024` on every page, is now kept on every page.
+    - A year with punctuation, such as `2024.` or `– 2024 –`, is only partly protected, because the line key folds the digits.
+    - No test covers either case. It is harmless for the objectives; revisit it if T10 shows any effect. A fix must raise `EXTRACTION_VERSION`.
   - Route D. Risk M.
 - [ ] **T10** Objectives locator plus a manual verification sample (~60, stratified by program), producing an accuracy report (O05).
   - Route D. Risk M.
@@ -688,6 +695,7 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
 - `uv run ruff format --check .`
 - `uv run pytest -q`
 - Test-first: deterministic modules follow RED → GREEN → REFACTOR with `uv run pytest`. Exceptions: EDA notebooks, experiment runs, manual labeling, and the Docker run check.
+- Processing costs: every long or measured operation adds a row to `docs/processing_costs.md` in the same work unit.
 
 ## Risks
 
@@ -809,19 +817,24 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
   - T09a started. Route: D. Trigger: a rule fix plus manifest and fingerprint changes, with tests, across 3 or more files.
   - The full run waits for T09a, because the fingerprint covers code only through a rules version raised by hand, so a later fix would not extract the PDFs again.
 
+- 2026-10-05: The user committed T09a as `7334e66`. The post-commit check found it under the slice budget, so the reviewed boundary stays `3b05679`.
+  - The user started the full T09 extraction in their terminal.
+  - The processing-cost ledger `docs/processing_costs.md` was added at the user's request, for the thesis write-up.
+
 ## Next step
 
 Resume checklist, in order:
 
 1. **Re-sync.**
    - Read this document fully.
-   - Run `git status`, `git log -5`, `uv run pytest -q`, `uv run ruff check .` and `uv run ruff format --check .`.
-   - Confirm whether HEAD contains the T09a commit.
-2. **T09a commit handoff, or its post-commit check.** If T09a is not committed, hand the user its file list and Conventional Commit message; the user commits in GitHub Desktop. Once it is committed, run its post-commit check from base `3b05679`.
-3. **T09 full run, in the user's terminal.**
-   - `uv run python -m thematic_redundancy.extraction.extract_text --summary-out results/extraction/20261002T224412Z/summary.json` (about 3 h, or up to about 6.5 h at the OCR speed of the T09a sample; it resumes if stopped).
-   - Then verify the manifest (731 PDFs, 0 errors, 0 stale, 0 orphaned) and commit the numbers-only summary.
-   - Close T09 with the run's summary numbers, and record them in the processing-cost ledger (none exists yet).
+   - Run `git status`, `git log -5`, `uv run ruff check .` and `uv run ruff format --check .`. Run `uv run pytest -q` only when the extraction run is not using the CPU.
+   - Confirm whether HEAD contains the processing-cost ledger commit.
+2. **Processing-cost ledger, commit handoff.** If it is not committed, hand the user the file list (`docs/processing_costs.md`, `README.md`, this plan) and its Conventional Commit message; the user commits in GitHub Desktop.
+3. **T09 full run: verify and close it** once the user's run ends (it resumes if stopped).
+   - Verify `results/extraction/20261002T224412Z/summary.json` and the text manifest: 731 PDFs, the error count and the orphaned count.
+   - Close T09 with its numbers.
+   - Fill the T09 rows of `docs/processing_costs.md`: the ledger row and the `data/interim` size.
+   - Commit the numbers-only summary JSON together with the T09 closure.
 4. **T10.** Objectives locator. Manual check of about 60 theses stratified by program; target at least 90% correct (O05).
 5. **T12.** Build the fichas dataset:
    - D24 dedupe, including the industrial pair's PDF choice;
