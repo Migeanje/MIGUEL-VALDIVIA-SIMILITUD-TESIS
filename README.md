@@ -275,6 +275,40 @@ judged correct; otherwise the pipeline falls back to title and abstract.
    accuracy, and the workbook's SHA-256. The official report of snapshot `20261002T224412Z` is
    `results/objectives/20261002T224412Z/verification.json`.
 
+## Fichas dataset
+
+Build one ficha per harvested record (T12): the corpus table that every later step reads. The
+build takes about a second; the quality report adds about 9 seconds for the spaCy re-check:
+
+```sh
+uv run python -m thematic_redundancy.corpus.build_fichas \
+    --report-out results/fichas/<snapshot_id>
+```
+
+It reads the snapshot harvested last (`--snapshot-id` picks another one), its PDF manifest, the
+page-text manifest and the objectives table, whose SHA-256 must match its manifest. It writes
+only when every check passes:
+
+| File | Content | In git |
+|---|---|---|
+| `data/interim/<snapshot_id>/fichas.parquet` | One ficha per record: identity, title, abstract, objectives, metadata, person codes, PDF status, inclusion and quality notes | No: it holds thesis text |
+| `data/interim/<snapshot_id>/exclusions.parquet` | The excluded records: item uuid, doc code, handle, program, type, reason and `duplicate_of`; no text | No |
+| `data/interim/<snapshot_id>/fichas_manifest.json` | The SHA-256 of the inputs and outputs, the counts and the seconds | No |
+| `results/fichas/<snapshot_id>/quality_report.json` and `.md` | Written by `--report-out`: counts, public handles and lemmas only | Yes |
+
+| Rule | Decision |
+|---|---|
+| Inclusion (D01) | The exact `renati.type` fragment `#tesis`. Any other type is excluded as `non_thesis_type` and keeps its raw type |
+| Duplicates (D24) | Records with the same title, abstract, authors, advisor and issue date (whitespace collapsed, case folded) are one thesis. The one accessioned first (`dc.date.accessioned`) stays, and a tie goes to the smaller item uuid; the others are excluded as `duplicate`, with `duplicate_of` |
+| Objectives (O05) | A thesis with its PDF on disk takes the locator's row: the general objective, a blank line, then the specific objectives. Without a PDF, or with a PDF listed in `fichas.wrong_pdfs`, it is `no_pdf` and represented by its title and abstract |
+| People | The advisor code comes from a valid ORCID iD, otherwise from the normalized name; a bad ORCID iD leaves a quality note. Authors get one code each. No name is stored. The key `data/interim/pseudonym.key` is created once and never overwritten: never commit or share it |
+| Checks | Unique doc codes, no PDF shared by two included theses, and the counts declared in `fichas.expected`. Any failure is one `error:` line, and nothing is written |
+
+The report of snapshot `20261002T224412Z` is `results/fichas/20261002T224412Z/quality_report.md`.
+It also re-checks the domain stopwords against the objectives text: how many theses hold each
+listed lemma, and the frequent lemmas that the list lacks. Lemmas shaped like an infinitive are
+flagged as candidates only; `config/stopwords_domain_es.txt` changes only by hand.
+
 ## Metadata profile
 
 Profile the metadata of a snapshot, offline:
@@ -380,6 +414,9 @@ work offline with `HF_HUB_OFFLINE=1`.
   the gitignored `data/`; the configuration refuses a workbook directory outside
   `paths.data_dir`. The workbook replaces every author, advisor and juror name of the snapshot
   with `[nombre omitido]`. The objectives summary and the accuracy report hold numbers only.
+- The fichas table holds thesis text, so it lives only under the gitignored `data/interim/`. The
+  fichas quality report refuses to write a file that holds a title, an abstract, a person's
+  name or an ORCID iD from the snapshot.
 
 ## Plan
 

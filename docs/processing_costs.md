@@ -18,6 +18,7 @@ row here, in the same commit.
 | Full PDF text extraction (T09) | 1 h 29 min (5,341.1 s) for 721 PDFs and 139,438 pages, 0 failures |
 | Objectives locator (T10) | 6.0 s for 731 PDFs and 141,076 pages, no OCR: about 122 PDFs/s (derived) |
 | Manual verification of the objectives (T10) | about 2 h of the user's time for 60 theses (reported by the user, not timed): about 2 min per thesis (derived) |
+| Fichas build (T12) | 0.6 s for 766 records; the quality report with the spaCy stopword re-check, 8.5–9.2 s |
 
 ## 1. Purpose and conventions
 
@@ -113,6 +114,9 @@ across sessions with care.
 | 2026-10-07 | T10 | Manual verification of the objectives, by the user | 60 rows of the workbook, one verifier | about 2 h (reported by the user, not timed) | about 2 min per row (derived) | 0 | Below the 4 to 6 min per row estimate | `results/objectives/20261002T224412Z/verification.json`; the user's report |
 | 2026-10-07 | T10 | Workbook import and accuracy report | the filled 60-row workbook | not measured | — | 0 | Imported at 2026-10-07T21:43:43Z | `results/objectives/20261002T224412Z/verification.json` (`imported_at`) |
 | 2026-10-07 | all | Test suite (`pytest -q`) | 1,107 tests, plus 1 skipped | 22.1–31.5 s (2 runs) | — | 0 | — | plan T10b; times: run output |
+| 2026-10-07 | T12 | Fichas build (`build_fichas`) | 766 records, 731 objectives rows: 766 fichas (744 included), 22 exclusions | 0.6 s (0.628 s), 2 runs; the whole command took 11.1 s, start-up and quality report included | about 1,200 records/s (derived) | 0 | Every enforced check passed. The first run created the pseudonym key; both runs wrote the same fichas table (same SHA-256) | `data/interim/20261002T224412Z/fichas_manifest.json` (`seconds`); run output |
+| 2026-10-07 | T12 | Quality report with the stopword re-check (spaCy) | objectives text of the 728 included theses that have it | 8.5 s and 9.2 s (2 runs), spaCy model load included | about 80 theses/s (derived) | 0 | Full cleaner without domain stopwords | run output |
+| 2026-10-07 | all | Test suite (`pytest -q`) | 1,194 tests, plus 1 skipped | 22.5 s | — | 0 | — | plan T12; time: run output |
 
 ### Notes on the ledger
 
@@ -172,6 +176,8 @@ Measured on 2026-10-05 with `os.stat` (no file was hashed) and, for the reposito
 | `data/interim/20261002T224412Z/pages/` | page texts of 731 PDFs (parquet) and their manifest (T09) | 90,660,188 | 90.7 MB |
 | `data/interim/20261002T224412Z/objectives.parquet` and `objectives_manifest.json` | objectives table of 731 PDFs and its manifest (T10; measured 2026-10-07) | 360,893 | 0.36 MB |
 | `data/labels/objectives_check/20261002T224412Z/` | verification workbook (30,042 B) and `sample.json` (11,817 B) (T10; measured 2026-10-07) | 41,859 | 0.04 MB |
+| `data/interim/20261002T224412Z/` fichas files | `fichas.parquet` (1,206,201 B), `exclusions.parquet` (3,868 B) and `fichas_manifest.json` (702 B) (T12; measured 2026-10-07) | 1,210,771 | 1.21 MB |
+| `data/interim/pseudonym.key` | the pseudonym key (T08), created by the first T12 run | 32 | 32 B |
 | `tessdata/*.traineddata` | `spa` and `eng`, tessdata_best | 28,970,788 | 29.0 MB |
 | Hugging Face cache | `paraphrase-multilingual-MiniLM-L12-v2` | 479,729,050 | 479.7 MB |
 | Hugging Face cache | `paraphrase-multilingual-mpnet-base-v2` | not downloaded yet | pending (T13) |

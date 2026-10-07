@@ -267,6 +267,66 @@ class ObjectivesConfig(_FrozenModel):
         return self
 
 
+class WrongPdfConfig(_FrozenModel):
+    """A thesis whose PDF on disk is a copy of another item's PDF, as found by hand (T05)."""
+
+    item_handle: NonEmptyStr
+    pdf_of_handle: NonEmptyStr
+    """Item whose PDF the file really is."""
+
+    @model_validator(mode="after")
+    def _require_another_item(self) -> Self:
+        if self.item_handle == self.pdf_of_handle:
+            raise ValueError(f"wrong PDF of '{self.item_handle}' must name another item")
+        return self
+
+
+class FichasCountsConfig(_FrozenModel):
+    """Counts that the fichas of one snapshot must reach, declared after inspecting it (T12)."""
+
+    snapshot_id: Annotated[str, Field(pattern=r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9])?$")]
+    records: NonNegativeInt
+    """Every harvested record: one ficha each."""
+    included: NonNegativeInt
+    duplicates: NonNegativeInt
+    """Theses excluded as a D24 duplicate of another record."""
+    non_thesis: NonNegativeInt
+    """Records excluded because their ``renati.type`` is not a thesis (D01)."""
+    objectives_extracted: NonNegativeInt
+    """Included theses with objectives found in their own PDF."""
+    metadata_only: NonNegativeInt
+    """Included theses represented by their title and abstract only."""
+
+    @model_validator(mode="after")
+    def _require_counts_that_add_up(self) -> Self:
+        if self.records != self.included + self.duplicates + self.non_thesis:
+            raise ValueError(
+                f"records ({self.records}) must equal included + duplicates + non_thesis "
+                f"({self.included + self.duplicates + self.non_thesis})"
+            )
+        if self.included != self.objectives_extracted + self.metadata_only:
+            raise ValueError(
+                f"included ({self.included}) must equal objectives_extracted + metadata_only "
+                f"({self.objectives_extracted + self.metadata_only})"
+            )
+        return self
+
+
+class FichasConfig(_FrozenModel):
+    """Fichas dataset (T12): known wrong PDFs, and the counts that its build must reach."""
+
+    wrong_pdfs: tuple[WrongPdfConfig, ...] = ()
+    expected: FichasCountsConfig
+
+    @field_validator("wrong_pdfs")
+    @classmethod
+    def _require_one_declaration_per_item(
+        cls, value: tuple[WrongPdfConfig, ...]
+    ) -> tuple[WrongPdfConfig, ...]:
+        _require_unique([wrong.item_handle for wrong in value], "wrong-PDF item handles")
+        return value
+
+
 class ChunkingConfig(_FrozenModel):
     """Sentence-aligned chunk budget, special tokens included, under both tokenizers."""
 
@@ -368,6 +428,7 @@ class AppConfig(_FrozenModel):
     ocr: OcrConfig
     extraction: ExtractionConfig
     objectives: ObjectivesConfig
+    fichas: FichasConfig
     chunking: ChunkingConfig
     embedding: EmbeddingConfig
     umap: UmapConfig

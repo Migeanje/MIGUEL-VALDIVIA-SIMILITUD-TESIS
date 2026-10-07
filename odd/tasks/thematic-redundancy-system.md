@@ -1,7 +1,7 @@
 # Feature: Thematic Redundancy System (MVP)
 
 - **Locator:** `odd/tasks/thematic-redundancy-system.md`
-- **Status (2026-10-07):** Plan approved by the user on 2026-10-02, including O02 and O08 (direct commits on `main`). Phases 0 and 1 are done. T08, T09, T09a, T10, T11 and T11a are done. T10 shipped as `4e74a7a` and `6f1ba96`, and its manual verification met O05 with 60/60 general objectives correct. T10b, three fixes from the slice-2 reviews, awaits its commit together with the T10 closure. Then T12.
+- **Status (2026-10-07):** Plan approved by the user on 2026-10-02, including O02 and O08 (direct commits on `main`). Phases 0, 1 and 2 are done: T08 to T12 are done. T10 met O05 with 60/60 general objectives correct, and T10b shipped as `c121d78`. T12 built the 766 fichas (744 included theses) and passed every enforced check; its commit is pending. Next: Phase 3 (T13, T15).
 - **Source:** the thesis plan v3 `Plan_de_Tesis_UCSM_v3_Directiva.pdf` (119 pages, kept outside the repo), plus the decisions recorded below.
 
 ## Objective
@@ -77,7 +77,7 @@ Institutional integrity tools such as Turnitin detect textual overlap. They do n
 | D21 | The earlier `TesisSimilitud` repo (Feb 2025) is ignored entirely | The user says it was only a test |
 | D22 | Always construct BERTopic with `language="spanish"` (never the default) | With `embedding_model=None`, BERTopic 0.17.4 keeps `language="english"` and strips every character outside `[A-Za-z0-9 ]` before c-TF-IDF, so `fragmentación` becomes `fragmentacin`. Found and proven by the T02 smoke test |
 | D23 | No backup copy of the raw snapshot; U7 is dropped | User decision 2026-10-03, risk R8 accepted. Partial mitigation: the metadata and PDF manifests record item uuids, bitstream uuids and sha256, so a later re-harvest can be diffed and documented |
-| D24 | Deduplicate exact duplicate records before anything else | T07 found 2 pairs of `#tesis` records with identical title, abstract, author, advisor and date under different item uuids, so there are 744 distinct theses, not 746. T12 keeps one canonical record per pair (rule fixed in T12) and logs the other as `duplicate_of`. Duplicates never enter the labeled pairs (T20) or the redundancy evaluation, where they would be trivial positives |
+| D24 | Deduplicate exact duplicate records before anything else | T07 found 2 pairs of `#tesis` records with identical title, abstract, author, advisor and date under different item uuids, so there are 744 distinct theses, not 746. T12 keeps the record accessioned first (`dc.date.accessioned`; a tie goes to the smaller item uuid) and logs the other as `duplicate_of`. Duplicates never enter the labeled pairs (T20) or the redundancy evaluation, where they would be trivial positives |
 | D25 | OCR is selective: only low-text pages among the first `extraction.ocr_window_pages` pages (default 100) of a PDF are OCR'd. Other low-text pages keep their few text-layer characters, or are `empty`, with their low-text flag | The PDF text serves only the objectives (T10); title and abstract come from metadata (D03, D09). Measured 2026-10-03: the first text-layer page with "objetivo general" was found in 658 of 731 PDFs, at median page index 7, P95 25, P99 102. The window cuts OCR from about 8,600 low-text pages to about 1,960. It is configurable, so a wider pass can run later |
 
 D15, labeled set, in detail:
@@ -164,6 +164,7 @@ Python 3.13 · uv · pymupdf 1.28 · pdfplumber 0.11 (fallback) · httpx 0.28 ·
 | extraction.header_footer | `edge_lines` 3 (1–10), `min_share` 0.3 (>0–1), `min_pages` 5 (≥2): a line among the first or last 3 non-empty lines of a page that repeats on at least 30% of the pages with text, in a PDF with at least 5 such pages, is a running line (added in T09) |
 | objectives | `general_max_chars` 1200 (≥1), `specific_max_chars` 4000 (≥1), `min_chars` 40 (≥1, below `general_max_chars`): longer texts are cut and flagged, a shorter general objective is flagged (added in T10) |
 | objectives.verification_sample | `per_program` 12 (≥1), `seed` 20261007 (0 to 2^32−1), `workbook_dir` `data/labels/objectives_check` (relative, no `..`, and inside `paths.data_dir`, since the workbook holds thesis text) (added in T10) |
+| fichas | `wrong_pdfs`: `20.500.12920/11777` carries the PDF of `20.500.12920/11776`. `expected`, for snapshot `20261002T224412Z`: 766 records, 744 included, 2 duplicates, 20 non-thesis, 728 with objectives, 16 metadata-only; the counts must add up, and the build stops when one is missed (added in T12) |
 | chunk.max_tokens | 128 under both tokenizers, special tokens included |
 | doc_vector | equal-weight mean of the section vectors, L2-normalized |
 | models | paraphrase-multilingual-MiniLM-L12-v2, paraphrase-multilingual-mpnet-base-v2 |
@@ -642,7 +643,7 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - A single verifier, the author, so there is no inter-rater agreement.
     - Every sampled row was `extracted`, because the corpus has 0 `not_found`; the `not_found` path was not verified on real theses.
     - The per-program intervals are wide (lower bound 75.8%).
-- [ ] **T10b** Fixes from the slice-2 reviews of T10: two warnings and one suggestion, all non-blocking.
+- [x] **T10b** Fixes from the slice-2 reviews of T10: two warnings and one suggestion, all non-blocking.
   - Route D. Risk M.
   - Trigger for route D: a module fix with tests, plus the plan, the ledger and the README.
   - Warning 1, an unreadable workbook escaped the import command as a raw traceback. `main` caught only `WorkbookValidationError`, `OSError`, `ValueError` and `yaml.YAMLError`, and openpyxl raises other exceptions for a damaged or non-xlsx file.
@@ -671,7 +672,12 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - No effect on the completed verification. The workbook holds 0 redaction markers, so the old pattern matched no form anywhere in its 60 rows. Every match of the new pattern is also a match of the old one, so a rebuild would redact 0 cells too. The workbook was not rebuilt.
   - Every mutant ran with a fresh bytecode cache (`PYTHONPYCACHEPREFIX`), and the module was byte-identical after each restore.
   - Checks: `pytest` 1,107 passed, 1 skipped (1,097 + 10 new: CLI 5, extension 1, characterization 2, redactor 2); `ruff check` and `ruff format --check` clean.
-  - Commit: pending; the user commits in GitHub Desktop.
+  - Commit: `c121d78`, made by the user together with the T10 closure. Approved before and after the commit, so the reviewed boundary is now `c121d78`.
+- [ ] **T10c** Follow-ups from the T10b reviews (non-blocking):
+  - `zlib.error` and `EOFError`, raised by a corrupted deflate member of the workbook, escape the unreadable-workbook handling (`labeling/objectives_check.py:709`).
+  - The letters-only boundary of the name redactor no longer redacts a name glued to an adjacent letter, such as a preposition fused to a surname in PDF text. Decide the policy (over- or under-redaction) before any new workbook is generated.
+  - The broad `KeyError`/`TypeError` catch could mask a library bug; pin it with a test.
+  - Route D. Risk M.
 - [x] **T11** Light and full cleaners. They handle:
   - title suffix stripping, header/footer removal and hyphenation;
   - domain stopwords (by document frequency, then manual review);
@@ -725,9 +731,41 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
   - `_fsync_directory` in `experiments/domain_stopwords.py` tolerates only a failure to open the directory. An `OSError` from `os.fsync` on an opened directory (EINVAL on some network, FUSE or overlay filesystems) propagates after `os.replace` has already published the output, which contradicts its docstring. Tolerate it, and add a test. Both reviews raised it.
   - The documents-per-second test couples to the number of `perf_counter` readings in `main`. Assert only the format, or control the two readings that bracket the cleaner.
   - Route D. Risk M.
-- [ ] **T12** Build the fichas dataset, the exclusion log, and a quality report. Inclusion requires an exact `renati.type` fragment `#tesis` (746 in snapshot `20261002T224412Z`). Suficiencia profesional appears in 5 spellings and is excluded with its reason.
+- [x] **T12** Build the fichas dataset, the exclusion log, and a quality report. Inclusion requires an exact `renati.type` fragment `#tesis` (746 in snapshot `20261002T224412Z`). Suficiencia profesional appears in 5 spellings and is excluded with its reason.
   - Route D. Risk M.
   - Inputs from the T05 findings (2026-10-03): 11777 is metadata-only with a quality note, and the D24 canonical rule must also choose the industrial pair's PDF.
+  - Trigger for route D: a builder, a quality report, config and tests across 6 or more files.
+  - Evidence (2026-10-07), implementation:
+    - `corpus/build_fichas.py`: the pure rules, the enforced checks, the use case and the CLI `python -m thematic_redundancy.corpus.build_fichas` (`--project-root`, `--snapshot-id`, `--report-out`). It writes `fichas.parquet` (all 766), `exclusions.parquet` (no text) and `fichas_manifest.json` into `data/interim/<snapshot>/`, atomically, and only after every check passes.
+    - `corpus/fichas_quality.py`: the quality report, the stopword re-check, and a privacy gate that refuses a report holding a title, an abstract, a name or an ORCID iD of the snapshot, or a lemma that is not one word.
+    - Config `fichas` (row above): the wrong PDF of 11777 and the expected counts, which must add up. The build first checks that they belong to the snapshot being built.
+  - Rules:
+    - D24, decided by the parent: the record accessioned first stays, and a tie goes to the smaller item uuid. `duplicate_of` holds the item uuid that stays, as `Ficha` types it.
+    - Objectives: the general objective, a blank line, then the specific objectives. Each locator flag becomes a quality note.
+    - 11777 is `no_pdf` with its PDF hash kept and the note "PDF on disk belongs to another item (20.500.12920/11776)". The build confirms that both PDFs have the same SHA-256.
+    - Source format: `digital`, `ocr` or `mixed` from the text manifest's pages; `none` when no PDF text is used.
+    - Excluded records get their fields by the same rules, so every ficha describes its record fully.
+  - Test-first evidence:
+    - Config: RED 10 failed, 154 passed → GREEN 164 passed, 1 skipped.
+    - Builder and report: RED was a collection error with each module absent. The first GREEN run gave 23 failed, 55 passed, all from test-helper defects: titles and abstracts differed per record, so no D24 group formed; a page-text entry had OCR pages without OCR attempts; a helper passed a keyword twice; tests used the real wrong-PDF declaration; one expected message order. GREEN after fixing the helpers: 78 passed.
+    - 19 throwaway mutants, each with a fresh bytecode cache, the module byte-identical after each restore: 18 killed. The survivor reversed the uuid text, which keeps the order of the counter uuids, so it was equivalent; a true order flip was then killed.
+  - Real run (2026-10-07, numbers only):
+    - 766 fichas: 744 included, 22 excluded (20 `non_thesis_type`, 2 `duplicate`). 728 `extracted`, 16 `no_pdf` (14 restricted, 1 without a file, 1 wrong file), so 16 metadata-only. 766 unique doc codes. Every enforced check passed.
+    - Advisor ORCID iD on 712 included theses: 691 valid, 21 malformed or failing the check digit, each with a quality note. Advisor codes: 691 from the ORCID iD, 53 from the name; 138 distinct advisor codes and 784 distinct author codes.
+    - Quality notes besides the ORCID ones: `ocr_page` 4, `general_too_long` 1, `specific_missing` 1, wrong PDF 1. Future-dated: `16319` and `16433`.
+    - Text lengths in characters (median, P95): title 147, 217; abstract 1,720.5, 2,886; objectives 702.5, 1,306.
+    - Build 0.6 s; quality report 8.5–9.2 s with the spaCy load; whole command 11.1 s. A second run wrote the same fichas table (same SHA-256). The first run created the pseudonym key.
+    - No-names check: 0 hits for 3,065 name forms and 131 ORCID values in the 19,367 text cells of `fichas.parquet`.
+  - D24 picks: `15247` stays over `15265` (industrial, different PDFs: the PDF of `15247` is kept), and `16449` over `16450` (mecanica, the same PDF). In both pairs the record that stays was accessioned first and also has the smaller uuid, so the rule agrees with the T10 placeholder: the T10 sample rows refer to the canonical records. The objectives texts of both twins have equal hashes.
+  - Stopword re-check over the objectives of the 728 theses, with the full cleaner without domain stopwords (no list change):
+    - 27 of the 79 domain stopwords reach 5% of the objectives; 3 never occur (`concluir`, `evaluó`, `posteriormente`). The most frequent: determinar 284, evaluar 282, analizar 270, identificar 257.
+    - 102 lemmas not on the list reach 5%, led by diseñar 282, sistema 272, proceso 262, empresa 260 and mejora 251.
+    - 14 infinitive-shaped candidates, for the user to decide: diseñar 282, desarrollar 206, implementar 182, mejorar 157, optimizar 141, elaborar 124, reducir 86, diagnosticar 77, seleccionar 74, validar 67, comparar 65, incrementar 63, definir 47, medir 39. T11a removed `desarrollar` and `mejorar` on purpose; some candidates may name topics (optimizar, diagnosticar).
+  - Checks: `pytest` 1,194 passed, 1 skipped (1,107 + 87 new: config 9, builder 67, report 11) in 22.5 s; `ruff check` and `ruff format --check` clean. The attribution scan and the privacy scan of the tracked new and changed files found 0 hits; the synthetic test names share no word with the snapshot names.
+  - Size: 3,161 authored changed lines (2,913 in new files), 1,326 of them tests and 391 the report files. That is above the 2,500-line target and close to the review limit, so two slices:
+    - Slice 1 (849 lines): the config unit and the quality report: `shared/config.py`, `config/default.yaml`, `test_config.py`, `corpus/fichas_quality.py`, `test_fichas_quality.py`. Checked alone on a copy of `c121d78`: 1,127 passed, 1 skipped.
+    - Slice 2 (2,312 lines): the builder, its CLI and the outputs: `corpus/build_fichas.py`, `test_build_fichas.py`, `results/fichas/20261002T224412Z/`, the README, the ledger and this plan. It depends on slice 1; both together give the 1,194 above.
+  - Commit: pending; the user commits in GitHub Desktop.
 
 ### P3 — Representation and topic map (M3–M5)
 - [ ] **T13** Sentence-aligned chunker that is valid for both tokenizers. Property tests check that every chunk fits both tokenizers and no text is lost.
@@ -953,6 +991,12 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
   - The user filled the verification workbook in about 2 h (reported, not timed). The official import gave 60/60 general objectives `Correcto` (Wilson 95% CI 94.0%–100%), so O05 is met and T10 is closed.
   - T10b was added from the slice-2 reviews (two warnings and one suggestion) and implemented test first. It awaits its commit together with the T10 closure.
 
+- 2026-10-07: The user committed the T10 closure and T10b as `c121d78`. It was approved before and after the commit, so the reviewed boundary is now `c121d78`. T10c was added from the T10b review findings.
+
+- 2026-10-07: T12 started. Route: D. Trigger: a builder, a quality report, config and tests across 6 or more files.
+  - T12 implemented and verified: 766 fichas, 744 included theses, every enforced check passed on the real snapshot. The D24 rule agrees with the T10 placeholder in both pairs. The stopword re-check proposes candidates only; the list is unchanged.
+  - Phase 2 is done. The T12 commits are handed to the user as two slices.
+
 ## Next step
 
 Resume checklist, in order:
@@ -960,17 +1004,11 @@ Resume checklist, in order:
 1. **Re-sync.**
    - Read this document fully.
    - Run `git status`, `git log -5`, `uv run pytest -q`, `uv run ruff check .` and `uv run ruff format --check .`.
-   - Confirm whether HEAD contains the T10 closure and T10b (the last T10 commit is `6f1ba96`).
-2. **Commit handoff for the T10 closure and T10b.** If they are not committed, hand the user the files and Conventional Commit messages: `labeling/objectives_check.py` and its tests, `results/objectives/20261002T224412Z/verification.json`, the README, the ledger and this plan. The user commits in GitHub Desktop. If they are committed, verify that the tree is identical to the reviewed one.
-3. **T12.** Build the fichas dataset:
-   - D24 dedupe, including the industrial pair's PDF choice;
-   - 11777 as metadata-only;
-   - advisor codes keyed by ORCID;
-   - `author_codes`;
-   - the exclusion log;
-   - `doc_code` uniqueness;
-   - re-check the domain stopwords against the objectives text.
-
-Batched follow-ups, to be scheduled once Phase 2 is done: T02a, T04a, T05a, T07a, T08a, T09b, T11b.
+   - Confirm whether HEAD contains T12 (the last reviewed commit is `c121d78`).
+2. **T12 commit handoff.** If T12 is not committed, hand the user its two slices, as listed under T12, with Conventional Commit messages; the user commits in GitHub Desktop. If it is committed, verify that each tree is identical to the reviewed one.
+3. **Phase 3.**
+   - T13, the chunker. It needs the U8 authorization to download the mpnet model.
+   - T15, the TF-IDF baseline. Before it, the user decides on the stopword candidates of the T12 re-check.
+   - The batched follow-ups, when scheduled: T02a, T04a, T05a, T07a, T08a, T09b, T10c, T11b.
 
 Pending user inputs: U1; U2 (before T19); U3 (month 3); U4, which must be agreed before any topic result exists, so before T16; U5; U6; U8 for any new download, including the mpnet model before T13 and, optionally, the 7 expired-embargo PDFs.

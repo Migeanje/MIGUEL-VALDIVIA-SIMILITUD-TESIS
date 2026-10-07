@@ -72,6 +72,22 @@ objectives:
     seed: 20261007
     workbook_dir: data/labels/objectives_check
 
+# Fichas dataset (T12). wrong_pdfs lists the theses whose PDF on disk is a copy of another
+# item's PDF (found in T05); their PDF text is not used. expected holds the counts that the
+# build of snapshot_id must reach, or it stops; another snapshot needs its own counts.
+fichas:
+  wrong_pdfs:
+    - item_handle: "20.500.12920/11777"
+      pdf_of_handle: "20.500.12920/11776"
+  expected:
+    snapshot_id: "20261002T224412Z"
+    records: 766
+    included: 744
+    duplicates: 2
+    non_thesis: 20
+    objectives_extracted: 728
+    metadata_only: 16
+
 # Token budget per chunk, special tokens included, under both tokenizers.
 chunking:
   max_tokens: 128

@@ -115,6 +115,19 @@ def test_default_config_loads_with_the_declared_plan_values() -> None:
     sample = objectives.verification_sample
     assert (sample.per_program, sample.seed) == (12, 20261007)
     assert sample.workbook_dir == Path("data/labels/objectives_check")
+    fichas = config.fichas
+    assert [(wrong.item_handle, wrong.pdf_of_handle) for wrong in fichas.wrong_pdfs] == [
+        ("20.500.12920/11777", "20.500.12920/11776")
+    ]
+    assert fichas.expected.model_dump() == {
+        "snapshot_id": "20261002T224412Z",
+        "records": 766,
+        "included": 744,
+        "duplicates": 2,
+        "non_thesis": 20,
+        "objectives_extracted": 728,
+        "metadata_only": 16,
+    }
 
 
 def test_max_tokens_above_the_model_sequence_limit_is_rejected(
@@ -741,3 +754,46 @@ def test_the_verification_workbook_follows_a_data_directory_that_is_a_link(
     resolved = sample.resolve_workbook_dir(project_root, Path("data"))
 
     assert resolved == store.resolve() / "labels" / "objectives_check"
+
+
+@pytest.mark.parametrize(
+    ("dotted_key", "value", "message"),
+    [
+        ("fichas.expected.records", 765, "records .* must equal included"),
+        ("fichas.expected.duplicates", 3, "records .* must equal included"),
+        ("fichas.expected.metadata_only", 15, "included .* must equal objectives_extracted"),
+        ("fichas.expected.included", -1, "greater than or equal to 0"),
+        ("fichas.expected.included", "744", "valid integer"),
+        ("fichas.expected.snapshot_id", "../20261002T224412Z", "snapshot_id"),
+    ],
+    ids=["records", "duplicates", "metadata-only", "negative", "quoted", "path-like-id"],
+)
+def test_the_expected_fichas_counts_must_be_whole_and_add_up(
+    raw_default: dict[str, Any], tmp_path: Path, dotted_key: str, value: Any, message: str
+) -> None:
+    # The build compares its counts with these, so a declaration that cannot hold is refused.
+    set_value(raw_default, dotted_key, value)
+
+    with pytest.raises(ValidationError, match=message):
+        load_variant(tmp_path, raw_default)
+
+
+def test_a_wrong_pdf_must_name_another_item(raw_default: dict[str, Any], tmp_path: Path) -> None:
+    raw_default["fichas"]["wrong_pdfs"][0]["pdf_of_handle"] = "20.500.12920/11777"
+
+    with pytest.raises(ValidationError, match="must name another item"):
+        load_variant(tmp_path, raw_default)
+
+
+def test_a_wrong_pdf_may_be_declared_only_once(raw_default: dict[str, Any], tmp_path: Path) -> None:
+    wrong_pdfs = raw_default["fichas"]["wrong_pdfs"]
+    wrong_pdfs.append({**wrong_pdfs[0], "pdf_of_handle": "20.500.12920/1"})
+
+    with pytest.raises(ValidationError, match="wrong-PDF item handles must be unique"):
+        load_variant(tmp_path, raw_default)
+
+
+def test_no_wrong_pdf_at_all_is_accepted(raw_default: dict[str, Any], tmp_path: Path) -> None:
+    raw_default["fichas"]["wrong_pdfs"] = []
+
+    assert load_variant(tmp_path, raw_default).fichas.wrong_pdfs == ()
