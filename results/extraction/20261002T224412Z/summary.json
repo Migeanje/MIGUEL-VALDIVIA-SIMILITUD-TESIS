@@ -1,0 +1,52 @@
+{
+  "snapshot_id": "20261002T224412Z",
+  "settings": {
+    "extraction_version": 2,
+    "ocr_languages": "spa+eng",
+    "ocr_dpi": 300,
+    "min_text_chars": 50,
+    "ocr_window_pages": 100,
+    "header_footer_edge_lines": 3,
+    "header_footer_min_share": 0.3,
+    "header_footer_min_pages": 5
+  },
+  "config_fingerprint": "2b7c1adbca9c8ac187583de9662e0196f193895a818da26d32301fbe762759f0",
+  "updated_at": "2026-10-06T03:57:20Z",
+  "summary": {
+    "items": 731,
+    "ok": 731,
+    "error": 0,
+    "stale": 0,
+    "orphaned": 0,
+    "pages": 141076,
+    "text_layer_pages": 138598,
+    "ocr_pages": 1958,
+    "empty_pages": 520,
+    "low_text_pages": 8616,
+    "ocr_attempted": 1961,
+    "ocr_failed": 0,
+    "unreadable_pages": 0,
+    "lines_removed": 148601,
+    "pdf_warnings": 197,
+    "seconds": 6568.348,
+    "ocr_seconds": 6268.762,
+    "by_program": {
+      "sistemas": {
+        "ok": 63
+      },
+      "industrial": {
+        "ok": 330
+      },
+      "electronica": {
+        "ok": 46
+      },
+      "mecanica": {
+        "ok": 189
+      },
+      "minas": {
+        "ok": 103
+      }
+    }
+  },
+  "ocr_seconds_per_page": 3.197
+}

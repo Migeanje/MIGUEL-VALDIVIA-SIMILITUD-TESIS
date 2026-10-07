@@ -14,8 +14,8 @@ row here, in the same commit.
 | Raw snapshot on disk | 11.41 GB: 731 PDFs (11.40 GB) plus metadata and manifests |
 | PDF download | about 3 h 9 min of active work (derived), within a 12 h 29 min elapsed span |
 | Text layer, no OCR | about 464 pages/s (whole-corpus profile) |
-| OCR, real pages | 4.6 to 11.9 s per page, depending on the machine state |
-| Full PDF text extraction (T09) | in progress; 3–6.5 h (estimate) |
+| OCR, real pages | 2.71 s per page over 1,858 pages in the full run; 4.6 to 11.9 s per page in the earlier samples, depending on the machine state |
+| Full PDF text extraction (T09) | 1 h 29 min (5,341.1 s) for 721 PDFs and 139,438 pages, 0 failures |
 
 ## 1. Purpose and conventions
 
@@ -102,7 +102,7 @@ across sessions with care.
 | 2026-10-05 | T09 | OCR setting trials | 3 real pages | not recorded | `spa` alone: 31% less time for 1% fewer characters; 200 dpi: 11% less time | 0 | Options for the user; none taken | plan T09 |
 | 2026-10-05 | T09 | Text extraction, sample | 10 PDFs, 1,638 pages: 1,535 text layer, 103 OCR | 483.3 s, summed over the PDFs (derived) | OCR 4.6 s/page; other work 0.0056 s/page | 0 | Split across 2 sessions; per-PDF times in the notes | plan T09 |
 | 2026-10-05 | T09a | Text extraction, sample re-run (rules version 2) | the same 10 PDFs | 1,233.8 s | OCR 11.9 s/page, 2.6 times slower; other work about 0.0046 s/page (derived) | 0 | The scanned PDF took 1,138.0 s; a rerun skipped all 10 in 0.1 s | plan T09a |
-| 2026-10-05 | T09 | Text extraction, full run | 731 PDFs, 141,076 pages; about 1,960 OCR pages expected | in progress; 3–6.5 h (estimate) | pending | 0 | Started in the user's terminal | pending: `results/extraction/20261002T224412Z/summary.json` |
+| 2026-10-05 | T09 | Text extraction, full run | 731 PDFs: 721 extracted, 10 skipped (the sample); 139,438 pages in this run: 137,063 text layer, 1,855 OCR, 520 empty | 5,341.1 s (1 h 29 min) | OCR 2.71 s/page (1,858 pages in 5,042.4 s); about 26.1 pages/s overall, and about 0.0021 s per page outside OCR (derived) | 0 | 0 failures. Every PDF in the text manifest: 141,076 pages, 1,958 OCR, 8,616 low-text, 197 MuPDF warnings. The manifest's own timings cover all 731 PDFs, the slower sample included: 6,568.3 s summed over the PDFs and 3.20 s per OCR page. The estimate was 3–6.5 h. The power plan was not recorded | run output (wall time, OCR time); `results/extraction/20261002T224412Z/summary.json` (counts and whole-manifest timings) |
 | 2026-10-03 to 2026-10-05 | all | Test suite (`pytest -q`) | 762, 918 and 923 tests, plus 1 skipped each time | 12.5 s; 16.6–28.4 s; 47.6 s | — | 0 | The 47.6 s run was in a slow machine state | plan T11, T09 and T09a; times: run output |
 
 ### Notes on the ledger
@@ -160,7 +160,7 @@ Measured on 2026-10-05 with `os.stat` (no file was hashed) and, for the reposito
 | `data/raw/20261002T224412Z/manifest.json` | snapshot manifest | 1,857 | 1.9 kB |
 | `data/raw/20261002T224412Z/pdfs/*.pdf` | 731 thesis PDFs | 11,401,121,329 | 11.40 GB |
 | `data/raw/20261002T224412Z/pdfs/manifest.json` | PDF manifest | 487,971 | 0.49 MB |
-| `data/interim/20261002T224412Z/pages/` | page texts and their manifest (T09) | pending | pending, after the T09 run |
+| `data/interim/20261002T224412Z/pages/` | page texts of 731 PDFs (parquet) and their manifest (T09) | 90,660,188 | 90.7 MB |
 | `tessdata/*.traineddata` | `spa` and `eng`, tessdata_best | 28,970,788 | 29.0 MB |
 | Hugging Face cache | `paraphrase-multilingual-MiniLM-L12-v2` | 479,729,050 | 479.7 MB |
 | Hugging Face cache | `paraphrase-multilingual-mpnet-base-v2` | not downloaded yet | pending (T13) |
@@ -189,9 +189,9 @@ repository, in `%USERPROFILE%\.cache\huggingface\hub`.
 
 ## 6. Open measurements
 
-- [ ] T09 full extraction: wall time, OCR pages and seconds per OCR page, errors, from the run
-  summary.
-- [ ] Size of `data/interim/20261002T224412Z/pages/` after T09.
+- [x] T09 full extraction: wall time, OCR pages and seconds per OCR page, errors, from the run
+  summary (2026-10-05).
+- [x] Size of `data/interim/20261002T224412Z/pages/` after T09 (2026-10-05).
 - [ ] T10 manual verification time for about 60 theses.
 - [ ] mpnet model download size and time (T13; needs U8).
 - [ ] T14 embeddings for the 2 models: wall time, chunks per second, vector file sizes.

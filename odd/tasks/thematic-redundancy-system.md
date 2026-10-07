@@ -1,7 +1,7 @@
 # Feature: Thematic Redundancy System (MVP)
 
 - **Locator:** `odd/tasks/thematic-redundancy-system.md`
-- **Status (2026-10-03):** Plan approved by the user on 2026-10-02, including O02 and O08 (direct commits on `main`). Phase 0 is done. T04, T05, T07, T08, T11 and T11a are done. T06 is done and awaits the user's commit. Next: T09.
+- **Status (2026-10-05):** Plan approved by the user on 2026-10-02, including O02 and O08 (direct commits on `main`). Phases 0 and 1 are done. T08, T09, T09a, T11 and T11a are done. Next: T10.
 - **Source:** the thesis plan v3 `Plan_de_Tesis_UCSM_v3_Directiva.pdf` (119 pages, kept outside the repo), plus the decisions recorded below.
 
 ## Objective
@@ -464,7 +464,7 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
   - fsync the key's parent directory after publishing it.
   - The storage schema check should cover nullability and list item types, with tests for wrong list item types and for non-list columns.
   - Route D. Risk M.
-- [ ] **T09** PDF text extraction with text-layer detection and an OCR fallback. Note from T05: 6 of 13 inspected items also carry DSpace's extracted full text (`*.pdf.txt` in a TEXT bundle). It could serve as a cross-check, but it was not fetched and is not authorized yet.
+- [x] **T09** PDF text extraction with text-layer detection and an OCR fallback. Note from T05: 6 of 13 inspected items also carry DSpace's extracted full text (`*.pdf.txt` in a TEXT bundle). It could serve as a cross-check, but it was not fetched and is not authorized yet.
   - Route D. Risk M.
   - Inputs: the T05 text-layer findings (2026-10-03), which call for selective OCR; and header and footer removal, moved here from T11. Long runs go in the user's terminal.
   - Trigger for route D: new extraction modules, CLI, config and tests.
@@ -518,7 +518,23 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - A: config and the pure page-text rules: `config.py`, `default.yaml`, `test_config.py`, `page_text.py`, `test_page_text.py`, and the plan's D25 and config rows (≈680 lines).
     - B: the port, the PyMuPDF adapter, the synthetic-PDF helper, the adapter tests and the OCR smoke test (≈500). B depends on A.
     - C: the manifest, the use case, the CLI, their tests, the README and this evidence (≈2,000). C gets a `size:exception` recommendation: one resumable CLI whose tests share one set of fakes, 43% of it tests.
-  - Full run: pending in the user's terminal (command in the README). T09 stays unchecked until it is done and verified.
+  - Full run (2026-10-05, in the user's terminal; it finished at 2026-10-06T03:57:20Z):
+    - This run:
+      - 731 PDFs: 721 extracted, 10 skipped (the sample, already at rules version 2), 0 failed.
+      - 139,438 pages: 137,063 text layer, 1,855 OCR, 520 empty; 8,477 of them low-text.
+      - OCR: 1,858 pages tried, 0 failed, 5,042.4 s, so 2.71 s per page.
+      - 146,279 running lines removed.
+      - Wall time 5,341.1 s (1 h 29 min), well under the 3–6.5 h estimate.
+    - Whole text manifest, checked independently:
+      - All 731 PDFs are `ok`: 0 errors, 0 stale, 0 orphaned. They are exactly the 731 available PDFs of the PDF manifest.
+      - 141,076 pages (138,598 text layer, 1,958 OCR, 520 empty) and 8,616 low-text pages, both equal to the data card.
+      - OCR: 1,961 pages tried, 0 failed; the 3 tries that returned no text count as empty.
+      - 148,601 running lines removed; 197 MuPDF warnings; 0 unreadable pages.
+      - 731 parquet files plus the manifest: 90,660,188 bytes. No partial files were left.
+    - `results/extraction/20261002T224412Z/summary.json` holds the whole manifest's counts and settings, with no text. Its settings fingerprint is `2b7c1adb…`, at extraction version 2.
+    - It also holds whole-manifest timings: 6,568.3 s summed over the PDFs, of which 6,268.8 s were OCR, so 3.20 s per OCR page. They include the 10 sample PDFs from the slower T09a session.
+    - The run-only timings above (5,341.1 s wall, 2.71 s per OCR page) come from the run's terminal output, not from that file.
+    - The run's costs are recorded in `docs/processing_costs.md`.
   - Commit: `3b05679`, made by the user as one commit. Its tree `8451eb4…` is identical to the reviewed one.
   - Reviews: medium risk, one lens, approved before the commit. The user declined the post-commit review for this candidate.
 - [x] **T09a** Fixes from the T09 review, needed before the full run. The settings fingerprint covers code only through a rules version raised by hand, and T09 left it at 1, so a later fix would not extract the PDFs again.
@@ -821,22 +837,19 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
   - The user started the full T09 extraction in their terminal.
   - The processing-cost ledger `docs/processing_costs.md` was added at the user's request, for the thesis write-up.
 
+- 2026-10-05: The user committed the ledger as `3c19358`; its tree `080f3f9…` is identical to the reviewed one. The full T09 extraction finished in 1 h 29 min, with 731 of 731 PDFs `ok` and 0 OCR failures. It was verified independently, and T09 is closed. Phase 2 continues with T10.
+
 ## Next step
 
 Resume checklist, in order:
 
 1. **Re-sync.**
    - Read this document fully.
-   - Run `git status`, `git log -5`, `uv run ruff check .` and `uv run ruff format --check .`. Run `uv run pytest -q` only when the extraction run is not using the CPU.
-   - Confirm whether HEAD contains the processing-cost ledger commit.
-2. **Processing-cost ledger, commit handoff.** If it is not committed, hand the user the file list (`docs/processing_costs.md`, `README.md`, this plan) and its Conventional Commit message; the user commits in GitHub Desktop.
-3. **T09 full run: verify and close it** once the user's run ends (it resumes if stopped).
-   - Verify `results/extraction/20261002T224412Z/summary.json` and the text manifest: 731 PDFs, the error count and the orphaned count.
-   - Close T09 with its numbers.
-   - Fill the T09 rows of `docs/processing_costs.md`: the ledger row and the `data/interim` size.
-   - Commit the numbers-only summary JSON together with the T09 closure.
-4. **T10.** Objectives locator. Manual check of about 60 theses stratified by program; target at least 90% correct (O05).
-5. **T12.** Build the fichas dataset:
+   - Run `git status`, `git log -5`, `uv run pytest -q`, `uv run ruff check .` and `uv run ruff format --check .`.
+   - Confirm whether HEAD contains the T09 closure commit (the extraction summary, this plan and the ledger).
+2. **T09 closure, commit handoff.** If it is not committed, hand the user the file list (`results/extraction/20261002T224412Z/summary.json`, `docs/processing_costs.md`, this plan) and its Conventional Commit message; the user commits in GitHub Desktop. If it is committed, verify that its tree is identical to the reviewed one.
+3. **T10.** Objectives locator. Manual check of about 60 theses stratified by program; target at least 90% correct (O05).
+4. **T12.** Build the fichas dataset:
    - D24 dedupe, including the industrial pair's PDF choice;
    - 11777 as metadata-only;
    - advisor codes keyed by ORCID;
