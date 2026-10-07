@@ -203,6 +203,9 @@ class ExtractionConfig(_FrozenModel):
     header_footer: HeaderFooterConfig
 
 
+_WORKBOOK_DIR_SETTING = "objectives.verification_sample.workbook_dir"
+
+
 class VerificationSampleConfig(_FrozenModel):
     """Manual verification sample of the objectives locator (O05): how many theses per
     program, the seed that draws them, and where the verification workbook goes."""
@@ -218,17 +221,29 @@ class VerificationSampleConfig(_FrozenModel):
     def _require_relative_without_parent_segments(cls, value: Path) -> Path:
         return _require_relative_path(value)
 
-    def resolve_workbook_dir(self, project_root: Path) -> Path:
+    def resolve_workbook_dir(self, project_root: Path, data_dir: Path) -> Path:
         """Join ``workbook_dir`` onto ``project_root`` and return the absolute path.
 
+        ``data_dir`` is ``paths.data_dir``, relative to the project root. The configuration
+        only checks the text of both paths, so a symbolic link or a junction under
+        ``data_dir`` could still lead the workbook, which holds thesis text, into a folder
+        that git tracks; the resolved workbook directory must therefore lie inside the
+        resolved ``data_dir``.
+
         Raises:
-            ValueError: if it resolves outside the project root, for example through a
-                symbolic link that points elsewhere.
+            ValueError: if it resolves outside the project root or outside ``data_dir``, for
+                example through a symbolic link that points elsewhere.
         """
         root = Path(project_root).resolve()
-        return _resolve_inside(
-            root, self.workbook_dir, "objectives.verification_sample.workbook_dir"
-        )
+        resolved_data_dir = _resolve_inside(root, data_dir, "paths.data_dir")
+        resolved = _resolve_inside(root, self.workbook_dir, _WORKBOOK_DIR_SETTING)
+        if not resolved.is_relative_to(resolved_data_dir):
+            raise ValueError(
+                f"{_WORKBOOK_DIR_SETTING} resolves to '{resolved}', outside paths.data_dir "
+                f"'{resolved_data_dir}', which git ignores; the workbook holds thesis text, so "
+                "no link under paths.data_dir may lead it elsewhere"
+            )
+        return resolved
 
 
 class ObjectivesConfig(_FrozenModel):

@@ -202,6 +202,75 @@ How a run behaves:
 Every PDF is extracted, including the D24 duplicates and the wrong file of item 11777; choosing
 which text a thesis uses is the job of the fichas (T12).
 
+## Objectives
+
+Find the general and specific objectives of every thesis in its extracted page text (T10).
+There is no OCR at this step, so the run takes about 6 seconds for the 731 PDFs:
+
+```sh
+uv run python -m thematic_redundancy.extraction.locate_objectives \
+    --summary-out results/objectives/<snapshot_id>/summary.json
+```
+
+It reads the snapshot harvested last (`--snapshot-id` picks another one), checks that each page
+file is still the one extracted (its SHA-256), and rebuilds these files from scratch:
+
+| File | Content | In git |
+|---|---|---|
+| `data/interim/<snapshot_id>/objectives.parquet` | One row per PDF: the status (`extracted` or `not_found`, as in the ficha's `objectives_status`), the general objective, the specific objectives (one item per line), the page range, the heading pattern, the quality flags, character counts, and the SHA-256 of the page file read | No: it holds thesis text |
+| `data/interim/<snapshot_id>/objectives_manifest.json` | The settings, the locator version, the table's SHA-256, the seconds taken, and the counts | No |
+| `results/objectives/<snapshot_id>/summary.json` | The same manifest, written by `--summary-out`: numbers only | Yes |
+
+How the locator (`extraction/objectives.py`) reads a document:
+
+| Step | Rule |
+|---|---|
+| Matching | Lines are compared in lower case with accents folded; the objectives keep their original text, with whitespace collapsed |
+| Headings | `Objetivo general`, `Objetivos generales` or `Objetivo principal`, with optional numbering (`1.3.1.`, `a)`, `II.`) and a trailing `:`. Also a line such as `El objetivo general es el siguiente:`, and a bare `General` below an `Objetivos` heading |
+| Skipped pages | Contents pages (dotted leaders, page numbers), dedication and acknowledgement pages. Abstract pages are a fallback only, flagged `abstract_only` |
+| General objective | The first general heading in the body. Its text runs to the first line that ends a sentence, or to the next section, across page breaks |
+| Specific objectives | The first `Objetivos específicos` (or `secundarios`) heading after it, one item per line, up to the next section |
+| Next section | Another objectives heading, multi-level numbering such as `1.4`, a roman-numeral or `CAPÍTULO` heading, or a keyword such as `Justificación`, `Hipótesis` or `Marco teórico` |
+| Bounds | Texts are cut at `objectives.general_max_chars` (1,200) and `objectives.specific_max_chars` (4,000), and flagged; a general objective under `objectives.min_chars` (40) is flagged too |
+
+Quality flags: `general_too_short`, `general_too_long`, `specific_too_long`, `specific_missing`,
+`abstract_only`, `block_fallback` (first sentence of an `Objetivos` block) and `ocr_page`.
+`LOCATOR_VERSION` in `extraction/objectives.py` is raised whenever a rule change alters the
+results; the manifest records it.
+
+### Manual verification (O05)
+
+The objectives are used only if at least 90% of a stratified sample of about 60 theses is
+judged correct; otherwise the pipeline falls back to title and abstract.
+
+1. **Draw the sample and write the workbook, once:**
+
+   ```sh
+   uv run python -m thematic_redundancy.extraction.locate_objectives --make-sample
+   ```
+
+   This writes `objectives_check.xlsx` and `sample.json` into
+   `data/labels/objectives_check/<snapshot_id>/` (`objectives.verification_sample`). The draw takes
+   12 theses per program with a fixed seed, from the theses with a valid own PDF. It leaves out
+   the wrong file of item 11777 and the larger uuid of each D24 duplicate pair, and it includes
+   `not_found` documents in proportion. An existing workbook is never overwritten.
+2. **Fill the workbook in Excel.** The `Guía` sheet explains the task in Spanish. Each row of
+   `Verificación` links to the repository item and to the local PDF and gives the PDF pages. Pick
+   one verdict for the general objective and one for the specific objectives from the
+   drop-down lists. Count 4 to 6 minutes per row, so 4 to 6 hours for 60 rows; it can be done in
+   several sessions. Note the time you spend for the cost ledger.
+3. **Import it and compute the accuracy:**
+
+   ```sh
+   uv run python -m thematic_redundancy.labeling.objectives_check \
+       --report-out results/objectives/<snapshot_id>/verification.json
+   ```
+
+   The import refuses the workbook, and lists every problem, if a verdict is blank or not
+   allowed or a row was lost or repeated. Accuracy is the rows judged `Correcto` over the judged
+   rows, with a Wilson 95% interval, overall and per program; `Parcial` counts as not correct.
+   The report holds numbers only.
+
 ## Metadata profile
 
 Profile the metadata of a snapshot, offline:
@@ -303,6 +372,10 @@ work offline with `HF_HUB_OFFLINE=1`.
   title, an abstract, a person's name or an ORCID from the snapshot.
 - Extracted page texts live only under the gitignored `data/interim/`. The extraction manifest
   and its summary hold counts only.
+- The objectives table and the verification workbook hold thesis text, so they live only under
+  the gitignored `data/`; the configuration refuses a workbook directory outside
+  `paths.data_dir`. The workbook replaces every author, advisor and juror name of the snapshot
+  with `[nombre omitido]`. The objectives summary and the accuracy report hold numbers only.
 
 ## Plan
 

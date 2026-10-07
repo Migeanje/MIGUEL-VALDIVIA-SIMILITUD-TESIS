@@ -1,0 +1,76 @@
+{
+  "snapshot_id": "20261002T224412Z",
+  "settings": {
+    "locator_version": 1,
+    "general_max_chars": 1200,
+    "specific_max_chars": 4000,
+    "min_chars": 40
+  },
+  "settings_fingerprint": "4921f2ead81bbd9b240134acb7cbbeb9e732fd6eb1b6f697a7ed033b85da271e",
+  "text_settings_fingerprint": "2b7c1adbca9c8ac187583de9662e0196f193895a818da26d32301fbe762759f0",
+  "created_at": "2026-10-07T15:38:27Z",
+  "table_file": "objectives.parquet",
+  "table_sha256": "e6e58f332d66dc9d0e68d116192c5fd83067e3112b96d1751951d99cf08e13bb",
+  "seconds": 5.977,
+  "summary": {
+    "documents": 731,
+    "text_errors": 0,
+    "by_status": {
+      "extracted": 731,
+      "not_found": 0
+    },
+    "by_program": {
+      "sistemas": {
+        "extracted": 63,
+        "not_found": 0
+      },
+      "industrial": {
+        "extracted": 330,
+        "not_found": 0
+      },
+      "electronica": {
+        "extracted": 46,
+        "not_found": 0
+      },
+      "mecanica": {
+        "extracted": 189,
+        "not_found": 0
+      },
+      "minas": {
+        "extracted": 103,
+        "not_found": 0
+      }
+    },
+    "by_pattern": {
+      "objetivo_general": 635,
+      "objetivo_principal": 35,
+      "objetivo_general_intro": 3,
+      "general_subheading": 58,
+      "objetivos_block": 0
+    },
+    "flags": {
+      "general_too_short": 0,
+      "general_too_long": 1,
+      "specific_too_long": 0,
+      "specific_missing": 1,
+      "abstract_only": 0,
+      "block_fallback": 0,
+      "ocr_page": 4
+    },
+    "general_chars": {
+      "median": 174.0,
+      "p90": 263,
+      "max": 1200
+    },
+    "specific_chars": {
+      "median": 523.5,
+      "p90": 866,
+      "max": 2152
+    },
+    "page_start": {
+      "median": 20.0,
+      "p90": 28,
+      "max": 86
+    }
+  }
+}

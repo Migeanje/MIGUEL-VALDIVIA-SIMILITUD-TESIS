@@ -8,14 +8,17 @@ over several lines arrives as several blocks.
 from dataclasses import dataclass
 from pathlib import Path
 from typing import get_args
+from uuid import UUID
 
 import pytest
+from pydantic import ValidationError
 
 from thematic_redundancy.corpus.ficha import ObjectivesStatus
 from thematic_redundancy.extraction.objectives import (
     OBJECTIVES_FLAGS,
     LocatedObjectives,
     LocatorStatus,
+    ObjectivesRecord,
     locate_objectives,
 )
 from thematic_redundancy.shared.config import ObjectivesConfig, VerificationSampleConfig
@@ -758,3 +761,154 @@ def test_a_general_subheading_below_other_objectives_headings_is_recognized(bloc
 
     assert (found.general, found.pattern) == (GENERAL, "general_subheading")
     assert found.specific == "− Diagnosticar la situación actual de los procesos."
+
+
+# The record of the objectives table
+
+
+EXTRACTED_RECORD: dict[str, object] = {
+    "item_uuid": UUID("00000000-0000-4000-8000-000000000001"),
+    "handle": "20.500.00000/1",
+    "program": "sistemas",
+    "status": "extracted",
+    "objective_general": GENERAL,
+    "objectives_specific": SPECIFIC,
+    "page_start": 20,
+    "page_end": 21,
+    "pattern": "objetivo_general",
+    "flags": ("ocr_page",),
+    "general_chars": len(GENERAL),
+    "specific_chars": len(SPECIFIC),
+    "pages": 80,
+    "pages_sha256": "0" * 64,
+}
+NOT_FOUND_RECORD: dict[str, object] = EXTRACTED_RECORD | {
+    "status": "not_found",
+    "objective_general": None,
+    "objectives_specific": None,
+    "page_start": None,
+    "page_end": None,
+    "pattern": None,
+    "flags": (),
+    "general_chars": 0,
+    "specific_chars": 0,
+}
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        EXTRACTED_RECORD,
+        EXTRACTED_RECORD
+        | {"objectives_specific": None, "specific_chars": 0, "flags": ("specific_missing",)},
+        EXTRACTED_RECORD | {"page_start": 21, "page_end": 21, "flags": ()},
+        EXTRACTED_RECORD | {"flags": ("general_too_long", "block_fallback", "ocr_page")},
+        NOT_FOUND_RECORD,
+    ],
+    ids=["extracted", "without-specific", "one-page", "several-flags", "not-found"],
+)
+def test_consistent_objectives_records_are_accepted(fields: dict[str, object]) -> None:
+    record = ObjectivesRecord.model_validate(fields)
+
+    assert record.model_dump() == fields
+
+
+@pytest.mark.parametrize(
+    ("fields", "message"),
+    [
+        (
+            EXTRACTED_RECORD | {"objective_general": None, "general_chars": 0},
+            "an 'extracted' record needs",
+        ),
+        (EXTRACTED_RECORD | {"page_start": None}, "an 'extracted' record needs"),
+        (EXTRACTED_RECORD | {"page_end": None}, "an 'extracted' record needs"),
+        (EXTRACTED_RECORD | {"pattern": None}, "an 'extracted' record needs"),
+        (
+            NOT_FOUND_RECORD | {"objective_general": GENERAL, "general_chars": len(GENERAL)},
+            "a 'not_found' record holds no objectives",
+        ),
+        (
+            NOT_FOUND_RECORD | {"objectives_specific": SPECIFIC, "specific_chars": len(SPECIFIC)},
+            "a 'not_found' record holds no objectives",
+        ),
+        (NOT_FOUND_RECORD | {"page_start": 20}, "a 'not_found' record holds no objectives"),
+        (NOT_FOUND_RECORD | {"page_end": 21}, "a 'not_found' record holds no objectives"),
+        (
+            NOT_FOUND_RECORD | {"pattern": "objetivo_general"},
+            "a 'not_found' record holds no objectives",
+        ),
+        (NOT_FOUND_RECORD | {"flags": ("ocr_page",)}, "a 'not_found' record has no flags"),
+        (EXTRACTED_RECORD | {"general_chars": len(GENERAL) + 1}, "general_chars must be"),
+        (NOT_FOUND_RECORD | {"general_chars": 1}, "general_chars must be"),
+        (EXTRACTED_RECORD | {"specific_chars": len(SPECIFIC) - 1}, "specific_chars must be"),
+        (EXTRACTED_RECORD | {"objectives_specific": None}, "specific_chars must be"),
+        (EXTRACTED_RECORD | {"page_start": 22}, "page_end must not come before page_start"),
+        (EXTRACTED_RECORD | {"flags": ("ocr_page", "ocr_page")}, "a flag may appear only once"),
+    ],
+    ids=[
+        "extracted-without-general",
+        "extracted-without-page-start",
+        "extracted-without-page-end",
+        "extracted-without-pattern",
+        "not-found-with-general",
+        "not-found-with-specific",
+        "not-found-with-page-start",
+        "not-found-with-page-end",
+        "not-found-with-pattern",
+        "not-found-with-flags",
+        "general-chars-off",
+        "general-chars-without-text",
+        "specific-chars-off",
+        "specific-chars-without-text",
+        "page-end-before-page-start",
+        "duplicate-flags",
+    ],
+)
+def test_objectives_records_refuse_contradictory_fields(
+    fields: dict[str, object], message: str
+) -> None:
+    with pytest.raises(ValidationError, match=message) as caught:
+        ObjectivesRecord.model_validate(fields)
+
+    assert caught.value.error_count() == 1
+
+
+@pytest.mark.parametrize(
+    ("fields", "message"),
+    [
+        (
+            NOT_FOUND_RECORD
+            | {
+                "objective_general": GENERAL,
+                "general_chars": len(GENERAL),
+                "flags": ("ocr_page", "ocr_page"),
+            },
+            "a 'not_found' record holds no objectives",
+        ),
+        (
+            NOT_FOUND_RECORD | {"flags": ("ocr_page", "ocr_page")},
+            "a 'not_found' record has no flags",
+        ),
+    ],
+    ids=["text-and-duplicate-flags", "duplicate-flags-only"],
+)
+def test_a_not_found_record_reports_its_first_broken_rule(
+    fields: dict[str, object], message: str
+) -> None:
+    # The rules run in order and the first broken one is reported: its content, then its
+    # flags. Any flag already breaks a 'not_found' record, so the duplicate-flag rule, which
+    # comes last, is never the one reported for it.
+    with pytest.raises(ValidationError, match=message) as caught:
+        ObjectivesRecord.model_validate(fields)
+
+    assert caught.value.error_count() == 1
+    assert "a flag may appear only once" not in str(caught.value)
+
+
+def test_objectives_record_errors_never_echo_the_objectives() -> None:
+    with pytest.raises(ValidationError) as caught:
+        ObjectivesRecord.model_validate(EXTRACTED_RECORD | {"general_chars": 1})
+
+    # A long input is printed cut in the middle, so check that no input is printed at all.
+    assert "input_value" not in str(caught.value)
+    assert GENERAL not in str(caught.value)

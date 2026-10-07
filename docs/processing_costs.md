@@ -16,6 +16,7 @@ row here, in the same commit.
 | Text layer, no OCR | about 464 pages/s (whole-corpus profile) |
 | OCR, real pages | 2.71 s per page over 1,858 pages in the full run; 4.6 to 11.9 s per page in the earlier samples, depending on the machine state |
 | Full PDF text extraction (T09) | 1 h 29 min (5,341.1 s) for 721 PDFs and 139,438 pages, 0 failures |
+| Objectives locator (T10) | 6.0 s for 731 PDFs and 141,076 pages, no OCR: about 122 PDFs/s (derived) |
 
 ## 1. Purpose and conventions
 
@@ -104,6 +105,10 @@ across sessions with care.
 | 2026-10-05 | T09a | Text extraction, sample re-run (rules version 2) | the same 10 PDFs | 1,233.8 s | OCR 11.9 s/page, 2.6 times slower; other work about 0.0046 s/page (derived) | 0 | The scanned PDF took 1,138.0 s; a rerun skipped all 10 in 0.1 s | plan T09a |
 | 2026-10-05 | T09 | Text extraction, full run | 731 PDFs: 721 extracted, 10 skipped (the sample); 139,438 pages in this run: 137,063 text layer, 1,855 OCR, 520 empty | 5,341.1 s (1 h 29 min) | OCR 2.71 s/page (1,858 pages in 5,042.4 s); about 26.1 pages/s overall, and about 0.0021 s per page outside OCR (derived) | 0 | 0 failures. Every PDF in the text manifest: 141,076 pages, 1,958 OCR, 8,616 low-text, 197 MuPDF warnings. The manifest's own timings cover all 731 PDFs, the slower sample included: 6,568.3 s summed over the PDFs and 3.20 s per OCR page. The estimate was 3–6.5 h. The power plan was not recorded | run output (wall time, OCR time); `results/extraction/20261002T224412Z/summary.json` (counts and whole-manifest timings) |
 | 2026-10-03 to 2026-10-05 | all | Test suite (`pytest -q`) | 762, 918 and 923 tests, plus 1 skipped each time | 12.5 s; 16.6–28.4 s; 47.6 s | — | 0 | The 47.6 s run was in a slow machine state | plan T11, T09 and T09a; times: run output |
+| 2026-10-07 | T10 | Objectives locator, tuning rounds 1 and 2 | 731 page files (141,076 pages) each time | 6.6 s; 6.7 s | about 110 PDFs/s (derived) | 0 | Round 1: 727 extracted, 4 not found; round 2: 731 extracted, 0 not found | plan T10; run output |
+| 2026-10-07 | T10 | Objectives locator, final run | 731 page files (141,076 pages) | 5.977 s; the whole command took 8.5 s, start-up and workbook included | about 122 PDFs/s and 23,600 pages/s (derived) | 0 | 731 extracted, 0 not found; reading and hashing the page files is most of the time | `results/objectives/20261002T224412Z/summary.json` (`seconds`); run output |
+| 2026-10-07 | T10 | Verification sample and workbook | 60 theses drawn from 728 eligible; 60-row workbook | 1.39 s, timed again in memory | — | 0 | Includes the name guard over 3,096 name forms; 0 cells redacted | plan T10; run output |
+| 2026-10-07 | all | Test suite (`pytest -q`) | 1,070 tests, plus 1 skipped | 20.6 s | — | 0 | — | plan T10; time: run output |
 
 ### Notes on the ledger
 
@@ -161,6 +166,8 @@ Measured on 2026-10-05 with `os.stat` (no file was hashed) and, for the reposito
 | `data/raw/20261002T224412Z/pdfs/*.pdf` | 731 thesis PDFs | 11,401,121,329 | 11.40 GB |
 | `data/raw/20261002T224412Z/pdfs/manifest.json` | PDF manifest | 487,971 | 0.49 MB |
 | `data/interim/20261002T224412Z/pages/` | page texts of 731 PDFs (parquet) and their manifest (T09) | 90,660,188 | 90.7 MB |
+| `data/interim/20261002T224412Z/objectives.parquet` and `objectives_manifest.json` | objectives table of 731 PDFs and its manifest (T10; measured 2026-10-07) | 360,893 | 0.36 MB |
+| `data/labels/objectives_check/20261002T224412Z/` | verification workbook (30,042 B) and `sample.json` (11,817 B) (T10; measured 2026-10-07) | 41,859 | 0.04 MB |
 | `tessdata/*.traineddata` | `spa` and `eng`, tessdata_best | 28,970,788 | 29.0 MB |
 | Hugging Face cache | `paraphrase-multilingual-MiniLM-L12-v2` | 479,729,050 | 479.7 MB |
 | Hugging Face cache | `paraphrase-multilingual-mpnet-base-v2` | not downloaded yet | pending (T13) |
@@ -192,7 +199,9 @@ repository, in `%USERPROFILE%\.cache\huggingface\hub`.
 - [x] T09 full extraction: wall time, OCR pages and seconds per OCR page, errors, from the run
   summary (2026-10-05).
 - [x] Size of `data/interim/20261002T224412Z/pages/` after T09 (2026-10-05).
-- [ ] T10 manual verification time for about 60 theses.
+- [ ] T10 manual verification time for the 60 theses of the workbook: the estimate is 4 to 6
+  minutes per row, so 4 to 6 hours. Record the start and the end of each session, then add the
+  ledger row when the import (`labeling/objectives_check`) succeeds.
 - [ ] mpnet model download size and time (T13; needs U8).
 - [ ] T14 embeddings for the 2 models: wall time, chunks per second, vector file sizes.
 - [ ] T19 experiment grid: time per configuration and in total.

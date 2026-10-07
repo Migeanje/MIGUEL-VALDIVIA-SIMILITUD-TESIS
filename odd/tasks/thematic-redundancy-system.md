@@ -1,7 +1,7 @@
 # Feature: Thematic Redundancy System (MVP)
 
 - **Locator:** `odd/tasks/thematic-redundancy-system.md`
-- **Status (2026-10-05):** Plan approved by the user on 2026-10-02, including O02 and O08 (direct commits on `main`). Phases 0 and 1 are done. T08, T09, T09a, T11 and T11a are done. Next: T10.
+- **Status (2026-10-07):** Plan approved by the user on 2026-10-02, including O02 and O08 (direct commits on `main`). Phases 0 and 1 are done. T08, T09, T09a, T11 and T11a are done. T10 is implemented in two commits: slice 1 is `4e74a7a`, slice 2 awaits its commit, and the manual verification by the user is pending. Then T12.
 - **Source:** the thesis plan v3 `Plan_de_Tesis_UCSM_v3_Directiva.pdf` (119 pages, kept outside the repo), plus the decisions recorded below.
 
 ## Objective
@@ -162,6 +162,8 @@ Python 3.13 · uv · pymupdf 1.28 · pdfplumber 0.11 (fallback) · httpx 0.28 ·
 | ocr | `spa+eng`, 300 dpi, `full=True` on pages without a text layer |
 | extraction | `min_text_chars` 50 (≥1): a page under 50 stripped characters is low-text. `ocr_window_pages` 100 (≥0; 0 turns OCR off) (D25). (added in T09) |
 | extraction.header_footer | `edge_lines` 3 (1–10), `min_share` 0.3 (>0–1), `min_pages` 5 (≥2): a line among the first or last 3 non-empty lines of a page that repeats on at least 30% of the pages with text, in a PDF with at least 5 such pages, is a running line (added in T09) |
+| objectives | `general_max_chars` 1200 (≥1), `specific_max_chars` 4000 (≥1), `min_chars` 40 (≥1, below `general_max_chars`): longer texts are cut and flagged, a shorter general objective is flagged (added in T10) |
+| objectives.verification_sample | `per_program` 12 (≥1), `seed` 20261007 (0 to 2^32−1), `workbook_dir` `data/labels/objectives_check` (relative, no `..`, and inside `paths.data_dir`, since the workbook holds thesis text) (added in T10) |
 | chunk.max_tokens | 128 under both tokenizers, special tokens included |
 | doc_vector | equal-weight mean of the section vectors, L2-normalized |
 | models | paraphrase-multilingual-MiniLM-L12-v2, paraphrase-multilingual-mpnet-base-v2 |
@@ -571,6 +573,63 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
   - Route D. Risk M.
 - [ ] **T10** Objectives locator plus a manual verification sample (~60, stratified by program), producing an accuracy report (O05).
   - Route D. Risk M.
+  - Trigger for route D: a new locator, a CLI, workbook input and output, config and tests.
+  - Evidence (2026-10-07), implementation:
+    - `extraction/objectives.py` holds the pure locator (no I/O) and the table row `ObjectivesRecord`.
+      - Lines are matched in lower case with accents folded; the objectives keep their original text, whitespace collapsed, control characters dropped, private-use bullet glyphs shown as `•`, and accents that LaTeX printed before their letter (`Espec´ıficos`) joined back.
+      - Headings: `objetivo general`, `objetivos generales`, `objetivo principal`, a line naming the general objective that ends in `:`, and a bare `General` below an `Objetivos` block (or below a mislabeled `Objetivos específicos` block). Specific: `objetivo(s) específico(s)` or `secundario(s)`. OCR confusions (`0`/`o`, `1`/`l`/`i`) and the typo `objeticos` are tolerated.
+      - Skipped: contents lines and pages (dotted leaders, trailing page numbers, a contents title), dedication and acknowledgement pages. Abstract pages are a fallback only (`abstract_only`).
+      - The general objective is the first body heading's text up to the first line that ends a sentence or the next section, across page breaks. The specific objectives follow within 30 lines, one item per line, up to the next section. Items numbered at least three levels deep under their heading (`1.7.2.1`) are items, not sections.
+      - Statuses `extracted` and `not_found` are a subset of the ficha's `ObjectivesStatus`. Flags: `general_too_short`, `general_too_long`, `specific_too_long`, `specific_missing`, `abstract_only`, `block_fallback`, `ocr_page`. `LOCATOR_VERSION` 1 is recorded with the table.
+    - `extraction/locate_objectives.py`: the use case and the CLI `python -m thematic_redundancy.extraction.locate_objectives` (`--project-root`, `--snapshot-id`, `--summary-out`, `--make-sample`). It checks each page file's SHA-256 against the text manifest, then writes `data/interim/<snapshot>/objectives.parquet` through the table-store port and `objectives_manifest.json`, both atomically. The run takes seconds, so it always rebuilds the table; it needs no lock because both files are replaced atomically.
+    - `labeling/objectives_check.py`: the sample, the workbook, the import and the report, plus the import CLI `python -m thematic_redundancy.labeling.objectives_check` (`--report-out`).
+  - Test-first evidence:
+    - Config: RED 30 failed, 122 passed → GREEN 152 passed, 1 skipped. One existing test moved `paths.data_dir` alone; it now moves the workbook directory along, as the new rule requires.
+    - Locator: RED was a collection error with the module absent. Against a stub that always answers `not_found`: 58 failed, 9 passed. GREEN: 67 passed.
+    - Labeling: RED was a collection error. The first run found a real bug, caught by a test: the Wilson upper bound came out as 0.9999999999999999 for 10 of 10 instead of 1. Fixed by pinning both ends. GREEN: 33 passed.
+    - Use case and CLI: RED was a collection error → GREEN 6 passed.
+    - Round-2 rules: 12 new tests, RED 12 failed, 67 passed → GREEN 79 passed.
+  - Real runs, numbers only, all 731 page files (141,076 pages), no OCR:
+    - Round 1: 727 extracted, 4 not found (0.5%); sistemas 61/63, minas 101/103, the other programs complete. 16 `specific_missing`. 6.6 s.
+    - Round 1 inspection (snippets of at most 300 characters, never written anywhere): the 4 misses were an `Objetivo del Proyecto` block with a `General.` sub-heading (twice: 11776 and 11777 carry the same PDF), a heading followed by a template remark `(Solo va el título)`, and a block mislabeled `Objetivos específicos` that holds a `General` sub-heading. Of the 16 missing specifics, most had an introduction line right below the heading, `Objetivos secundarios`, items numbered `1.7.2.1.`, the typo `Objeticos`, or a LaTeX split accent.
+    - Round 2: 731 extracted, 0 not found; 1 `specific_missing` and 1 `general_too_long`, both the same thesis, whose first `Objetivo general` heading introduces a quoted strategic objective; 4 `ocr_page`. Patterns: `objetivo_general` 635, `general_subheading` 58, `objetivo_principal` 35, `objetivo_general_intro` 3, `objetivos_block` 0. 6.7 s.
+    - Plausibility checks: heading page index median 20 (P90 28, max 86), none before page index 10; no general objective starts with a lower-case letter, and most start with an infinitive (round 1: diseñar 150, desarrollar 87, proponer 68); general objective median 174 characters (P90 263); ten long specific lists each ended at the next section. A third round was not needed.
+    - Final run: the same counts in 5.977 s (about 122 PDFs/s); the whole command, with the workbook, took 8.5 s. `results/objectives/20261002T224412Z/summary.json` holds the settings, the counts and the seconds, no text.
+  - Verification sample and workbook (`data/labels/objectives_check/20261002T224412Z/`, gitignored):
+    - Design: 12 per program, seed 20261007, drawn from the 728 theses with a valid own PDF (sistemas 62, industrial 329, electronica 46, mecanica 188, minas 103, equal to the data card). Left out: the wrong file `20.500.12920/11777` and, of each D24 pair, the record with the larger uuid (2 handles). Each (program, status) stratum has its own derived seed, `not_found` documents enter in proportion by largest remainder, and the 60 rows are shuffled.
+    - The draw: 60 rows, 12 per program, all `extracted`, because the final run found no `not_found` document.
+    - The workbook has a `Guía` sheet in Spanish (task, how to judge, 4 to 6 minutes per row) and a `Verificación` sheet: N.º, program, handle linked to the repository, a relative link to the local PDF, the PDF pages counted from 1, the status, both extracted texts, two drop-down verdict columns and notes. The header is frozen, long texts wrap, and no cell is a formula.
+    - Checks: all 60 PDF links resolve to a file; 0 hits for 3,096 forms of the 1,066 author, advisor and juror names of the snapshot, and 0 ORCID hits; the name guard redacted 0 cells. Built again in memory in 1.39 s.
+    - `sample.json` records the draw, the population, the exclusions and the provenance (locator version, settings fingerprint, table SHA-256), without text.
+  - Decision, D24 placeholder: until T12 fixes the canonical record, the sample keeps the member of each pair with the lexicographically smaller uuid. T12 may pick the other one; the sample is not drawn again for that, because the two records are the same thesis.
+  - Decision, strict accuracy rule (O05): accuracy = rows judged `Correcto` / judged rows, with a Wilson 95% interval, overall and per program. `Parcial` counts as not correct. The report also gives an informative figure that counts a `not_found` thesis judged `No existe en la tesis` as correct; it does not replace the strict figure. `meets_target` compares the point accuracy with 0.90.
+    - Confirmed against the code on 2026-10-07, with no code change. The O05 target is checked on the point estimate, `meets_target=correct / total >= TARGET_ACCURACY` (`labeling/objectives_check.py:859`, with `TARGET_ACCURACY = 0.9` at line 81). `correct` counts only the `Correcto` rows (line 816), since `Parcial` maps to `partial` (line 92). The Wilson 95% interval is always reported next to it (line 845), and the report states the rule (`RULE`, lines 794–798).
+  - Checks: `pytest` 1,070 passed, 1 skipped (923 + 147 new: config 29, locator 79, CLI 6, labeling 33); `ruff check` and `ruff format --check` clean.
+  - Size: about 4,200 authored changed lines, about 1,730 of them tests.
+  - Delivery: two reviewed commits instead of the four planned slices (A config, B locator, C workbook, D use case and CLI).
+    - The review budget refused the whole candidate at 4,182 lines. A 3,198-line candidate had passed, so the limit lies between the two.
+    - Slice 1 (A + B): `4e74a7a` `feat(extraction): agregar el localizador de objetivos de las tesis`, with `config/default.yaml`, `shared/config.py`, `test_config.py`, `extraction/objectives.py` and `test_objectives.py` (1,641 insertions, 16 deletions). The user committed it. Its tree `e6e9a52…` is identical to the reviewed one. Approved before and after the commit, so the reviewed boundary is now `4e74a7a`.
+    - Slice 2 (C + D, plus the fixes of the review findings below): `labeling/objectives_check.py` and its tests, `extraction/locate_objectives.py` and its tests, `results/objectives/20261002T224412Z/summary.json`, the README, the ledger and this plan, plus `shared/config.py`, `test_config.py` and `test_objectives.py`. Commit pending.
+  - Review findings: both reviews of slice 1 raised the same two non-blocking warnings. Both are fixed in slice 2, test first.
+    - Warning 1, the record validator had no test: `ObjectivesRecord._require_consistent_fields` was untested.
+      - Added 24 characterization tests in `test_objectives.py`:
+        - 5 consistent records accepted;
+        - 16 contradictory records refused, one per branch: an `extracted` record without the general objective, `page_start`, `page_end` or `pattern`; a `not_found` record with a general or specific text, a page, a pattern or flags; `general_chars` or `specific_chars` off; `page_end` before `page_start`; a repeated flag;
+        - the rule order;
+        - errors that never echo the input.
+      - They passed at once, as characterization tests do. 13 throwaway mutants were all killed and then reverted: each condition removed or inverted, the flags rule moved ahead of the content rule, and `hide_input_in_errors` turned off.
+      - No bug was found, so `LOCATOR_VERSION` stays 1.
+      - Rule order, pinned: a `not_found` record reports its content rule first, then its flags rule. Any flag already breaks a `not_found` record, so the repeated-flag rule, which runs last, only ever reports on `extracted` records.
+    - Warning 2, workbook containment: `resolve_workbook_dir` checked only that the resolved workbook directory stays inside the project root, and `AppConfig` checked containment in `paths.data_dir` only on the text. A symbolic link or junction under `data_dir` that points to a tracked folder could therefore route thesis text into git.
+      - Fix: `resolve_workbook_dir(project_root, data_dir)` now also requires the resolved workbook directory to lie inside the resolved `data_dir`, and raises `ValueError` otherwise. Its one caller, `workbook_directory()`, passes `paths.data_dir`.
+      - RED: with the old signature, 5 failed with a `TypeError`. With the new signature but no check, 2 failed with `DID NOT RAISE`:
+        - a real junction `data/labels` → `results/labels`, made with `_winapi.CreateJunction`, which needs no privilege (symbolic links fail here with WinError 1314); the test skips only when neither a symbolic link nor a junction can be made;
+        - a variant that patches `Path.resolve`, so the check runs on every platform.
+      - GREEN: 5 passed. A `data_dir` that is itself a link inside the root still holds the workbook, since both sides are compared once resolved.
+      - 3 throwaway mutants were all killed and then reverted: the check removed, the check inverted, and `data_dir` compared without resolving it.
+    - Checks after the fixes: `pytest` 1,097 passed, 1 skipped (1,070 + 24 + 3); `ruff check` and `ruff format --check` clean.
+  - Commit: slice 1 is `4e74a7a`; slice 2 is pending. The user commits in GitHub Desktop.
+  - Open: the manual verification (O05) by the user. T10 closes only after the import gives at least 90%.
 - [x] **T11** Light and full cleaners. They handle:
   - title suffix stripping, header/footer removal and hyphenation;
   - domain stopwords (by document frequency, then manual review);
@@ -839,6 +898,15 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
 
 - 2026-10-05: The user committed the ledger as `3c19358`; its tree `080f3f9…` is identical to the reviewed one. The full T09 extraction finished in 1 h 29 min, with 731 of 731 PDFs `ok` and 0 OCR failures. It was verified independently, and T09 is closed. Phase 2 continues with T10.
 
+- 2026-10-07: T10 started. Route: D. Trigger: a new locator, a CLI, workbook input and output, config and tests.
+
+- 2026-10-07: T10 implemented and verified. Two tuning rounds on all 731 page files took not_found from 4 to 0. The 60-row verification workbook is written; the manual verification by the user is pending, so T10 stays open. The commits are handed to the user.
+
+- 2026-10-07: The review budget refused the whole T10 candidate at 4,182 lines (a 3,198-line candidate had passed), so T10 ships as two reviewed commits.
+  - The user committed slice 1 as `4e74a7a`. Its tree `e6e9a52…` is identical to the reviewed one. It was approved before and after the commit, so the reviewed boundary is now `4e74a7a`.
+  - Both reviews raised the same two non-blocking warnings: the untested record validator and the workbook containment. Both were fixed test first in slice 2, as recorded under T10, and the strict accuracy rule was confirmed against the code.
+  - Slice 2 is handed to the user. T10 stays open until the manual verification.
+
 ## Next step
 
 Resume checklist, in order:
@@ -846,10 +914,11 @@ Resume checklist, in order:
 1. **Re-sync.**
    - Read this document fully.
    - Run `git status`, `git log -5`, `uv run pytest -q`, `uv run ruff check .` and `uv run ruff format --check .`.
-   - Confirm whether HEAD contains the T09 closure commit (the extraction summary, this plan and the ledger).
-2. **T09 closure, commit handoff.** If it is not committed, hand the user the file list (`results/extraction/20261002T224412Z/summary.json`, `docs/processing_costs.md`, this plan) and its Conventional Commit message; the user commits in GitHub Desktop. If it is committed, verify that its tree is identical to the reviewed one.
-3. **T10.** Objectives locator. Manual check of about 60 theses stratified by program; target at least 90% correct (O05).
-4. **T12.** Build the fichas dataset:
+   - Confirm whether HEAD contains T10 slice 2 (slice 1 is `4e74a7a`; see Delivery under T10).
+2. **T10 slice-2 commit handoff.** If it is not committed, hand the user slice 2, with its file list and Conventional Commit message; the user commits in GitHub Desktop. If it is committed, verify that its tree is identical to the reviewed one.
+3. **Manual verification (user).** Fill `data/labels/objectives_check/20261002T224412Z/objectives_check.xlsx`: 60 rows, about 4 to 6 hours, which can be done in parts. Note the start and end of each session for the ledger.
+4. **Import and accuracy.** Run `uv run python -m thematic_redundancy.labeling.objectives_check --report-out results/objectives/20261002T224412Z/verification.json`. At least 90% `Correcto` closes T10; otherwise iterate the locator rules, or fall back to title + abstract (O05). Add the verification time to the ledger.
+5. **T12.** Build the fichas dataset:
    - D24 dedupe, including the industrial pair's PDF choice;
    - 11777 as metadata-only;
    - advisor codes keyed by ORCID;

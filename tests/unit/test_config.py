@@ -1,5 +1,6 @@
 """Behavior of the application configuration loader."""
 
+import sys
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -645,12 +646,34 @@ def test_the_verification_workbook_follows_a_custom_data_directory(
     assert config.objectives.verification_sample.workbook_dir == Path("corpus_data/check")
 
 
+def make_directory_link(link: Path, target: Path) -> None:
+    """Make ``link`` a link to the directory ``target``, or skip the test when none can be made.
+
+    A symbolic link is tried first. On Windows it needs Developer Mode or an elevated shell,
+    so a junction, which needs neither, is tried next.
+    """
+    try:
+        link.symlink_to(target, target_is_directory=True)
+        return
+    except (OSError, NotImplementedError) as symlink_error:
+        error: Exception = symlink_error
+    if sys.platform == "win32":
+        import _winapi
+
+        try:
+            _winapi.CreateJunction(str(target), str(link))
+            return
+        except OSError as junction_error:
+            error = junction_error
+    pytest.skip(f"cannot create a directory link here ({error})")
+
+
 def test_the_verification_workbook_directory_resolves_inside_the_project_root(
     tmp_path: Path,
 ) -> None:
     sample = load_config(DEFAULT_CONFIG_PATH).objectives.verification_sample
 
-    resolved = sample.resolve_workbook_dir(tmp_path)
+    resolved = sample.resolve_workbook_dir(tmp_path, Path("data"))
 
     assert resolved == tmp_path.resolve() / "data" / "labels" / "objectives_check"
 
@@ -663,4 +686,58 @@ def test_the_verification_workbook_resolution_refuses_a_location_outside_the_roo
     unchecked = sample.model_copy(update={"workbook_dir": Path("../outside")})
 
     with pytest.raises(ValueError, match="workbook_dir resolves to .*, outside the project root"):
-        unchecked.resolve_workbook_dir(tmp_path / "project")
+        unchecked.resolve_workbook_dir(tmp_path / "project", Path("data"))
+
+
+def test_the_verification_workbook_resolution_refuses_a_link_that_leaves_the_data_directory(
+    tmp_path: Path,
+) -> None:
+    # A link under data_dir to a folder that git tracks would put thesis text into git, while
+    # the workbook directory still resolves inside the project root.
+    project_root = tmp_path / "project"
+    tracked = project_root / "results" / "labels"
+    (project_root / "data").mkdir(parents=True)
+    tracked.mkdir(parents=True)
+    make_directory_link(project_root / "data" / "labels", tracked)
+    sample = load_config(DEFAULT_CONFIG_PATH).objectives.verification_sample
+
+    with pytest.raises(ValueError, match="workbook_dir resolves to .*, outside paths.data_dir"):
+        sample.resolve_workbook_dir(project_root, Path("data"))
+
+
+def test_a_workbook_that_resolves_outside_the_data_directory_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Path.resolve is replaced so that data/labels leads to results/labels, as a link would,
+    # which exercises the check on every platform, even one that cannot create links.
+    project_root = tmp_path.resolve() / "project"
+    linked = project_root / "data" / "labels"
+    resolve = Path.resolve
+
+    def resolve_through_a_link(path: Path, strict: bool = False) -> Path:
+        resolved = resolve(path, strict)
+        if resolved.is_relative_to(linked):
+            return project_root / "results" / "labels" / resolved.relative_to(linked)
+        return resolved
+
+    monkeypatch.setattr(Path, "resolve", resolve_through_a_link)
+    sample = load_config(DEFAULT_CONFIG_PATH).objectives.verification_sample
+
+    with pytest.raises(ValueError, match="workbook_dir resolves to .*, outside paths.data_dir"):
+        sample.resolve_workbook_dir(project_root, Path("data"))
+
+
+def test_the_verification_workbook_follows_a_data_directory_that_is_a_link(
+    tmp_path: Path,
+) -> None:
+    # Both locations are compared once resolved, so a data_dir that is itself a link to a
+    # folder inside the project root still holds the workbook.
+    project_root = tmp_path / "project"
+    store = project_root / "store"
+    store.mkdir(parents=True)
+    make_directory_link(project_root / "data", store)
+    sample = load_config(DEFAULT_CONFIG_PATH).objectives.verification_sample
+
+    resolved = sample.resolve_workbook_dir(project_root, Path("data"))
+
+    assert resolved == store.resolve() / "labels" / "objectives_check"
