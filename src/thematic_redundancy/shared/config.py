@@ -53,14 +53,27 @@ def _has_parent_segment(raw_path: str) -> bool:
     return ".." in PureWindowsPath(raw_path).parts or ".." in PurePosixPath(raw_path).parts
 
 
-def _resolve_inside(root: Path, location: Path, field_name: str) -> Path:
-    """Resolve ``location`` under the resolved ``root`` and refuse any result outside it."""
+def _resolve_inside(root: Path, location: Path, label: str) -> Path:
+    """Resolve ``location`` under the resolved ``root`` and refuse any result outside it;
+    ``label`` names the setting in the error."""
     resolved = (root / location).resolve()
     if not resolved.is_relative_to(root):
-        raise ValueError(
-            f"paths.{field_name} resolves to '{resolved}', outside the project root '{root}'"
-        )
+        raise ValueError(f"{label} resolves to '{resolved}', outside the project root '{root}'")
     return resolved
+
+
+def _require_relative_path(value: Path) -> Path:
+    """Refuse an absolute or rooted path and ``..`` segments, judging the text alone.
+
+    Nothing touches the file system here, so a symbolic link can still lead outside the
+    project root; resolving the path against the root enforces containment.
+    """
+    raw_path = str(value)
+    if _is_anchored(raw_path):
+        raise ValueError(f"must be relative to the project root, got '{value}'")
+    if _has_parent_segment(raw_path):
+        raise ValueError(f"must not contain '..' segments, got '{value}'")
+    return value
 
 
 class _FrozenModel(BaseModel):
@@ -89,15 +102,9 @@ class PathsConfig(_FrozenModel):
     def _require_relative_without_parent_segments(cls, value: Path) -> Path:
         """Refuse absolute or rooted paths and ``..`` segments, judging the text alone.
 
-        Nothing touches the file system here, so a symbolic link can still lead outside
-        the project root. :meth:`resolve_against` enforces containment once the root is known.
+        :meth:`resolve_against` enforces containment once the root is known.
         """
-        raw_path = str(value)
-        if _is_anchored(raw_path):
-            raise ValueError(f"must be relative to the project root, got '{value}'")
-        if _has_parent_segment(raw_path):
-            raise ValueError(f"must not contain '..' segments, got '{value}'")
-        return value
+        return _require_relative_path(value)
 
     def resolve_against(self, project_root: Path) -> ResolvedPaths:
         """Join every location onto ``project_root`` and return absolute paths.
@@ -108,9 +115,9 @@ class PathsConfig(_FrozenModel):
         """
         root = Path(project_root).resolve()
         return ResolvedPaths(
-            data_dir=_resolve_inside(root, self.data_dir, "data_dir"),
-            results_dir=_resolve_inside(root, self.results_dir, "results_dir"),
-            tessdata_dir=_resolve_inside(root, self.tessdata_dir, "tessdata_dir"),
+            data_dir=_resolve_inside(root, self.data_dir, "paths.data_dir"),
+            results_dir=_resolve_inside(root, self.results_dir, "paths.results_dir"),
+            tessdata_dir=_resolve_inside(root, self.tessdata_dir, "paths.tessdata_dir"),
         )
 
 
@@ -194,6 +201,55 @@ class ExtractionConfig(_FrozenModel):
     """Only the low-text pages among the first this many pages of a document are OCR'd;
     0 turns OCR off."""
     header_footer: HeaderFooterConfig
+
+
+class VerificationSampleConfig(_FrozenModel):
+    """Manual verification sample of the objectives locator (O05): how many theses per
+    program, the seed that draws them, and where the verification workbook goes."""
+
+    per_program: PositiveInt
+    seed: Seed
+    workbook_dir: Path
+    """Directory, relative to the project root, that holds one directory per snapshot with
+    the workbook. The workbook holds thesis text, so it must lie inside ``paths.data_dir``."""
+
+    @field_validator("workbook_dir")
+    @classmethod
+    def _require_relative_without_parent_segments(cls, value: Path) -> Path:
+        return _require_relative_path(value)
+
+    def resolve_workbook_dir(self, project_root: Path) -> Path:
+        """Join ``workbook_dir`` onto ``project_root`` and return the absolute path.
+
+        Raises:
+            ValueError: if it resolves outside the project root, for example through a
+                symbolic link that points elsewhere.
+        """
+        root = Path(project_root).resolve()
+        return _resolve_inside(
+            root, self.workbook_dir, "objectives.verification_sample.workbook_dir"
+        )
+
+
+class ObjectivesConfig(_FrozenModel):
+    """Objectives locator (T10): bounds on the extracted texts, and the verification sample."""
+
+    general_max_chars: PositiveInt
+    """The general objective is cut at this many characters, and flagged as too long."""
+    specific_max_chars: PositiveInt
+    """The specific objectives are cut at this many characters, and flagged as too long."""
+    min_chars: PositiveInt
+    """A general objective shorter than this is flagged as too short."""
+    verification_sample: VerificationSampleConfig
+
+    @model_validator(mode="after")
+    def _require_min_below_the_cap(self) -> Self:
+        if self.min_chars >= self.general_max_chars:
+            raise ValueError(
+                f"min_chars ({self.min_chars}) must be below general_max_chars "
+                f"({self.general_max_chars})"
+            )
+        return self
 
 
 class ChunkingConfig(_FrozenModel):
@@ -296,6 +352,7 @@ class AppConfig(_FrozenModel):
     snapshot: SnapshotConfig
     ocr: OcrConfig
     extraction: ExtractionConfig
+    objectives: ObjectivesConfig
     chunking: ChunkingConfig
     embedding: EmbeddingConfig
     umap: UmapConfig
@@ -325,6 +382,13 @@ class AppConfig(_FrozenModel):
                 f"gaps.temporal_split_year ({split_year}) must be after snapshot.year_start "
                 f"({self.snapshot.year_start}) and not after snapshot.year_end "
                 f"({self.snapshot.year_end})"
+            )
+        workbook_dir = self.objectives.verification_sample.workbook_dir
+        if not workbook_dir.is_relative_to(self.paths.data_dir):
+            raise ValueError(
+                f"objectives.verification_sample.workbook_dir ('{workbook_dir}') must lie inside "
+                f"paths.data_dir ('{self.paths.data_dir}'), which git ignores, because the "
+                "workbook holds thesis text"
             )
         return self
 

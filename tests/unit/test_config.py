@@ -108,6 +108,12 @@ def test_default_config_loads_with_the_declared_plan_values() -> None:
     assert config.gaps.bridge_max_docs == 1
     assert config.gaps.nearest_topics == 3
     assert config.gaps.stability_min_runs == 4
+    objectives = config.objectives
+    assert (objectives.general_max_chars, objectives.specific_max_chars) == (1200, 4000)
+    assert objectives.min_chars == 40
+    sample = objectives.verification_sample
+    assert (sample.per_program, sample.seed) == (12, 20261007)
+    assert sample.workbook_dir == Path("data/labels/objectives_check")
 
 
 def test_max_tokens_above_the_model_sequence_limit_is_rejected(
@@ -198,6 +204,8 @@ def test_kmeans_sweep_with_bounds_outside_the_contract_is_rejected(
         "umap.unexpected_key",
         "extraction.unexpected_key",
         "extraction.header_footer.unexpected_key",
+        "objectives.unexpected_key",
+        "objectives.verification_sample.unexpected_key",
     ],
 )
 def test_unknown_keys_are_rejected(
@@ -318,6 +326,8 @@ def test_nested_paths_resolve_inside_the_project_root(
     raw_default: dict[str, Any], tmp_path: Path, nested_path: str
 ) -> None:
     raw_default["paths"]["data_dir"] = nested_path
+    # The verification workbook must stay inside data_dir, so it moves along.
+    raw_default["objectives"]["verification_sample"]["workbook_dir"] = f"{nested_path}/labels"
 
     resolved = load_variant(tmp_path, raw_default).paths.resolve_against(tmp_path)
 
@@ -450,6 +460,12 @@ def test_harvest_settings_take_their_defaults_when_omitted(
         ("recommender.mmr_lambda", 1.1),
         ("gaps.temporal_split_year", 2021),
         ("gaps.temporal_split_year", 2027),
+        ("objectives.general_max_chars", 0),
+        ("objectives.specific_max_chars", 0),
+        ("objectives.min_chars", 0),
+        ("objectives.verification_sample.per_program", 0),
+        ("objectives.verification_sample.seed", -1),
+        ("objectives.verification_sample.seed", 2**32),
     ],
 )
 def test_values_outside_the_contract_are_rejected(
@@ -479,6 +495,10 @@ def test_values_outside_the_contract_are_rejected(
         ("extraction.ocr_window_pages", 100.0, "int_type"),
         ("extraction.header_footer.edge_lines", True, "int_type"),
         ("extraction.header_footer.min_share", "0.3", "float_type"),
+        ("objectives.general_max_chars", "1200", "int_type"),
+        ("objectives.min_chars", 40.0, "int_type"),
+        ("objectives.verification_sample.per_program", 12.0, "int_type"),
+        ("objectives.verification_sample.seed", True, "int_type"),
     ],
 )
 def test_numeric_fields_refuse_values_of_another_type(
@@ -566,6 +586,13 @@ def test_the_global_safe_loader_still_reads_plain_exponents_as_text() -> None:
         ("recommender.mmr_lambda", 1),
         ("gaps.temporal_split_year", 2026),
         ("gaps.stability_min_runs", 5),
+        ("objectives.min_chars", 1),
+        ("objectives.min_chars", 1199),
+        ("objectives.specific_max_chars", 1),
+        ("objectives.verification_sample.per_program", 1),
+        ("objectives.verification_sample.seed", 0),
+        ("objectives.verification_sample.seed", 2**32 - 1),
+        ("objectives.verification_sample.workbook_dir", "data"),
     ],
 )
 def test_boundary_values_are_accepted(
@@ -574,3 +601,66 @@ def test_boundary_values_are_accepted(
     set_value(raw_default, dotted_key, value)
 
     assert isinstance(load_variant(tmp_path, raw_default), AppConfig)
+
+
+@pytest.mark.parametrize("min_chars", [1200, 1500])
+def test_objectives_min_chars_must_stay_below_the_general_cap(
+    raw_default: dict[str, Any], tmp_path: Path, min_chars: int
+) -> None:
+    raw_default["objectives"]["min_chars"] = min_chars
+
+    with pytest.raises(ValidationError, match="min_chars"):
+        load_variant(tmp_path, raw_default)
+
+
+@pytest.mark.parametrize(
+    ("workbook_dir", "message"),
+    [
+        ("/srv/labels", "must be relative to the project root"),
+        ("C:/labels", "must be relative to the project root"),
+        ("data/../results/labels", "must not contain '..' segments"),
+        ("results/objectives_check", "must lie inside paths.data_dir"),
+        ("labels", "must lie inside paths.data_dir"),
+    ],
+    ids=["posix-absolute", "windows-absolute", "parent-segment", "tracked-results", "root"],
+)
+def test_the_verification_workbook_must_stay_in_the_ignored_data_directory(
+    raw_default: dict[str, Any], tmp_path: Path, workbook_dir: str, message: str
+) -> None:
+    # The workbook holds thesis text, so it may only live under the gitignored data_dir.
+    raw_default["objectives"]["verification_sample"]["workbook_dir"] = workbook_dir
+
+    with pytest.raises(ValidationError, match=message):
+        load_variant(tmp_path, raw_default)
+
+
+def test_the_verification_workbook_follows_a_custom_data_directory(
+    raw_default: dict[str, Any], tmp_path: Path
+) -> None:
+    raw_default["paths"]["data_dir"] = "corpus_data"
+    raw_default["objectives"]["verification_sample"]["workbook_dir"] = "corpus_data/check"
+
+    config = load_variant(tmp_path, raw_default)
+
+    assert config.objectives.verification_sample.workbook_dir == Path("corpus_data/check")
+
+
+def test_the_verification_workbook_directory_resolves_inside_the_project_root(
+    tmp_path: Path,
+) -> None:
+    sample = load_config(DEFAULT_CONFIG_PATH).objectives.verification_sample
+
+    resolved = sample.resolve_workbook_dir(tmp_path)
+
+    assert resolved == tmp_path.resolve() / "data" / "labels" / "objectives_check"
+
+
+def test_the_verification_workbook_resolution_refuses_a_location_outside_the_root(
+    tmp_path: Path,
+) -> None:
+    sample = load_config(DEFAULT_CONFIG_PATH).objectives.verification_sample
+    # model_copy skips validation, like a symbolic link that only leaves the root once resolved.
+    unchecked = sample.model_copy(update={"workbook_dir": Path("../outside")})
+
+    with pytest.raises(ValueError, match="workbook_dir resolves to .*, outside the project root"):
+        unchecked.resolve_workbook_dir(tmp_path / "project")

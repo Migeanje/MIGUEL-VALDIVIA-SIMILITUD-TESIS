@@ -58,6 +58,20 @@ extraction:
     min_share: 0.3
     min_pages: 5
 
+# Objectives locator (T10). The general objective is cut at general_max_chars characters and
+# the specific objectives at specific_max_chars, both then flagged as too long; a general
+# objective under min_chars characters is flagged as too short. The manual verification
+# sample (O05) draws per_program theses of each program with seed, and its workbook goes to
+# workbook_dir/<snapshot_id>/, which must lie inside paths.data_dir (gitignored).
+objectives:
+  general_max_chars: 1200
+  specific_max_chars: 4000
+  min_chars: 40
+  verification_sample:
+    per_program: 12
+    seed: 20261007
+    workbook_dir: data/labels/objectives_check
+
 # Token budget per chunk, special tokens included, under both tokenizers.
 chunking:
   max_tokens: 128
