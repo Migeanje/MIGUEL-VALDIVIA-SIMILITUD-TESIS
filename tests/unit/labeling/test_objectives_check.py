@@ -3,8 +3,11 @@
 Every record here is synthetic: made-up uuids, handles, titles, objectives and names.
 """
 
+import io
 import json
 import math
+import zipfile
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -93,12 +96,17 @@ def objectives_record(
 
 
 def snapshot_record(
-    number: int, program: str, *, title: str | None = None, record_handle: str | None = None
+    number: int,
+    program: str,
+    *,
+    title: str | None = None,
+    record_handle: str | None = None,
+    author: str = AUTHOR,
 ) -> SnapshotRecord:
     metadata: dict[str, Any] = {
         "dc.title": [{"value": title or f"Título sintético {number}"}],
         "dc.description.abstract": [{"value": title or f"Resumen sintético {number}"}],
-        "dc.contributor.author": [{"value": AUTHOR}],
+        "dc.contributor.author": [{"value": author}],
         "dc.contributor.advisor": [{"value": ADVISOR}],
     }
     return SnapshotRecord(
@@ -379,6 +387,56 @@ def test_the_workbook_shows_no_person_name_and_no_formula(tmp_path: Path) -> Non
     assert any(cell.value == formula for cell in cells)
 
 
+def test_a_name_is_redacted_only_where_it_stands_as_whole_words(tmp_path: Path) -> None:
+    # The author's family name also ends and begins longer words here; "ñ" is a letter, so
+    # "ficticiosegundoña" is one word, which an ASCII-only word boundary would split.
+    inside = (
+        "Comparar la preinventadoapellido ficticiosegundo con la inventadoapellido "
+        "ficticiosegundoña del ensayo."
+    )
+    standalone = "Aplicar el método de Inventadoapellido Ficticiosegundo en la planta."
+    # A footnote number, plain or superscript, does not make the name part of a word.
+    footnoted = (
+        "Seguir a Inventadoapellido Ficticiosegundo1 y a Inventadoapellido Ficticiosegundo²."
+    )
+    made = make(
+        tmp_path,
+        {"sistemas": (3, 0)},
+        generals={1: inside, 2: standalone, 3: footnoted},
+    )
+
+    sheet = check_sheet(made.workbook_path)
+    handles, generals = (
+        COLUMNS.index(name) + 1 for name in ("Handle", "Objetivo general extraído")
+    )
+    by_handle = {
+        sheet.cell(row, handles).value: sheet.cell(row, generals).value for row in (2, 3, 4)
+    }
+    assert by_handle[handle(1)] == inside
+    assert by_handle[handle(2)] == "Aplicar el método de [nombre omitido] en la planta."
+    assert by_handle[handle(3)] == "Seguir a [nombre omitido]1 y a [nombre omitido]²."
+    assert made.redacted == 2
+
+
+def test_a_name_that_ends_with_an_initial_is_redacted(tmp_path: Path) -> None:
+    # A plain word boundary after the final period would need a letter to follow it.
+    author = "Inventadoapellido, Personaejemplo J."
+    general = f"Aplicar el método de {author} en la planta."
+    made = make_verification_workbook(
+        DECLARED,
+        tmp_path,
+        SNAPSHOT_ID,
+        [objectives_record(1, "sistemas", general=general)],
+        [snapshot_record(1, "sistemas", author=author)],
+        provenance={},
+        clock=lambda: NOW,
+    )
+
+    cell = check_sheet(made.workbook_path).cell(2, COLUMNS.index("Objetivo general extraído") + 1)
+    assert cell.value == "Aplicar el método de [nombre omitido] en la planta."
+    assert made.redacted == 1
+
+
 def test_the_sample_file_records_the_draw_without_text(tmp_path: Path) -> None:
     made = make(tmp_path, {"sistemas": (3, 1)})
 
@@ -508,6 +566,38 @@ def test_validation_refuses_a_deleted_or_repeated_row(tmp_path: Path) -> None:
     assert "appears 2 times" in problems and "is missing" in problems
 
 
+def edit_cell(path: Path, row: int, name: str, value: str) -> None:
+    """Write ``value`` into column ``name`` of ``row`` of the check sheet."""
+    workbook = openpyxl.load_workbook(path)
+    workbook["Verificación"].cell(row, COLUMNS.index(name) + 1).value = value
+    workbook.save(path)
+
+
+def test_validation_refuses_a_row_whose_handle_is_not_in_the_sample(tmp_path: Path) -> None:
+    made = make(tmp_path, {"sistemas": (3, 0)})
+    fill(made.workbook_path)
+    edit_cell(made.workbook_path, 2, "Handle", "123456789/9999")
+
+    with pytest.raises(WorkbookValidationError) as caught:
+        import_verification(made.workbook_path, made.sample)
+
+    assert "row 2: handle '123456789/9999' is not in the sample" in caught.value.problems
+
+
+def test_validation_refuses_a_row_whose_status_was_edited(tmp_path: Path) -> None:
+    made = make(tmp_path, {"sistemas": (3, 0)})
+    fill(made.workbook_path)
+    row_handle = check_sheet(made.workbook_path).cell(2, COLUMNS.index("Handle") + 1).value
+    edit_cell(made.workbook_path, 2, "Estado", "no encontrado")
+
+    with pytest.raises(WorkbookValidationError) as caught:
+        import_verification(made.workbook_path, made.sample)
+
+    assert caught.value.problems == (
+        f"row 2 ({row_handle}): 'Estado' was changed; it must be 'extraído'",
+    )
+
+
 def test_validation_refuses_a_changed_header(tmp_path: Path) -> None:
     made = make(tmp_path, {"sistemas": (1, 0)})
     workbook = openpyxl.load_workbook(made.workbook_path)
@@ -518,12 +608,28 @@ def test_validation_refuses_a_changed_header(tmp_path: Path) -> None:
         import_verification(made.workbook_path, made.sample)
 
 
-def test_the_import_command_writes_the_report(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_a_workbook_saved_under_an_unsupported_extension_is_refused(tmp_path: Path) -> None:
+    made = make(tmp_path, {"sistemas": (1, 0)})
+    fill(made.workbook_path)
+    renamed = made.workbook_path.with_suffix(".xls")
+    renamed.write_bytes(made.workbook_path.read_bytes())
+
+    with pytest.raises(ValueError, match="is not a readable xlsx workbook"):
+        import_verification(renamed, made.sample)
+
+
+def project(tmp_path: Path) -> Path:
+    """Return a project root that holds a copy of the declared configuration."""
     root = tmp_path / "project"
     (root / "config").mkdir(parents=True)
     (root / "config" / "default.yaml").write_bytes(DEFAULT_CONFIG_PATH.read_bytes())
+    return root
+
+
+def test_the_import_command_writes_the_report(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = project(tmp_path)
     made = make(root, {"sistemas": (4, 0)})
     fill(made.workbook_path)
     report_path = root / "results" / "objectives" / SNAPSHOT_ID / "verification.json"
@@ -548,12 +654,74 @@ def test_the_import_command_writes_the_report(
 def test_the_import_command_reports_validation_problems(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    root = tmp_path / "project"
-    (root / "config").mkdir(parents=True)
-    (root / "config" / "default.yaml").write_bytes(DEFAULT_CONFIG_PATH.read_bytes())
+    root = project(tmp_path)
     make(root, {"sistemas": (2, 0)})
 
     code = main(["--project-root", str(root), "--snapshot-id", SNAPSHOT_ID])
 
     assert code == 1
     assert "has no 'Veredicto objetivo general'" in capsys.readouterr().err
+
+
+def rewrite_parts(path: Path, change: Callable[[str, bytes], bytes]) -> None:
+    """Write the xlsx archive at ``path`` again, passing each part through ``change``."""
+    original = path.read_bytes()
+    with zipfile.ZipFile(io.BytesIO(original)) as source, zipfile.ZipFile(path, "w") as target:
+        for info in source.infolist():
+            target.writestr(info, change(info.filename, source.read(info)))
+
+
+def write_garbage(path: Path) -> None:
+    path.write_bytes(b"synthetic bytes that are not a workbook")
+
+
+def truncate_zip(path: Path) -> None:
+    path.write_bytes(path.read_bytes()[:200])
+
+
+def write_zip_without_workbook(path: Path) -> None:
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("note.txt", "synthetic")
+
+
+def break_sheet_xml(path: Path) -> None:
+    rewrite_parts(
+        path,
+        lambda name, data: data[: len(data) // 2] if name.startswith("xl/worksheets/") else data,
+    )
+
+
+def give_an_invalid_value(path: Path) -> None:
+    rewrite_parts(
+        path,
+        lambda name, data: (
+            data.replace(b'sheetId="1"', b'sheetId="x"') if name == "xl/workbook.xml" else data
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        write_garbage,
+        truncate_zip,
+        write_zip_without_workbook,
+        break_sheet_xml,
+        give_an_invalid_value,
+    ],
+    ids=["garbage", "truncated-zip", "zip-without-workbook", "broken-xml", "invalid-value"],
+)
+def test_the_import_command_reports_an_unreadable_workbook_in_one_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], damage: Callable[[Path], None]
+) -> None:
+    root = project(tmp_path)
+    made = make(root, {"sistemas": (2, 0)})
+    fill(made.workbook_path)
+    damage(made.workbook_path)
+
+    code = main(["--project-root", str(root), "--snapshot-id", SNAPSHOT_ID])
+
+    assert code == 1
+    error = capsys.readouterr().err
+    assert error.startswith("error: ") and error.count("\n") == 1
+    assert "objectives_check.xlsx is not a readable xlsx workbook" in error

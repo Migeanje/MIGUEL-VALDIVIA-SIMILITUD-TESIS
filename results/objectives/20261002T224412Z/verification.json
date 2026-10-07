@@ -1,0 +1,94 @@
+{
+  "snapshot_id": "20261002T224412Z",
+  "imported_at": "2026-10-07T21:43:43Z",
+  "workbook_sha256": "8e8ffe83c78cb8852e26575a42995705a1563e2120fe51dba47f0a085cceda53",
+  "rule": "accuracy = rows judged 'Correcto' / judged rows; 'Parcial' counts as not correct (strict O05 rule). accuracy_with_true_absences also counts a not_found row judged 'No existe en la tesis' as correct.",
+  "target": 0.9,
+  "sample_size": 60,
+  "general": {
+    "judged": 60,
+    "correct": 60,
+    "counts": {
+      "correct": 60,
+      "partial": 0,
+      "incorrect": 0,
+      "missed": 0,
+      "absent": 0
+    },
+    "accuracy": 1.0,
+    "ci95": [
+      0.93982814785791,
+      1.0
+    ],
+    "partial_share": 0.0,
+    "accuracy_with_true_absences": 1.0
+  },
+  "by_program": {
+    "sistemas": {
+      "judged": 12,
+      "correct": 12,
+      "partial": 0,
+      "accuracy": 1.0,
+      "ci95": [
+        0.7575059933447592,
+        1.0
+      ]
+    },
+    "industrial": {
+      "judged": 12,
+      "correct": 12,
+      "partial": 0,
+      "accuracy": 1.0,
+      "ci95": [
+        0.7575059933447592,
+        1.0
+      ]
+    },
+    "electronica": {
+      "judged": 12,
+      "correct": 12,
+      "partial": 0,
+      "accuracy": 1.0,
+      "ci95": [
+        0.7575059933447592,
+        1.0
+      ]
+    },
+    "mecanica": {
+      "judged": 12,
+      "correct": 12,
+      "partial": 0,
+      "accuracy": 1.0,
+      "ci95": [
+        0.7575059933447592,
+        1.0
+      ]
+    },
+    "minas": {
+      "judged": 12,
+      "correct": 12,
+      "partial": 0,
+      "accuracy": 1.0,
+      "ci95": [
+        0.7575059933447592,
+        1.0
+      ]
+    }
+  },
+  "specific": {
+    "applicable": 60,
+    "correct": 60,
+    "counts": {
+      "correct": 60,
+      "partial": 0,
+      "incorrect": 0,
+      "not_applicable": 0
+    },
+    "accuracy": 1.0,
+    "ci95": [
+      0.93982814785791,
+      1.0
+    ]
+  },
+  "meets_target": true
+}

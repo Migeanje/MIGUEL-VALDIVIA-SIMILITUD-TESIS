@@ -267,9 +267,13 @@ judged correct; otherwise the pipeline falls back to title and abstract.
    ```
 
    The import refuses the workbook, and lists every problem, if a verdict is blank or not
-   allowed or a row was lost or repeated. Accuracy is the rows judged `Correcto` over the judged
-   rows, with a Wilson 95% interval, overall and per program; `Parcial` counts as not correct.
-   The report holds numbers only.
+   allowed or a row was lost or repeated. A file that is not a readable xlsx workbook is
+   reported in one `error:` line. Accuracy is the rows judged `Correcto` over the judged rows,
+   with a Wilson 95% interval, overall and per program; `Parcial` counts as not correct.
+   The report holds numbers only: the general-objective accuracy with its interval, overall and
+   per program, the overall verdict counts and `meets_target`, the specific-objectives
+   accuracy, and the workbook's SHA-256. The official report of snapshot `20261002T224412Z` is
+   `results/objectives/20261002T224412Z/verification.json`.
 
 ## Metadata profile
 

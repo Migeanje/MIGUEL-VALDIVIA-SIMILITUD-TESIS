@@ -1,7 +1,7 @@
 # Feature: Thematic Redundancy System (MVP)
 
 - **Locator:** `odd/tasks/thematic-redundancy-system.md`
-- **Status (2026-10-07):** Plan approved by the user on 2026-10-02, including O02 and O08 (direct commits on `main`). Phases 0 and 1 are done. T08, T09, T09a, T11 and T11a are done. T10 is implemented in two commits: slice 1 is `4e74a7a`, slice 2 awaits its commit, and the manual verification by the user is pending. Then T12.
+- **Status (2026-10-07):** Plan approved by the user on 2026-10-02, including O02 and O08 (direct commits on `main`). Phases 0 and 1 are done. T08, T09, T09a, T10, T11 and T11a are done. T10 shipped as `4e74a7a` and `6f1ba96`, and its manual verification met O05 with 60/60 general objectives correct. T10b, three fixes from the slice-2 reviews, awaits its commit together with the T10 closure. Then T12.
 - **Source:** the thesis plan v3 `Plan_de_Tesis_UCSM_v3_Directiva.pdf` (119 pages, kept outside the repo), plus the decisions recorded below.
 
 ## Objective
@@ -571,7 +571,7 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - A year with punctuation, such as `2024.` or `– 2024 –`, is only partly protected, because the line key folds the digits.
     - No test covers either case. It is harmless for the objectives; revisit it if T10 shows any effect. A fix must raise `EXTRACTION_VERSION`.
   - Route D. Risk M.
-- [ ] **T10** Objectives locator plus a manual verification sample (~60, stratified by program), producing an accuracy report (O05).
+- [x] **T10** Objectives locator plus a manual verification sample (~60, stratified by program), producing an accuracy report (O05).
   - Route D. Risk M.
   - Trigger for route D: a new locator, a CLI, workbook input and output, config and tests.
   - Evidence (2026-10-07), implementation:
@@ -603,13 +603,13 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - `sample.json` records the draw, the population, the exclusions and the provenance (locator version, settings fingerprint, table SHA-256), without text.
   - Decision, D24 placeholder: until T12 fixes the canonical record, the sample keeps the member of each pair with the lexicographically smaller uuid. T12 may pick the other one; the sample is not drawn again for that, because the two records are the same thesis.
   - Decision, strict accuracy rule (O05): accuracy = rows judged `Correcto` / judged rows, with a Wilson 95% interval, overall and per program. `Parcial` counts as not correct. The report also gives an informative figure that counts a `not_found` thesis judged `No existe en la tesis` as correct; it does not replace the strict figure. `meets_target` compares the point accuracy with 0.90.
-    - Confirmed against the code on 2026-10-07, with no code change. The O05 target is checked on the point estimate, `meets_target=correct / total >= TARGET_ACCURACY` (`labeling/objectives_check.py:859`, with `TARGET_ACCURACY = 0.9` at line 81). `correct` counts only the `Correcto` rows (line 816), since `Parcial` maps to `partial` (line 92). The Wilson 95% interval is always reported next to it (line 845), and the report states the rule (`RULE`, lines 794–798).
+    - Confirmed against the code on 2026-10-07, with no code change. The O05 target is checked on the point estimate, `meets_target=correct / total >= TARGET_ACCURACY` (`labeling/objectives_check.py:859`, with `TARGET_ACCURACY = 0.9` at line 81). `correct` counts only the `Correcto` rows (line 816), since `Parcial` maps to `partial` (line 92). The Wilson 95% interval is always reported next to it (line 845), and the report states the rule (`RULE`, lines 794–798). The line numbers are those of `6f1ba96`.
   - Checks: `pytest` 1,070 passed, 1 skipped (923 + 147 new: config 29, locator 79, CLI 6, labeling 33); `ruff check` and `ruff format --check` clean.
   - Size: about 4,200 authored changed lines, about 1,730 of them tests.
   - Delivery: two reviewed commits instead of the four planned slices (A config, B locator, C workbook, D use case and CLI).
     - The review budget refused the whole candidate at 4,182 lines. A 3,198-line candidate had passed, so the limit lies between the two.
     - Slice 1 (A + B): `4e74a7a` `feat(extraction): agregar el localizador de objetivos de las tesis`, with `config/default.yaml`, `shared/config.py`, `test_config.py`, `extraction/objectives.py` and `test_objectives.py` (1,641 insertions, 16 deletions). The user committed it. Its tree `e6e9a52…` is identical to the reviewed one. Approved before and after the commit, so the reviewed boundary is now `4e74a7a`.
-    - Slice 2 (C + D, plus the fixes of the review findings below): `labeling/objectives_check.py` and its tests, `extraction/locate_objectives.py` and its tests, `results/objectives/20261002T224412Z/summary.json`, the README, the ledger and this plan, plus `shared/config.py`, `test_config.py` and `test_objectives.py`. Commit pending.
+    - Slice 2 (C + D, plus the fixes of the review findings below): `6f1ba96` `feat(labeling): agregar la verificación manual de los objetivos extraídos`, with `labeling/objectives_check.py` and its tests, `extraction/locate_objectives.py` and its tests, `results/objectives/20261002T224412Z/summary.json`, the README, the ledger and this plan, plus `shared/config.py`, `test_config.py` and `test_objectives.py`. The user committed it. Approved before and after the commit, so the reviewed boundary is now `6f1ba96`.
   - Review findings: both reviews of slice 1 raised the same two non-blocking warnings. Both are fixed in slice 2, test first.
     - Warning 1, the record validator had no test: `ObjectivesRecord._require_consistent_fields` was untested.
       - Added 24 characterization tests in `test_objectives.py`:
@@ -628,8 +628,50 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
       - GREEN: 5 passed. A `data_dir` that is itself a link inside the root still holds the workbook, since both sides are compared once resolved.
       - 3 throwaway mutants were all killed and then reverted: the check removed, the check inverted, and `data_dir` compared without resolving it.
     - Checks after the fixes: `pytest` 1,097 passed, 1 skipped (1,070 + 24 + 3); `ruff check` and `ruff format --check` clean.
-  - Commit: slice 1 is `4e74a7a`; slice 2 is pending. The user commits in GitHub Desktop.
-  - Open: the manual verification (O05) by the user. T10 closes only after the import gives at least 90%.
+  - Commits: `4e74a7a` (slice 1) and `6f1ba96` (slice 2), both made by the user. The closure below awaits its commit, together with T10b.
+  - Verification (O05), 2026-10-07:
+    - Effort: the user filled the 60-row workbook in about 2 h (reported by the user, not timed), so about 2 minutes per row (derived), below the 4 to 6 minutes estimated.
+    - Report: `results/objectives/20261002T224412Z/verification.json`, from the official import of the workbook with `workbook_sha256` `8e8ffe83…eda53`, imported at 2026-10-07T21:43:43Z. It holds numbers only.
+    - General objective: 60/60 `Correcto` = 100%, Wilson 95% CI 94.0%–100%. The O05 target of at least 90% is met (`meets_target` true). 0 partial, incorrect, missed or absent.
+    - Per program: 12/12 in each of the 5 programs, each with a Wilson 95% CI of 75.8%–100%. These intervals are wide, so only the overall figure supports the ≥90% claim.
+    - Specific objectives: 60/60 `Correcto`, Wilson 95% CI 94.0%–100%.
+    - The workbook holds 0 notes and 0 redaction markers.
+    - The lower bounds were checked by hand: with no failures, the Wilson lower bound is n/(n + z²), so 60/(60 + 1.96²) = 0.9398 and 12/(12 + 1.96²) = 0.7575.
+  - Consequence: the extracted objectives are accepted for T12 and for the representation (D09). The title + abstract fallback is needed only for the 16 metadata-only theses (744 distinct theses, 728 with a valid own PDF).
+  - Limitations:
+    - A single verifier, the author, so there is no inter-rater agreement.
+    - Every sampled row was `extracted`, because the corpus has 0 `not_found`; the `not_found` path was not verified on real theses.
+    - The per-program intervals are wide (lower bound 75.8%).
+- [ ] **T10b** Fixes from the slice-2 reviews of T10: two warnings and one suggestion, all non-blocking.
+  - Route D. Risk M.
+  - Trigger for route D: a module fix with tests, plus the plan, the ledger and the README.
+  - Warning 1, an unreadable workbook escaped the import command as a raw traceback. `main` caught only `WorkbookValidationError`, `OSError`, `ValueError` and `yaml.YAMLError`, and openpyxl raises other exceptions for a damaged or non-xlsx file.
+    - Fix: `import_verification` loads the workbook through `_load_workbook`, which turns those exceptions into one `ValueError`: "`<path>` is not a readable xlsx workbook (`<reason>`)". The command prints it as one `error:` line and exits with code 1. A missing file is still a `FileNotFoundError`. The exceptions, as probed on openpyxl 3.1.5:
+      - `BadZipFile`: garbage bytes or a truncated zip;
+      - `KeyError`: a zip without the workbook parts;
+      - `SyntaxError`: broken XML, since `ParseError` is a subclass;
+      - `TypeError`: a value of the wrong type in a part;
+      - `InvalidFileException`: an extension openpyxl does not support.
+    - RED: 5 command-line cases (garbage, truncated zip, zip without a workbook, broken XML, invalid value) escaped as `BadZipFile` twice, `KeyError`, `ParseError` and `TypeError`. GREEN: 5 passed.
+    - `InvalidFileException` comes only from openpyxl's extension check. The command never reaches it, since the workbook name is fixed, so a direct test imports an xlsx saved under a `.xls` name. It was added after GREEN and is proven by its mutant below.
+    - 5 throwaway mutants, one per exception class dropped from the list, were all killed and then reverted.
+  - Suggestion, two refusal branches of `import_verification` had no test: a row whose handle is not in the sample, and a row whose `Estado` was edited.
+    - Added one characterization test per branch. Each asserts its exact problem message.
+    - Both passed at once, as characterization tests do. 4 throwaway mutants were all killed and then reverted: each problem not recorded, the unknown-handle message without its row, and the status check inverted.
+  - Warning 2, the name redactor matched without word boundaries, ignoring case, so a name form could match inside a longer word of the objective text.
+    - Fix: a form is replaced only where no letter stands right before or after it. The boundary is a lookaround on `_LETTER`: a word character other than a digit, `_` or a superscript digit, so accented letters and ñ count as letters. Python's `\w` is Unicode-aware for `str` patterns.
+    - Why letters, not `\w` or `\b`:
+      - A digit glued to a name, such as a footnote number (`1` or `²`), must not stop the redaction. With `\w` lookarounds it did, which would leak the name.
+      - A form that ends with an initial's period needs no letter after it, but `\b` would demand one. One name of the snapshot ends that way.
+      - With `re.ASCII`, `ñ` would end a word.
+    - RED 1, the old pattern: a synthetic family name that ends one longer word and begins another came out as `pre[nombre omitido] con la [nombre omitido]ña`.
+    - RED 2, after a first fix with `\w` lookarounds: two names followed by a footnote number were left unredacted.
+    - GREEN: all passed.
+    - 6 throwaway mutants were all killed and then reverted: the lookbehind dropped, the lookahead dropped, ASCII-only `\b`, Unicode `\b`, `\w` lookarounds, and superscript digits counted as letters.
+    - No effect on the completed verification. The workbook holds 0 redaction markers, so the old pattern matched no form anywhere in its 60 rows. Every match of the new pattern is also a match of the old one, so a rebuild would redact 0 cells too. The workbook was not rebuilt.
+  - Every mutant ran with a fresh bytecode cache (`PYTHONPYCACHEPREFIX`), and the module was byte-identical after each restore.
+  - Checks: `pytest` 1,107 passed, 1 skipped (1,097 + 10 new: CLI 5, extension 1, characterization 2, redactor 2); `ruff check` and `ruff format --check` clean.
+  - Commit: pending; the user commits in GitHub Desktop.
 - [x] **T11** Light and full cleaners. They handle:
   - title suffix stripping, header/footer removal and hyphenation;
   - domain stopwords (by document frequency, then manual review);
@@ -907,6 +949,10 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
   - Both reviews raised the same two non-blocking warnings: the untested record validator and the workbook containment. Both were fixed test first in slice 2, as recorded under T10, and the strict accuracy rule was confirmed against the code.
   - Slice 2 is handed to the user. T10 stays open until the manual verification.
 
+- 2026-10-07: The user committed T10 slice 2 as `6f1ba96`. It was approved before and after the commit, so the reviewed boundary is now `6f1ba96`.
+  - The user filled the verification workbook in about 2 h (reported, not timed). The official import gave 60/60 general objectives `Correcto` (Wilson 95% CI 94.0%–100%), so O05 is met and T10 is closed.
+  - T10b was added from the slice-2 reviews (two warnings and one suggestion) and implemented test first. It awaits its commit together with the T10 closure.
+
 ## Next step
 
 Resume checklist, in order:
@@ -914,11 +960,9 @@ Resume checklist, in order:
 1. **Re-sync.**
    - Read this document fully.
    - Run `git status`, `git log -5`, `uv run pytest -q`, `uv run ruff check .` and `uv run ruff format --check .`.
-   - Confirm whether HEAD contains T10 slice 2 (slice 1 is `4e74a7a`; see Delivery under T10).
-2. **T10 slice-2 commit handoff.** If it is not committed, hand the user slice 2, with its file list and Conventional Commit message; the user commits in GitHub Desktop. If it is committed, verify that its tree is identical to the reviewed one.
-3. **Manual verification (user).** Fill `data/labels/objectives_check/20261002T224412Z/objectives_check.xlsx`: 60 rows, about 4 to 6 hours, which can be done in parts. Note the start and end of each session for the ledger.
-4. **Import and accuracy.** Run `uv run python -m thematic_redundancy.labeling.objectives_check --report-out results/objectives/20261002T224412Z/verification.json`. At least 90% `Correcto` closes T10; otherwise iterate the locator rules, or fall back to title + abstract (O05). Add the verification time to the ledger.
-5. **T12.** Build the fichas dataset:
+   - Confirm whether HEAD contains the T10 closure and T10b (the last T10 commit is `6f1ba96`).
+2. **Commit handoff for the T10 closure and T10b.** If they are not committed, hand the user the files and Conventional Commit messages: `labeling/objectives_check.py` and its tests, `results/objectives/20261002T224412Z/verification.json`, the README, the ledger and this plan. The user commits in GitHub Desktop. If they are committed, verify that the tree is identical to the reviewed one.
+3. **T12.** Build the fichas dataset:
    - D24 dedupe, including the industrial pair's PDF choice;
    - 11777 as metadata-only;
    - advisor codes keyed by ORCID;

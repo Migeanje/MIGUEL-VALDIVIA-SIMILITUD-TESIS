@@ -37,6 +37,7 @@ import os
 import random
 import re
 import sys
+import zipfile
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -49,6 +50,7 @@ import openpyxl
 import yaml
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE, Cell
 from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils.exceptions import InvalidFileException
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.worksheet import Worksheet
 from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError
@@ -379,16 +381,24 @@ def workbook_directory(config: AppConfig, project_root: Path, snapshot_id: str) 
     return workbook_dir / check_snapshot_id(snapshot_id)
 
 
+_LETTER = r"[^\W\d_¹²³⁰⁴-⁹]"
+"""A letter, accented letters and ñ included. ``\\w`` also matches digits, ``_`` and superscript
+digits such as ``²``; this class leaves them out."""
+
+
 class _NameRedactor:
-    """Replaces every form of the given person names in a text, ignoring letter case."""
+    """Replaces every form of the given person names in a text, ignoring letter case.
+
+    A form is replaced only where it stands as whole words: a letter right before or after it
+    means it is part of a longer word. A digit, such as a footnote number, or punctuation
+    does not, so the name is still replaced.
+    """
 
     def __init__(self, names: Iterable[str]) -> None:
         forms = sorted({form for form in names if form}, key=len, reverse=True)
+        alternatives = "|".join(r"\s+".join(map(re.escape, form.split())) for form in forms)
         self._pattern = (
-            re.compile(
-                "|".join(r"\s+".join(map(re.escape, form.split())) for form in forms),
-                re.IGNORECASE,
-            )
+            re.compile(rf"(?<!{_LETTER})(?:{alternatives})(?!{_LETTER})", re.IGNORECASE)
             if forms
             else None
         )
@@ -630,8 +640,9 @@ def import_verification(path: Path, sample: VerificationSample) -> tuple[Judgeme
             status, or a verdict is blank or not allowed. The program comes from the sample,
             through the handle.
         FileNotFoundError: if there is no workbook at ``path``.
+        ValueError: if the file at ``path`` is not a readable xlsx workbook.
     """
-    workbook = openpyxl.load_workbook(path, data_only=True)
+    workbook = _load_workbook(path)
     if _CHECK_SHEET not in workbook.sheetnames:
         raise WorkbookValidationError([f"the workbook has no sheet '{_CHECK_SHEET}'"])
     sheet = workbook[_CHECK_SHEET]
@@ -693,6 +704,21 @@ def import_verification(path: Path, sample: VerificationSample) -> tuple[Judgeme
     if problems:
         raise WorkbookValidationError(problems)
     return tuple(judgements)
+
+
+_UNREADABLE = (zipfile.BadZipFile, InvalidFileException, KeyError, SyntaxError, TypeError)
+"""What openpyxl raises for a file that is not a readable xlsx workbook: no zip archive, an
+extension it does not support, an archive without the workbook parts, broken XML (whose
+``ParseError`` is a ``SyntaxError``), or a value of the wrong type in a part."""
+
+
+def _load_workbook(path: Path) -> openpyxl.Workbook:
+    try:
+        return openpyxl.load_workbook(path, data_only=True)
+    except _UNREADABLE as error:
+        raise ValueError(
+            f"{path} is not a readable xlsx workbook ({type(error).__name__}: {error})"
+        ) from error
 
 
 def _text(value: object) -> str:
@@ -926,7 +952,7 @@ def _describe(report: VerificationReport) -> str:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the import command and return its exit code: 0 when the workbook was imported,
-    1 when it is invalid or a file is missing."""
+    1 when it is invalid or unreadable, or a file is missing."""
     arguments = _parse_arguments(argv)
     project_root = arguments.project_root.resolve()
     try:

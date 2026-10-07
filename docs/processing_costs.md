@@ -17,6 +17,7 @@ row here, in the same commit.
 | OCR, real pages | 2.71 s per page over 1,858 pages in the full run; 4.6 to 11.9 s per page in the earlier samples, depending on the machine state |
 | Full PDF text extraction (T09) | 1 h 29 min (5,341.1 s) for 721 PDFs and 139,438 pages, 0 failures |
 | Objectives locator (T10) | 6.0 s for 731 PDFs and 141,076 pages, no OCR: about 122 PDFs/s (derived) |
+| Manual verification of the objectives (T10) | about 2 h of the user's time for 60 theses (reported by the user, not timed): about 2 min per thesis (derived) |
 
 ## 1. Purpose and conventions
 
@@ -109,6 +110,9 @@ across sessions with care.
 | 2026-10-07 | T10 | Objectives locator, final run | 731 page files (141,076 pages) | 5.977 s; the whole command took 8.5 s, start-up and workbook included | about 122 PDFs/s and 23,600 pages/s (derived) | 0 | 731 extracted, 0 not found; reading and hashing the page files is most of the time | `results/objectives/20261002T224412Z/summary.json` (`seconds`); run output |
 | 2026-10-07 | T10 | Verification sample and workbook | 60 theses drawn from 728 eligible; 60-row workbook | 1.39 s, timed again in memory | — | 0 | Includes the name guard over 3,096 name forms; 0 cells redacted | plan T10; run output |
 | 2026-10-07 | all | Test suite (`pytest -q`) | 1,070 tests, plus 1 skipped | 20.6 s | — | 0 | — | plan T10; time: run output |
+| 2026-10-07 | T10 | Manual verification of the objectives, by the user | 60 rows of the workbook, one verifier | about 2 h (reported by the user, not timed) | about 2 min per row (derived) | 0 | Below the 4 to 6 min per row estimate | `results/objectives/20261002T224412Z/verification.json`; the user's report |
+| 2026-10-07 | T10 | Workbook import and accuracy report | the filled 60-row workbook | not measured | — | 0 | Imported at 2026-10-07T21:43:43Z | `results/objectives/20261002T224412Z/verification.json` (`imported_at`) |
+| 2026-10-07 | all | Test suite (`pytest -q`) | 1,107 tests, plus 1 skipped | 22.1–31.5 s (2 runs) | — | 0 | — | plan T10b; times: run output |
 
 ### Notes on the ledger
 
@@ -199,9 +203,8 @@ repository, in `%USERPROFILE%\.cache\huggingface\hub`.
 - [x] T09 full extraction: wall time, OCR pages and seconds per OCR page, errors, from the run
   summary (2026-10-05).
 - [x] Size of `data/interim/20261002T224412Z/pages/` after T09 (2026-10-05).
-- [ ] T10 manual verification time for the 60 theses of the workbook: the estimate is 4 to 6
-  minutes per row, so 4 to 6 hours. Record the start and the end of each session, then add the
-  ledger row when the import (`labeling/objectives_check`) succeeds.
+- [x] T10 manual verification time for the 60 theses of the workbook: about 2 h, reported by
+  the user and not timed, against the estimate of 4 to 6 h (2026-10-07).
 - [ ] mpnet model download size and time (T13; needs U8).
 - [ ] T14 embeddings for the 2 models: wall time, chunks per second, vector file sizes.
 - [ ] T19 experiment grid: time per configuration and in total.
