@@ -65,7 +65,6 @@ from thematic_redundancy.extraction.text_manifest import (
     TEXT_MANIFEST_FILE_NAME,
     Sha256,
     read_text_manifest,
-    write_json_atomically,
 )
 from thematic_redundancy.labeling.objectives_check import (
     WORKBOOK_FILE_NAME,
@@ -73,6 +72,7 @@ from thematic_redundancy.labeling.objectives_check import (
     workbook_directory,
 )
 from thematic_redundancy.shared.config import AppConfig, load_config
+from thematic_redundancy.shared.filesystem import write_text_atomically
 from thematic_redundancy.shared.storage import ParquetTableStore, TableStore
 
 CONFIG_PATH = Path("config") / "default.yaml"
@@ -281,7 +281,7 @@ def locate_all(
         ),
     )
     manifest_path = interim_dir / OBJECTIVES_MANIFEST_FILE_NAME
-    write_json_atomically(manifest_path, manifest.model_dump_json(indent=2))
+    write_text_atomically(manifest_path, manifest.model_dump_json(indent=2))
     return ObjectivesReport(
         snapshot_id=snapshot_id,
         table_path=table_path,
@@ -329,7 +329,7 @@ def write_summary(path: Path, manifest: ObjectivesManifest) -> None:
     """Write ``manifest`` to ``path`` as JSON: settings and counts, never an item or any
     text. The directory is created when it is missing."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    write_json_atomically(path, json.dumps(manifest.model_dump(mode="json"), indent=2))
+    write_text_atomically(path, json.dumps(manifest.model_dump(mode="json"), indent=2))
 
 
 def _share(part: int, whole: int) -> str:

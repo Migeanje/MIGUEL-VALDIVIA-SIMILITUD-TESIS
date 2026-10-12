@@ -49,6 +49,7 @@ from thematic_redundancy.extraction.pdf_reader import PdfPages, PdfReadError, Te
 from thematic_redundancy.extraction.pymupdf_reader import PyMuPdfReader
 from thematic_redundancy.extraction.text_manifest import EXTRACTION_VERSION, ExtractionSettings
 from thematic_redundancy.shared.config import AppConfig, load_config
+from thematic_redundancy.shared.filesystem import exclusive_run
 from thematic_redundancy.shared.storage import ParquetTableStore
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "config" / "default.yaml"
@@ -681,6 +682,38 @@ def test_a_second_run_cannot_start_while_one_is_in_progress(
 
     assert len(refused) == 1
     assert outcomes(report) == [(item_uuid(1), "ok", False)]
+
+
+def test_a_run_is_refused_while_the_lock_file_of_the_pages_directory_is_held(
+    config: AppConfig, tmp_path: Path, reader: SpyReader, clock: FakeClock
+) -> None:
+    write_test_snapshot(tmp_path, {1: thesis()})
+    pages = pages_dir(tmp_path)
+    pages.mkdir(parents=True)
+
+    with (
+        exclusive_run(pages, RuntimeError("held by another run")),
+        pytest.raises(ExtractionInProgressError) as caught,
+    ):
+        run(config, tmp_path, reader, clock)
+
+    assert str(caught.value) == (
+        f"another text extraction into {pages} is running; wait until it ends"
+    )
+    assert isinstance(caught.value.__cause__, OSError)
+    assert reader.opened == []
+    assert sorted(path.name for path in pages.iterdir()) == [".lock"]
+
+
+def test_the_manifest_on_disk_is_its_json_followed_by_one_line_feed(
+    config: AppConfig, tmp_path: Path, reader: SpyReader, clock: FakeClock
+) -> None:
+    write_test_snapshot(tmp_path, {1: thesis(), 2: thesis(3)})
+
+    report = run(config, tmp_path, reader, clock)
+
+    saved = (pages_dir(tmp_path) / "manifest.json").read_bytes()
+    assert saved == f"{report.manifest.model_dump_json(indent=2)}\n".encode()
 
 
 # --- Selection and inputs ----------------------------------------------------------------

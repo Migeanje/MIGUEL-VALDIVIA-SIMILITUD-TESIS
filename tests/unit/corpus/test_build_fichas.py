@@ -57,7 +57,6 @@ from thematic_redundancy.extraction.text_manifest import (
     ExtractionSettings,
     TextEntry,
     TextManifest,
-    write_json_atomically,
     write_text_manifest,
 )
 from thematic_redundancy.extraction.text_manifest import (
@@ -68,6 +67,7 @@ from thematic_redundancy.shared.config import (
     WrongPdfConfig,
     load_config,
 )
+from thematic_redundancy.shared.filesystem import write_text_atomically
 from thematic_redundancy.shared.storage import ParquetTableStore
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "config" / "default.yaml"
@@ -826,7 +826,7 @@ def write_project(root: Path, *, expected: dict[str, Any] | None = None) -> None
     table = interim / "objectives.parquet"
     ParquetTableStore().write([thesis[3]], table)
     objectives_settings = ObjectivesSettings.from_config(DECLARED)
-    write_json_atomically(
+    write_text_atomically(
         interim / "objectives_manifest.json",
         ObjectivesManifest(
             snapshot_id=SNAPSHOT_ID,
@@ -1038,7 +1038,7 @@ def test_a_build_stopped_before_its_manifest_leaves_outputs_that_the_reader_refu
     def failing_write(path: Path, content: str) -> None:
         raise OSError("synthetic disk failure")
 
-    monkeypatch.setattr(build_fichas_module, "write_json_atomically", failing_write)
+    monkeypatch.setattr(build_fichas_module, "write_text_atomically", failing_write)
 
     assert run(tmp_path) == 1
 

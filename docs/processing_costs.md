@@ -126,6 +126,8 @@ across sessions with care.
 | 2026-10-11 | all | Test suite (`pytest -q`) | 1,215 tests, plus 1 skipped | 42.7–48.0 s (2 runs) | — | 0 | After T12a | plan T12a; time: run output |
 | 2026-10-12 | T08a | Read-only schema re-check of every real table through the stricter reader | `fichas.parquet` (766 rows, through `load_fichas`), `exclusions.parquet` (22), `objectives.parquet` (731) and 731 page files (141,076 pages) | 9.4 s (9.37 s), one run | about 15,000 pages/s (derived) | 0 | 0 tables refused; the three tables kept their SHA-256, and nothing was written | plan T08a; time: run output |
 | 2026-10-12 | all | Test suite (`pytest -q`) | 1,251 tests, plus 3 skipped | 22.3–32.6 s (2 runs) | — | 0 | After T08a and its review fixes | plan T08a; time: run output |
+| 2026-10-12 | T09b | Text extraction re-run of one already extracted item (`extract_text --only`, without `--summary-out`), 2 runs | 1 PDF selected of 731 | 0.0 s (the command's own wall time); 1.2 s for the whole command, start-up included (second run) | — | 0 | Both runs skipped the item (0 extracted) through the shared run lock. The text manifest and all 731 page files kept their SHA-256 and modification times; the manifest was not rewritten | plan T09b; time: run output |
+| 2026-10-12 | all | Test suite (`pytest -q`) | 1,290 tests, plus 3 skipped | 23.1–25.0 s (2 runs) | — | 0 | After T09b item 1, the characterization tests of item 2, and the review fixes | plan T09b; time: run output |
 
 ### Notes on the ledger
 

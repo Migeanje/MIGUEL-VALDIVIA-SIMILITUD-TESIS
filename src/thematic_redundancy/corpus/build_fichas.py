@@ -140,7 +140,6 @@ from thematic_redundancy.extraction.text_manifest import (
     TextEntry,
     TextManifest,
     read_text_manifest,
-    write_json_atomically,
 )
 from thematic_redundancy.preprocessing.light_cleaner import normalize_text
 from thematic_redundancy.preprocessing.stopwords import (
@@ -153,6 +152,7 @@ from thematic_redundancy.shared.config import (
     WrongPdfConfig,
     load_config,
 )
+from thematic_redundancy.shared.filesystem import write_text_atomically
 from thematic_redundancy.shared.storage import ParquetTableStore, TableStore
 
 CONFIG_PATH = Path("config") / "default.yaml"
@@ -658,7 +658,7 @@ def build_dataset(
         for staged_path in staged.values():
             staged_path.unlink(missing_ok=True)
     # The commit point: until it is written, the manifest describes the previous tables.
-    write_json_atomically(
+    write_text_atomically(
         interim_dir / FICHAS_MANIFEST_FILE_NAME, manifest.model_dump_json(indent=2)
     )
     return FichasBuild(

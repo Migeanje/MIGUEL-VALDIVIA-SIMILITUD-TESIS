@@ -263,6 +263,94 @@ def test_blank_lines_left_at_the_ends_of_a_page_are_trimmed() -> None:
     assert remove_running_lines(pages, FIVE_PAGES).texts == (page(*body(1)),)
 
 
+# --- Known open behavior: edge lines of digits only --------------------------------------
+# These tests characterize what the rules do now with a year at the edge of a page, an open
+# question of T09b; they do not state what the rules should do. Changing that behavior
+# changes the page records of the PDFs already extracted, so it must raise
+# EXTRACTION_VERSION, which extracts every PDF again; that is the user's decision.
+# A year with punctuation goes only when its folded key reaches the running-line threshold,
+# counted over every page whose edges carry that key, the year's own page included.
+
+PUNCTUATED_YEAR = pytest.mark.parametrize("year", ["– 2024 –", "2024."], ids=["dashes", "period"])
+
+
+def test_open_behavior_a_running_footer_of_digits_only_is_kept_on_every_page() -> None:
+    # The year repeats at the foot of every page, so its key "#" is a running key, but an
+    # edge line of digits only goes only when it is a page number.
+    pages = [page(*body(number), "2024") for number in range(1, 7)]
+
+    cleaned = remove_running_lines(pages, FIVE_PAGES)
+
+    assert cleaned.texts == tuple(pages)
+    assert cleaned.removed == (0,) * 6
+
+
+@PUNCTUATED_YEAR
+def test_open_behavior_a_running_footer_of_a_year_with_punctuation_goes_from_every_page(
+    year: str,
+) -> None:
+    # The guard covers bare digits only, so unlike "2024" above, this year goes as a
+    # running line.
+    pages = [page(*body(number), year) for number in range(1, 7)]
+
+    cleaned = remove_running_lines(pages, FIVE_PAGES)
+
+    assert cleaned.texts == tuple(page(*body(number)) for number in range(1, 7))
+    assert cleaned.removed == (1,) * 6
+
+
+@pytest.mark.parametrize(
+    ("year", "numbered"), [("– 2024 –", "– {} –"), ("2024.", "{}.")], ids=["dashes", "period"]
+)
+def test_open_behavior_a_punctuated_year_goes_when_its_key_is_on_enough_pages_counting_it(
+    year: str, numbered: str
+) -> None:
+    # A cover page with its year at the foot; the other pages end in numbered lines that
+    # fold to the same key: "– 12 –" is a page number, and "12." is not. Of 6 pages,
+    # 3 must carry the key; the year and the numbered lines put it on all 6.
+    pages = [page(*body(number), numbered.format(number + 10)) for number in range(1, 7)]
+    pages[0] = page(*body(1), year)
+
+    cleaned = remove_running_lines(pages, FIVE_PAGES)
+
+    assert cleaned.texts == tuple(page(*body(number)) for number in range(1, 7))
+    assert cleaned.removed == (1,) * 6
+
+
+@PUNCTUATED_YEAR
+def test_open_behavior_a_year_with_punctuation_stays_where_no_running_line_shares_its_key(
+    year: str,
+) -> None:
+    pages = document(6)
+    pages[0] = page(*body(1), year)
+
+    cleaned = remove_running_lines(pages, FIVE_PAGES)
+
+    assert cleaned.texts[0] == page(*body(1), year)
+    assert cleaned.removed == (0, 3, 3, 3, 3, 3)
+
+
+@pytest.mark.parametrize(
+    ("year", "numbered", "numbers_removed"),
+    [("– 2024 –", "– {} –", 1), ("2024.", "{}.", 0)],
+    ids=["dashes", "period"],
+)
+def test_open_behavior_a_punctuated_year_stays_when_its_key_is_on_too_few_pages_counting_it(
+    year: str, numbered: str, numbers_removed: int
+) -> None:
+    # Of 10 pages, 5 must carry the key; the year and two numbered lines put it on 3. A
+    # page number such as "– 2 –" still goes as a page number; "2." is not one, and stays.
+    pages = [page(*body(number), f"Página {number}") for number in range(1, 11)]
+    pages[0] = page(*body(1), year)
+    pages[1] = page(*body(2), numbered.format(2))
+    pages[2] = page(*body(3), numbered.format(3))
+
+    cleaned = remove_running_lines(pages, FIVE_PAGES)
+
+    assert cleaned.texts[0] == page(*body(1), year)
+    assert cleaned.removed == (0, numbers_removed, numbers_removed) + (1,) * 7
+
+
 # --- Page records ------------------------------------------------------------------------
 
 

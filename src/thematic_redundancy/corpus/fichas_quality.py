@@ -38,9 +38,9 @@ from thematic_redundancy.corpus.profile import (
     sensitive_strings,
 )
 from thematic_redundancy.corpus.snapshot import SnapshotRecord
-from thematic_redundancy.extraction.text_manifest import write_json_atomically
 from thematic_redundancy.preprocessing.full_cleaner import SPACY_MODEL, clean_full_batch
 from thematic_redundancy.preprocessing.stopwords import stopword_candidates
+from thematic_redundancy.shared.filesystem import write_text_atomically
 
 REPORT_JSON_FILE_NAME = "quality_report.json"
 REPORT_MARKDOWN_FILE_NAME = "quality_report.md"
@@ -255,9 +255,8 @@ def write_quality_report(
         raise ValueError(f"{'; '.join(problems)}; the quality report was not written")
     directory.mkdir(parents=True, exist_ok=True)
     paths = (directory / REPORT_JSON_FILE_NAME, directory / REPORT_MARKDOWN_FILE_NAME)
-    # The atomic writer of the JSON manifests takes any text.
-    write_json_atomically(paths[0], content)
-    write_json_atomically(paths[1], markdown.rstrip("\n"))
+    write_text_atomically(paths[0], content)
+    write_text_atomically(paths[1], markdown.rstrip("\n"))
     return paths
 
 

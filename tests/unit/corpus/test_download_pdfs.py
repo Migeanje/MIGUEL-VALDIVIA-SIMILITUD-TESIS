@@ -45,6 +45,7 @@ from thematic_redundancy.corpus.snapshot import (
     write_snapshot,
 )
 from thematic_redundancy.shared.config import AppConfig, load_config
+from thematic_redundancy.shared.filesystem import exclusive_run
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "config" / "default.yaml"
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "dspace"
@@ -865,6 +866,38 @@ def test_a_second_run_cannot_start_while_one_is_in_progress(
     assert statuses(run(config, tmp_path, files, at=LATER)) == [
         (item_uuid(1), "already_present", None)
     ]
+
+
+def test_a_run_is_refused_while_the_lock_file_of_the_pdf_directory_is_held(
+    config: AppConfig, tmp_path: Path, files: FakeFiles
+) -> None:
+    write_test_snapshot(tmp_path, [record(1)])
+    files.serve_thesis(1)
+    pdfs = pdf_dir(tmp_path)
+    pdfs.mkdir()
+
+    with (
+        exclusive_run(pdfs, RuntimeError("held by another run")),
+        pytest.raises(DownloadInProgressError) as caught,
+    ):
+        run(config, tmp_path, files)
+
+    assert str(caught.value) == f"another download into {pdfs} is running; wait until it ends"
+    assert isinstance(caught.value.__cause__, OSError)
+    assert files.calls == []
+    assert sorted(path.name for path in pdfs.iterdir()) == [".lock"]
+
+
+def test_the_manifest_on_disk_is_its_json_followed_by_one_line_feed(
+    config: AppConfig, tmp_path: Path, files: FakeFiles
+) -> None:
+    write_test_snapshot(tmp_path, [record(1), record(2, rights=EMBARGOED)])
+    files.serve_thesis(1)
+
+    report = run(config, tmp_path, files)
+
+    saved = (pdf_dir(tmp_path) / "manifest.json").read_bytes()
+    assert saved == f"{report.manifest.model_dump_json(indent=2)}\n".encode()
 
 
 def test_partial_files_left_by_a_killed_run_are_removed(

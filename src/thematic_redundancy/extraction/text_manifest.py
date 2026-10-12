@@ -10,7 +10,6 @@ manifest holds counts only, never text.
 """
 
 import hashlib
-import os
 from collections import Counter
 from collections.abc import Collection, Mapping
 from pathlib import Path
@@ -29,6 +28,7 @@ from pydantic import (
 
 from thematic_redundancy.corpus.snapshot import Count, SnapshotId, UtcDatetime
 from thematic_redundancy.shared.config import AppConfig
+from thematic_redundancy.shared.filesystem import write_text_atomically
 
 INTERIM_DIR_NAME = "interim"
 """Directory under ``paths.data_dir`` that holds one directory per snapshot."""
@@ -267,25 +267,7 @@ def read_text_manifest(path: Path) -> TextManifest | None:
         ) from error
 
 
-def write_json_atomically(path: Path, content: str) -> None:
-    """Replace the file at ``path`` with ``content`` atomically and durably.
-
-    The content goes to ``<path>.part`` first and is flushed to the disk, and one rename
-    then puts it in place, so readers see the previous file or the new one, never a
-    partial one.
-    """
-    staged = path.with_name(f"{path.name}.part")
-    try:
-        with staged.open("wb") as file:
-            file.write(f"{content}\n".encode())
-            file.flush()
-            os.fsync(file.fileno())
-        os.replace(staged, path)
-    except BaseException:
-        staged.unlink(missing_ok=True)
-        raise
-
-
 def write_text_manifest(path: Path, manifest: TextManifest) -> None:
-    """Replace the manifest at ``path`` atomically and durably."""
-    write_json_atomically(path, manifest.model_dump_json(indent=2))
+    """Replace the manifest at ``path`` atomically and durably, through
+    :func:`~thematic_redundancy.shared.filesystem.write_text_atomically`."""
+    write_text_atomically(path, manifest.model_dump_json(indent=2))

@@ -36,8 +36,8 @@ import os
 import sys
 import time
 from collections import Counter
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from contextlib import ExitStack, contextmanager
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -84,11 +84,7 @@ from thematic_redundancy.corpus.thesis_files import (
     thesis_candidates,
 )
 from thematic_redundancy.shared.config import AppConfig, load_config
-
-if sys.platform == "win32":
-    import msvcrt
-else:
-    import fcntl
+from thematic_redundancy.shared.filesystem import exclusive_run
 
 CONFIG_PATH = Path("config") / "default.yaml"
 """Configuration that the command line loads, relative to the project root."""
@@ -104,9 +100,6 @@ PDF_MAGIC = b"%PDF"
 
 PART_SUFFIX = ".part"
 """Ending of a file still being written; a run deletes any that an earlier run left."""
-
-LOCK_FILE_NAME = ".lock"
-"""File in the PDF directory that a run locks, so that only one run uses the directory."""
 
 _HASH_NAMES = {"md5": "md5", "sha1": "sha1", "sha256": "sha256", "sha512": "sha512"}
 """Checksum algorithms that can be verified, by their name without case, ``-`` or ``_``."""
@@ -217,7 +210,10 @@ def download_theses(
     selected = _select(theses, limit=limit, per_program=per_program)
     pdf_dir = snapshot_dir / PDF_DIR_NAME
     pdf_dir.mkdir(exist_ok=True)
-    with _exclusive_run(pdf_dir):
+    in_progress = DownloadInProgressError(
+        f"another download into {pdf_dir} is running; wait until it ends"
+    )
+    with exclusive_run(pdf_dir, in_progress):
         _remove_partial_files(pdf_dir)
         store = _ManifestStore(pdf_dir / PDF_MANIFEST_FILE_NAME, config, snapshot_id, records)
         fetcher = _ThesisFetcher(repository, pdf_dir)
@@ -594,48 +590,6 @@ def _remove_partial_files(pdf_dir: Path) -> None:
     """Delete the partial files that a killed run left behind."""
     for partial in pdf_dir.glob(f"*{PART_SUFFIX}"):
         partial.unlink(missing_ok=True)
-
-
-@contextmanager
-def _exclusive_run(pdf_dir: Path) -> Iterator[None]:
-    """Hold the lock of ``pdf_dir`` while the block runs.
-
-    The lock is the operating system's lock on :data:`LOCK_FILE_NAME`, which it releases
-    when the process ends, so a killed run leaves no stale lock behind.
-
-    Raises:
-        DownloadInProgressError: if another run holds the lock.
-    """
-    with (pdf_dir / LOCK_FILE_NAME).open("a+b") as lock_file:
-        try:
-            _lock(lock_file)
-        except OSError as error:
-            raise DownloadInProgressError(
-                f"another download into {pdf_dir} is running; wait until it ends"
-            ) from error
-        try:
-            yield
-        finally:
-            _unlock(lock_file)
-
-
-if sys.platform == "win32":
-
-    def _lock(file: BinaryIO) -> None:
-        file.seek(0)
-        msvcrt.locking(file.fileno(), msvcrt.LK_NBLCK, 1)
-
-    def _unlock(file: BinaryIO) -> None:
-        file.seek(0)
-        msvcrt.locking(file.fileno(), msvcrt.LK_UNLCK, 1)
-
-else:
-
-    def _lock(file: BinaryIO) -> None:
-        fcntl.flock(file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-
-    def _unlock(file: BinaryIO) -> None:
-        fcntl.flock(file.fileno(), fcntl.LOCK_UN)
 
 
 class _Console:

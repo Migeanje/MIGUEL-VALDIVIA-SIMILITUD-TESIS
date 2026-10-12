@@ -7,7 +7,6 @@ used or recorded, because they may hold author names. ``pdfs/manifest.json`` hol
 summary of them.
 """
 
-import os
 from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
@@ -17,6 +16,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from thematic_redundancy.corpus.snapshot import Count, SnapshotId, UtcDatetime
+from thematic_redundancy.shared.filesystem import write_text_atomically
 
 PDF_DIR_NAME = "pdfs"
 """Directory of a snapshot that holds its thesis PDFs and their manifest."""
@@ -191,15 +191,6 @@ def write_pdf_manifest(path: Path, manifest: PdfManifest) -> None:
 
     The content goes to ``<path>.part`` first and is flushed to the disk, and one rename
     then puts it in place, so readers see the previous manifest or the new one, never a
-    partial one.
+    partial one (:func:`~thematic_redundancy.shared.filesystem.write_text_atomically`).
     """
-    staged = path.with_name(f"{path.name}.part")
-    try:
-        with staged.open("wb") as file:
-            file.write(f"{manifest.model_dump_json(indent=2)}\n".encode())
-            file.flush()
-            os.fsync(file.fileno())
-        os.replace(staged, path)
-    except BaseException:
-        staged.unlink(missing_ok=True)
-        raise
+    write_text_atomically(path, manifest.model_dump_json(indent=2))

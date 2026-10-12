@@ -35,12 +35,11 @@ import json
 import sys
 import time
 from collections import Counter
-from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import Any
 from uuid import UUID
 
 import yaml
@@ -79,16 +78,11 @@ from thematic_redundancy.extraction.text_manifest import (
     pages_file_name,
     read_text_manifest,
     summarize,
-    write_json_atomically,
     write_text_manifest,
 )
 from thematic_redundancy.shared.config import AppConfig, ExtractionConfig, load_config
+from thematic_redundancy.shared.filesystem import exclusive_run, write_text_atomically
 from thematic_redundancy.shared.storage import ParquetTableStore, TableStore
-
-if sys.platform == "win32":
-    import msvcrt
-else:
-    import fcntl
 
 CONFIG_PATH = Path("config") / "default.yaml"
 """Configuration that the command line loads, relative to the project root."""
@@ -98,9 +92,6 @@ DOWNLOAD_COMMAND = "uv run python -m thematic_redundancy.corpus.download_pdfs"
 
 PART_SUFFIX = ".part"
 """Ending of a file still being written; a run deletes any that an earlier run left."""
-
-LOCK_FILE_NAME = ".lock"
-"""File in the pages directory that a run locks, so that only one run uses the directory."""
 
 _READ_CHUNK_BYTES = 1024 * 1024
 
@@ -219,7 +210,10 @@ def extract_texts(
     settings = ExtractionSettings.from_config(config)
     pages_dir = data_dir / INTERIM_DIR_NAME / snapshot_id / PAGES_DIR_NAME
     pages_dir.mkdir(parents=True, exist_ok=True)
-    with _exclusive_run(pages_dir):
+    in_progress = ExtractionInProgressError(
+        f"another text extraction into {pages_dir} is running; wait until it ends"
+    )
+    with exclusive_run(pages_dir, in_progress):
         _remove_partial_files(pages_dir)
         manifests = _ManifestStore(
             pages_dir / TEXT_MANIFEST_FILE_NAME,
@@ -542,48 +536,6 @@ def _remove_partial_files(pages_dir: Path) -> None:
         partial.unlink(missing_ok=True)
 
 
-@contextmanager
-def _exclusive_run(pages_dir: Path) -> Iterator[None]:
-    """Hold the lock of ``pages_dir`` while the block runs.
-
-    The lock is the operating system's lock on :data:`LOCK_FILE_NAME`, which it releases
-    when the process ends, so a killed run leaves no stale lock behind.
-
-    Raises:
-        ExtractionInProgressError: if another run holds the lock.
-    """
-    with (pages_dir / LOCK_FILE_NAME).open("a+b") as lock_file:
-        try:
-            _lock(lock_file)
-        except OSError as error:
-            raise ExtractionInProgressError(
-                f"another text extraction into {pages_dir} is running; wait until it ends"
-            ) from error
-        try:
-            yield
-        finally:
-            _unlock(lock_file)
-
-
-if sys.platform == "win32":
-
-    def _lock(file: BinaryIO) -> None:
-        file.seek(0)
-        msvcrt.locking(file.fileno(), msvcrt.LK_NBLCK, 1)
-
-    def _unlock(file: BinaryIO) -> None:
-        file.seek(0)
-        msvcrt.locking(file.fileno(), msvcrt.LK_UNLCK, 1)
-
-else:
-
-    def _lock(file: BinaryIO) -> None:
-        fcntl.flock(file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-
-    def _unlock(file: BinaryIO) -> None:
-        fcntl.flock(file.fileno(), fcntl.LOCK_UN)
-
-
 def write_summary(path: Path, manifest: TextManifest) -> None:
     """Write the numbers of ``manifest`` to ``path`` as JSON: settings and counts, never an
     item or any text. The directory is created when it is missing."""
@@ -594,7 +546,7 @@ def write_summary(path: Path, manifest: TextManifest) -> None:
         else None,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
-    write_json_atomically(path, json.dumps(content, indent=2))
+    write_text_atomically(path, json.dumps(content, indent=2))
 
 
 class _Console:

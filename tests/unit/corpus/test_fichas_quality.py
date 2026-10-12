@@ -309,6 +309,21 @@ def test_the_report_and_its_markdown_hold_numbers_handles_and_lemmas_only(
     assert "| Included theses | 3 |" in markdown_path.read_text(encoding="utf-8")
 
 
+def test_both_report_files_are_utf8_text_that_ends_with_one_line_feed(tmp_path: Path) -> None:
+    fichas, records = corpus()
+    report = report_of(fichas, records)
+
+    json_path, markdown_path = write_quality_report(tmp_path / "out", report, records)
+
+    content = json.dumps(report, ensure_ascii=False, indent=2)
+    assert json_path.read_bytes() == f"{content}\n".encode()
+    assert markdown_path.read_bytes() == f"{render_markdown(report).rstrip('\n')}\n".encode()
+    assert sorted(path.name for path in json_path.parent.iterdir()) == [
+        "quality_report.json",
+        "quality_report.md",
+    ]
+
+
 def test_a_report_that_holds_a_title_is_refused_and_not_written(tmp_path: Path) -> None:
     fichas, records = corpus()
     report = report_of(fichas, records)

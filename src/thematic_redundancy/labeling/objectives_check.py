@@ -66,9 +66,9 @@ from thematic_redundancy.corpus.snapshot import (
     latest_snapshot_id,
 )
 from thematic_redundancy.extraction.objectives import LocatorStatus, ObjectivesRecord
-from thematic_redundancy.extraction.text_manifest import write_json_atomically
 from thematic_redundancy.preprocessing.light_cleaner import normalize_text
 from thematic_redundancy.shared.config import AppConfig, load_config
+from thematic_redundancy.shared.filesystem import write_text_atomically
 
 CONFIG_PATH = Path("config") / "default.yaml"
 """Configuration that the command line loads, relative to the project root."""
@@ -368,7 +368,7 @@ def make_verification_workbook(
     )
     directory.mkdir(parents=True, exist_ok=True)
     sample_path = directory / SAMPLE_FILE_NAME
-    write_json_atomically(sample_path, sample.model_dump_json(indent=2))
+    write_text_atomically(sample_path, sample.model_dump_json(indent=2))
     _save_atomically(workbook, workbook_path)
     return VerificationWorkbook(workbook_path, sample_path, sample, redactor.redacted)
 
@@ -977,7 +977,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         if arguments.report_out is not None:
             arguments.report_out.parent.mkdir(parents=True, exist_ok=True)
-            write_json_atomically(arguments.report_out, report.model_dump_json(indent=2))
+            write_text_atomically(arguments.report_out, report.model_dump_json(indent=2))
     except WorkbookValidationError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
