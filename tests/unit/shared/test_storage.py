@@ -5,6 +5,7 @@ ficha does not use. Every test writes into its own temporary directory.
 """
 
 import os
+import re
 from datetime import date
 from pathlib import Path
 from typing import Any, Literal
@@ -398,6 +399,87 @@ def test_a_column_of_another_type_is_refused(tmp_path: Path) -> None:
     write_raw(path, table)
 
     with pytest.raises(SchemaMismatchError, match="issue_year has type string, not int64"):
+        STORE.read(Ficha, path)
+
+
+def with_field(table: pa.Table, field: pa.Field, values: pa.Array | None = None) -> pa.Table:
+    """Return ``table`` with the column named like ``field`` declared as ``field``.
+
+    ``values`` replace the values of the column; by default they are kept as they are.
+    """
+    position = table.schema.get_field_index(field.name)
+    return table.set_column(position, field, table.column(field.name) if values is None else values)
+
+
+KEYWORDS_TYPE = re.escape("list<item: string not null>")
+"""How a list column of text is declared: its items are never null."""
+
+FOUND_ITEM = r"list<\w+: "
+"""Start of a list type read from a file: Parquet may rename the items, ``item`` to ``element``."""
+
+
+def test_a_list_column_with_items_of_another_type_is_refused(tmp_path: Path) -> None:
+    numbers = pa.list_(pa.field("item", pa.int64(), nullable=False))
+    table = with_field(
+        stored_table(tmp_path),
+        pa.field("keywords", numbers, nullable=False),
+        pa.array([[1, 2], [], []], type=numbers),
+    )
+    path = tmp_path / "fichas.parquet"
+    write_raw(path, table)
+
+    expected = f"keywords has type {FOUND_ITEM}int64 not null>, not {KEYWORDS_TYPE}"
+    with pytest.raises(SchemaMismatchError, match=expected):
+        STORE.read(Ficha, path)
+
+
+def test_a_plain_column_where_a_list_is_expected_is_refused(tmp_path: Path) -> None:
+    table = with_field(
+        stored_table(tmp_path),
+        pa.field("keywords", pa.string(), nullable=False),
+        pa.array(["ñandú", "sistema", "información"]),
+    )
+    path = tmp_path / "fichas.parquet"
+    write_raw(path, table)
+
+    with pytest.raises(SchemaMismatchError, match=f"keywords has type string, not {KEYWORDS_TYPE}"):
+        STORE.read(Ficha, path)
+
+
+def test_a_list_column_whose_items_may_be_null_is_refused(tmp_path: Path) -> None:
+    nullable_items = pa.list_(pa.field("item", pa.string(), nullable=True))
+    table = with_field(
+        stored_table(tmp_path),
+        pa.field("keywords", nullable_items, nullable=False),
+        pa.array([["ñandú", "sistema"], [], []], type=nullable_items),
+    )
+    path = tmp_path / "fichas.parquet"
+    write_raw(path, table)
+
+    expected = f"keywords has type {FOUND_ITEM}string>, not {KEYWORDS_TYPE}"
+    with pytest.raises(SchemaMismatchError, match=expected):
+        STORE.read(Ficha, path)
+
+
+def test_a_nullable_column_for_a_required_field_is_refused(tmp_path: Path) -> None:
+    table = with_field(stored_table(tmp_path), pa.field("title", pa.string(), nullable=True))
+    path = tmp_path / "fichas.parquet"
+    write_raw(path, table)
+
+    with pytest.raises(SchemaMismatchError, match="title is nullable, but the model field is not"):
+        STORE.read(Ficha, path)
+
+
+def test_a_required_column_for_an_optional_field_is_refused(tmp_path: Path) -> None:
+    source = tmp_path / "source.parquet"
+    STORE.write([ficha(1, abstract="Resumen sintético.")], source)
+    table = with_field(pq.read_table(source), pa.field("abstract", pa.string(), nullable=False))
+    path = tmp_path / "fichas.parquet"
+    write_raw(path, table)
+
+    with pytest.raises(
+        SchemaMismatchError, match="abstract is not nullable, but the model field is"
+    ):
         STORE.read(Ficha, path)
 
 

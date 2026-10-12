@@ -411,7 +411,8 @@ work offline with `HF_HUB_OFFLINE=1`.
 - Author names are never shown in the app or in reports, and user queries are never persisted.
 - Fichas never store a person's name. Advisors and authors appear only as codes keyed by a local
   secret, `data/interim/pseudonym.key`, which is created on first use and never committed.
-  Without it, the codes can be neither re-derived nor reversed.
+  Without it, the codes can be neither re-derived nor reversed. Creating it needs no hard links,
+  so `data/` may sit on a FAT or exFAT volume, a network share or a container mount.
 - `results/` holds aggregates only. The metadata profile refuses to write an output that holds a
   title, an abstract, a person's name or an ORCID from the snapshot.
 - Extracted page texts live only under the gitignored `data/interim/`. The extraction manifest

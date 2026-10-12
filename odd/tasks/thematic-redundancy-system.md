@@ -1,7 +1,7 @@
 # Feature: Thematic Redundancy System (MVP)
 
 - **Locator:** `odd/tasks/thematic-redundancy-system.md`
-- **Status (2026-10-11):** Plan approved by the user on 2026-10-02, including O02 and O08 (direct commits on `main`). Phases 0, 1 and 2 are done (T01 to T12). T10 met O05 with 60/60 general objectives correct, and T12 shipped the 766 fichas (744 included theses) as `73f1676`. D26 (ten more domain stopwords) and the mpnet model download (U8) are recorded, and T12a holds the T12 review findings. Next: the follow-ups T12a, T08a and T09b, then Phase 3 (T13).
+- **Status (2026-10-12):** Plan approved by the user on 2026-10-02, including O02 and O08 (direct commits on `main`). Phases 0, 1 and 2 are done (T01 to T12). T10 met O05 with 60/60 general objectives correct, and T12 shipped the 766 fichas (744 included theses) as `73f1676`. D26 (ten more domain stopwords) and the mpnet model download (U8) are recorded, and T12a was committed as `ad2c6f0`. Next: the overnight stack of follow-ups (T08a prepared; then T09b, T12b, and T11b with T07a, T05a, T04a and T02a), then Phase 3 (T13).
 - **Source:** the thesis plan v3 `Plan_de_Tesis_UCSM_v3_Directiva.pdf` (119 pages, kept outside the repo), plus the decisions recorded below.
 
 ## Objective
@@ -463,11 +463,40 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
   - Notes for T12: check `doc_code` uniqueness across the dataset, and log a quality note when an ORCID fails its checksum.
   - Commit: `f21743f`, made by the user. Its tree `acaa52a…` is identical to the reviewed one.
   - Reviews: medium risk, one lens, approved both before and after the commit.
-- [ ] **T08a** Ficha/storage follow-ups from the T08 reviews (non-blocking):
+- [x] **T08a** Ficha/storage follow-ups from the T08 reviews (non-blocking):
   - Key creation must not depend on hard-link support. `os.link` fails on FAT/exFAT, some SMB shares and some container bind mounts, which matters for T29.
   - fsync the key's parent directory after publishing it.
   - The storage schema check should cover nullability and list item types, with tests for wrong list item types and for non-list columns.
-  - Route D. Risk M.
+  - Route D. Risk H, raised from M for this unit, since it handles the pseudonym key and the storage contract. Trigger: two source modules and their two test modules (4 non-trivial files), plus this plan, the ledger and the README.
+  - Evidence (2026-10-12):
+    - Item 1, key creation without hard links (`corpus/anonymize.py`, `load_or_create_key`):
+      - The hard link stays where it works: the key is staged, flushed and linked into place, so it appears complete or not at all.
+      - Any other link failure than an existing file leads to the fallback: `O_CREAT | O_EXCL` with mode `0o600`, then the write and an fsync. A FAT volume gives EPERM on Linux and EINVAL (winerror 1) on Windows; some shares give EOPNOTSUPP or winerror 50. Since the codes vary by system, the fallback takes any `OSError`; exclusive creation still never overwrites a file. A failure before the whole key is in the file removes the partial file; a later one keeps it (review fix W1 below).
+      - A key file that is short, or (review fix W3) holds 32 zero bytes, may still be in writing by another run, so it is read again for up to `KEY_SETTLE_SECONDS` (2 s) and then refused, never replaced. A longer file is refused at once. `clock` and `sleeper` arguments, as in `corpus/dspace.py`, replace real time in tests.
+      - A run that loses the race uses the winner's key. If the winner fails and removes its partial file, the loser raises `FileNotFoundError` and the next run creates the key.
+      - Residual risk, in the docstring: a crash during the in-place write can leave a short file or, on FAT or exFAT, a full-length file of stale or zero bytes. Short and all-zero files are refused; other stale bytes cannot be told apart from a key.
+    - Item 2: the run that publishes the key then fsyncs its directory with a local `_fsync_directory`. A directory that cannot be opened (Windows) or flushed (EINVAL, or any `OSError`) is skipped, since the key is already flushed and named. A run that loses the race, or reads an existing key, flushes nothing. `experiments/domain_stopwords.py` keeps its own helper, which T11b fixes.
+    - Item 3 (`shared/storage.py`): `_check_columns` compares each column's nullability with its field's, both ways, and `_same_type` compares the type and the nullability of list items, whatever their name (Parquet reads `item` back as `element`). Exact nullability was chosen because the store writes it from the model, so a difference means another model version or another writer.
+    - RED → GREEN:
+      - Storage: 3 failed, 26 passed (`DID NOT RAISE` for list items that may be null, a nullable column for a required field, and a required column for an optional field) → 29 passed. A wrong item type and a plain column for a list were already refused; those 2 tests are characterization.
+      - Key, counted over the whole module `test_anonymize.py` (the tests kept from HEAD included): 24 failed, 69 passed → 93 passed. Of the 24: 9 `TypeError` for the new `clock` argument (the settle tests, and the wrong-size test now on a fake clock), 9 with the link error propagating, 2 with that error instead of the simulated disk-full one, and 4 missing the directory steps. Three new tests passed at once, as characterization: an interrupted link leaves nothing, and reading an existing key or losing the race flushes nothing.
+      - Written after GREEN: a test where the winner gives up (above), and a race of 4 real threads over 20 rounds, with and without hard links. A probe saw more than one creator in 200 of 200 rounds in both modes, but never a short read: 0 settle sleeps in 200 rounds of each mode. So the settle loop is covered by the fake-clock tests, not by the race test.
+    - 28 throwaway mutants on the first version (22 key, 6 storage), each with a fresh bytecode cache, the modules byte-identical after each restore: all killed. They covered no fallback, a fallback on EPERM only or on interruptions, no `O_EXCL`, mode `0o666`, no removal or removal on `Exception` only, a loser that keeps its own key (exclusive, link, vanished file), no settle wait, a wait for long files or past the settle time, no directory fsync, an fsync before the publish, after a lost race or on an existing key, directory open or fsync errors raised, the descriptor not closed, the staged file kept, the fallback key not fsynced; and in storage, item nullability, column nullability (either way), the item type or the list check ignored, and swapped messages.
+    - Real data, read-only, numbers only:
+      - Through the stricter check, `load_fichas` read 766 fichas (744 included), the exclusions table 22 rows, the objectives table 731 rows, and the 731 page files 141,076 pages, with 0 refused, in 9.4 s.
+      - The three tables kept their SHA-256 (`4918fbc6…`, `bb915e46…`, `e6e58f33…`).
+      - The real key `data/interim/pseudonym.key` had the same SHA-256 (`7f5a5bbd…`) before and after, and again after the review fixes; key creation ran only in temporary directories.
+    - Review fixes (2026-10-12): two independent adversarial reviews of this unit, one scoped correction.
+      - W1 (warning, shown by both reviews with probes). The fallback removed the key file after any failure, even once all 32 bytes were visible. A run that read the key in that moment kept using it, while the next run created another key. Now the file is removed only while it holds fewer than 32 bytes on disk; after that, it is kept and the error is raised. Reading the size on disk rather than setting a flag also covers a stop between the flush and the flag, and a key that the closing of the file flushes.
+      - W2. On Windows the removal fails while another run holds the file open, and its `PermissionError` replaced the original error. Errors of the removal are now suppressed; the short file stays, and the next run refuses it.
+      - W3. The docstring now says that a crash during the in-place write on FAT or exFAT can leave a full-length file of stale or zero bytes. A file of 32 zero bytes counts as incomplete during the settle wait and is then refused with a `ValueError`. The key format is unchanged, so the real key stays valid.
+      - W4. The docstring now says that mode `0o600` is requested: it binds on POSIX file systems, while FAT, exFAT and CIFS mounts take their mount options. A POSIX-only test checks `0o600` for a key made either way; it is skipped on this Windows machine, so it has not run here.
+      - W5. A test pins that a short key file that disappears during the wait gives way to a new key.
+      - RED → GREEN, over the whole module `test_anonymize.py`: 5 failed, 99 passed, 2 skipped → 104 passed, 2 skipped (the 2 POSIX-only tests). The 5: a zero key accepted, a zero key not waited for, the complete key removed in both cases of the in-use test (`FileNotFoundError`), and the `PermissionError` hiding the disk-full error. Passed at once, as characterization: the vanishing short file, and the 4 partial-write cases (0 or 16 bytes visible) that must still remove the file.
+      - 6 new mutants, all killed: a complete key removed as well, a key of exactly 32 bytes removed, removal errors not suppressed, a zero key accepted, a zero key not waited for, and a vanished short file read as empty. The whole set then re-ran on the corrected code, with 3 earlier mutants adapted to it: 34 mutants (28 key, 6 storage), all killed, the modules byte-identical after each restore.
+    - Checks: `pytest` 1,251 passed, 3 skipped (1,215 + 36 new: key 31, storage 5; plus the 2 POSIX-only skips) in 22.3–32.6 s (2 runs); `ruff check` and `ruff format --check` clean; the attribution scan of the added lines found 0 hits.
+    - Size: 923 authored changed lines, 186 of them from the review correction: 658 in the two test modules (576 for the key), 200 in the two source modules, 60 in this plan, 3 in the README and 2 in the ledger. That is above the 400-line guide, because the key tests cover each failure path: four link errors, races with and without hard links, interruptions, partial and complete writes, the settle wait and the directory fsync.
+  - Commit: pending; prepared on 2026-10-12 as unit 1 of the overnight stack.
 - [x] **T09** PDF text extraction with text-layer detection and an OCR fallback. Note from T05: 6 of 13 inspected items also carry DSpace's extracted full text (`*.pdf.txt` in a TEXT bundle). It could serve as a cross-check, but it was not fetched and is not authorized yet.
   - Route D. Risk M.
   - Inputs: the T05 text-layer findings (2026-10-03), which call for selective OCR; and header and footer removal, moved here from T11. Long runs go in the user's terminal.
@@ -797,7 +826,12 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - Checks: `pytest` 1,215 passed, 1 skipped (1,196 + 19 new: builder 14, report 5) in 42.7–48.0 s (2 runs); `ruff check` and `ruff format --check` clean; the attribution scan of the added lines found 0 hits.
     - Size: 473 authored changed lines: 245 in the two test modules, 182 in the two source modules, 38 in this plan, 6 in the README and 2 in the ledger. That is above the 400-line guide, because the tests cover each failure path of the publish and of the command line.
     - Known limit, outside the review findings: the two quality-report files (`quality_report.json`, then `quality_report.md`) are each written atomically but not as a pair. A stop between them leaves a new JSON beside an old Markdown, and the message "the quality report was not written" is then too strong. Harmless for the committed report; revisit if the report is regenerated.
-  - Commit: handed to the user.
+  - Commit: `ad2c6f0`, made by the user. Its tree `11e3857…` is identical to the reviewed one. Approved before the commit (one lens); its three suggestions became T12b.
+- [ ] **T12b** Follow-ups from the T12a review (non-blocking):
+  - An interruption (`KeyboardInterrupt`) between the moves of the staged tables and the manifest write reaches the build handler of `main`, which prints "nothing half-written was left": not true there, since the tables were replaced and the manifest still describes the previous ones. The data stay safe because `verify_fichas_outputs` refuses the mismatch, but the message should say a re-run is required, and no test covers an interruption inside that window.
+  - No test corrupts or truncates `fichas_manifest.json` to show that `verify_fichas_outputs` raises `ValueError` (it relies on pydantic's `ValidationError` being a `ValueError` subclass).
+  - `load_fichas` hashes the fichas table and then reads it a second time, so a concurrent rebuild could swap the file between the check and the read. Read the bytes once, then hash and parse them.
+  - Route D. Risk M.
 
 ### P3 — Representation and topic map (M3–M5)
 - [ ] **T13** Sentence-aligned chunker that is valid for both tokenizers. Property tests check that every chunk fits both tokenizers and no text is lost.
@@ -1054,6 +1088,16 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
   - The real re-run wrote the same fichas and exclusions tables (same SHA-256). The committed quality report is unaffected by the advisor fix.
   - Checks: `pytest` 1,215 passed, 1 skipped; `ruff check` and `ruff format --check` clean. The commit is handed to the user.
 
+- 2026-10-11: The user committed T12a as `ad2c6f0`. Its tree `11e3857…` is identical to the reviewed one. The post-commit check from `73f1676` (581 lines, medium risk) found `slice_budget_reached`, so a post-commit review is due; its consent waits for the user. The reviewed boundary stays `73f1676`.
+
+- 2026-10-12: The user approved preparing four follow-up units overnight, as a stack of verified, uncommitted units, each committed by the user after its review: T08a; T09b; T12b; then T11b with T07a, T05a, T04a and T02a.
+
+- 2026-10-12: T08a implemented and verified on top of `ad2c6f0`, as unit 1 of the overnight stack. Route: D. Trigger: two source modules and their two test modules, plus this plan, the ledger and the README.
+  - The pseudonym key no longer needs hard links: exclusive creation is the fallback, a short key file gets 2 s to fill before it is refused, and the run that creates the key fsyncs its directory where the system allows it.
+  - The storage schema check now covers nullability and the type and nullability of list items. Every real table on disk still passes it: 766 fichas, 22 exclusions, 731 objectives rows and 731 page files, 0 refused. The real key is unchanged (same SHA-256).
+  - Two independent adversarial reviews raised one warning, that a complete key could be removed while in use, and four smaller findings. One scoped correction fixed them all, test first, as recorded under T08a.
+  - Checks: `pytest` 1,251 passed, 3 skipped; `ruff check` and `ruff format --check` clean. The unit is uncommitted, for the user's review and commit.
+
 ## Next step
 
 Resume checklist, in order:
@@ -1061,8 +1105,12 @@ Resume checklist, in order:
 1. **Re-sync.**
    - Read this document fully.
    - Run `git status`, `git log -5`, `uv run pytest -q`, `uv run ruff check .` and `uv run ruff format --check .`.
-   - Confirm that HEAD holds the T12a unit and that its tree is identical to the reviewed one. The commit before it is `b6943fa`, the 2026-10-11 closure unit (D26, U8). The last reviewed boundary is `73f1676`: `b6943fa` stays pending in the slice, so the next post-commit check starts from `73f1676`.
-2. **Follow-ups, by priority.** T08a and T09b first; then T11b (its D26 pin before T18), T07a, T05a, T04a and T02a, grouped. T10c waits for the user's redactor policy, which is needed before any new workbook, so before T20.
+   - Confirm that HEAD is `ad2c6f0` (T12a, tree `11e3857…`) or a later commit of the overnight stack. The last reviewed boundary is `73f1676`: the post-commit review of `b6943fa` and `ad2c6f0` together (581 lines, `slice_budget_reached`) is due and waits for the user's consent. Once it is acknowledged, or declined as for T09, the boundary moves to `ad2c6f0`.
+2. **Follow-ups: the overnight stack (2026-10-12).** Each unit is verified and left uncommitted, for the user to review and commit in order:
+   - Unit 1, T08a: prepared (key creation without hard links, the key directory fsync, and the stricter storage schema check).
+   - Unit 2, T09b: next.
+   - Unit 3, T12b; unit 4, T11b (its D26 pin before T18) with T07a, T05a, T04a and T02a.
+   - T10c waits for the user's redactor policy, which is needed before any new workbook, so before T20.
 3. **Phase 3.** T13, the chunker (both models are cached), reading the fichas through `load_fichas`; T14; T15, with the 89-lemma stopword list of D26; then T16 to T19.
 
 Pending user inputs: U1; U2 (before T19); U3 (month 3); U4, which must be agreed before any topic result exists, so before T16; U5; U6; U8 for any new download (the OpenAlex topics for T25 and, optionally, the 7 expired-embargo PDFs); the T10c redactor policy (before T20).

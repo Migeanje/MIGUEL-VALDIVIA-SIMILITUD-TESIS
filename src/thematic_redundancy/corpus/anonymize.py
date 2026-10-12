@@ -17,13 +17,16 @@ on first use. Its default location, from :func:`default_key_path`, is
   key is never replaced automatically, so a key file of the wrong size stops the run.
 """
 
+import contextlib
 import hashlib
 import hmac
 import os
 import re
 import secrets
 import tempfile
+import time
 import unicodedata
+from collections.abc import Callable
 from pathlib import Path
 
 from thematic_redundancy.shared.config import PathsConfig
@@ -38,6 +41,22 @@ INTERIM_DIR_NAME = "interim"
 """Directory under ``paths.data_dir`` for derived data, such as the fichas and the key."""
 
 KEY_FILE_NAME = "pseudonym.key"
+
+KEY_SETTLE_SECONDS = 2.0
+"""How long an incomplete key file may take to fill up before it is refused.
+
+A key file is incomplete while it is shorter than :data:`KEY_SIZE` or holds zero bytes only.
+Where a file system has no hard links, another run writes its new key in place, so such a
+file may simply not be complete yet."""
+
+_SETTLE_POLL_SECONDS = 0.05
+"""Pause between two reads of an incomplete key file."""
+
+_KEY_KEPT = (
+    "it is not replaced automatically, because every code depends on it. Restore the "
+    "original key, or move this file away on purpose to start new codes"
+)
+"""End of the message that refuses a key file."""
 
 ORCID_IDENTITY_PREFIX = "orcid:"
 NAME_IDENTITY_PREFIX = "name:"
@@ -136,25 +155,64 @@ def default_key_path(paths: PathsConfig, project_root: Path) -> Path:
     return paths.resolve_against(project_root).data_dir / INTERIM_DIR_NAME / KEY_FILE_NAME
 
 
-def load_or_create_key(path: Path) -> bytes:
+def load_or_create_key(
+    path: Path,
+    *,
+    clock: Callable[[], float] = time.monotonic,
+    sleeper: Callable[[float], None] = time.sleep,
+) -> bytes:
     """Return the key saved at ``path``, creating it first if there is none.
 
-    A new key is :data:`KEY_SIZE` random bytes from :mod:`secrets`. They go to a temporary
-    file beside ``path`` and are flushed to the disk, and a hard link then gives them their
-    name, which fails rather than replace a file. So the key appears complete or not at all,
-    and an existing key is never overwritten: if another run creates one first, that one is
-    used.
+    A new key is :data:`KEY_SIZE` random bytes from :mod:`secrets`. It is created once and
+    never overwritten, and a run never uses a key that is only partly written. When two runs
+    create it at the same time, the key that gets the name first is the one both use:
+
+    - The key goes to a temporary file beside ``path`` and is flushed to the disk, and a hard
+      link then gives it its name. The link fails rather than replace a file, so the key
+      appears complete or not at all.
+    - Some file systems have no hard links: FAT and exFAT volumes, some network shares and
+      some container mounts. The error varies (EPERM for a FAT volume on Linux, EOPNOTSUPP
+      on some shares, EINVAL on Windows), so any failure of the link other than an existing
+      file leads to the fallback: the key file is created with ``O_CREAT | O_EXCL``, which
+      also fails rather than replace a file, and the key is written into it and flushed.
+      See :func:`_create_exclusively` for what a failure there leaves behind.
+    - A crash while the fallback writes the key can leave the file short or, on a file
+      system without a journal such as FAT or exFAT, full-length but holding stale or zero
+      bytes. A short file and a file of zero bytes only are refused below, never replaced;
+      other stale bytes cannot be told apart from a key.
+    - A key file that is short, or holds zero bytes only, may be one that another run is
+      still writing, so it is read again until it is complete, for up to
+      :data:`KEY_SETTLE_SECONDS`, before it is refused.
+    - The run that creates the key then flushes its directory, so that the new name survives
+      a crash, where the system allows it (see :func:`_fsync_directory`).
+    - Both ways ask for mode ``0o600``, so on a POSIX file system only the owner may read or
+      write the key. On FAT, exFAT or CIFS mounts, the mount options decide that instead.
+
+    ``clock`` and ``sleeper`` replace real time in tests.
 
     Raises:
-        ValueError: if the file at ``path`` does not hold exactly :data:`KEY_SIZE` bytes. It
-            is left as it is, because the codes made with it depend on it.
+        ValueError: if the file at ``path`` does not hold exactly :data:`KEY_SIZE` bytes, or
+            holds zero bytes only. It is left as it is, because the codes made with it may
+            depend on it.
+        OSError: if the key can be neither read nor created. When it was created but could
+            not be flushed to the disk, the file is kept, since another run may already use
+            it, and running again uses it too. When a run that was creating it at the same
+            time failed and removed its partial file, running again creates the key.
     """
     try:
-        return _read_key(path)
+        return _read_key(path, clock, sleeper)
     except FileNotFoundError:
         pass
     key = secrets.token_bytes(KEY_SIZE)
     path.parent.mkdir(parents=True, exist_ok=True)
+    if not _publish_key(path, key):
+        return _read_key(path, clock, sleeper)
+    _fsync_directory(path.parent)
+    return key
+
+
+def _publish_key(path: Path, key: bytes) -> bool:
+    """Save ``key`` at ``path`` unless a file is there already; return whether it was saved."""
     descriptor, staged_name = tempfile.mkstemp(
         dir=path.parent, prefix=f".{path.name}.", suffix=".part"
     )
@@ -167,21 +225,89 @@ def load_or_create_key(path: Path) -> bytes:
         try:
             os.link(staged, path)
         except FileExistsError:
-            return _read_key(path)
-        return key
+            return False
+        except OSError:  # No hard links on this file system.
+            return _create_exclusively(path, key)
+        return True
     finally:
         staged.unlink(missing_ok=True)
 
 
-def _read_key(path: Path) -> bytes:
+def _create_exclusively(path: Path, key: bytes) -> bool:
+    """Create ``path`` holding ``key``, unless it exists; return whether it was created.
+
+    The file is asked for with mode ``0o600``, like the temporary file of
+    :func:`tempfile.mkstemp`. When a failure stops the write before the whole key is in the
+    file, the partial file is removed, so that no run can take it for a key. If the removal
+    fails as well, as on Windows while another run holds the file open, the short file
+    stays, the original error is raised, and :func:`_read_key` refuses the file. Once the
+    whole key is in the file, another run may already be using it, so a later failure, such
+    as a failed flush to the disk, keeps the file and only raises.
+    """
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    try:
+        descriptor = os.open(path, flags, 0o600)
+    except FileExistsError:
+        return False
+    try:
+        with os.fdopen(descriptor, "wb") as file:
+            file.write(key)
+            file.flush()
+            os.fsync(file.fileno())
+    except BaseException:
+        # The size on disk tells what other runs can see. When it cannot be read, the file
+        # is kept: a short file is refused anyway, and a complete one may be in use.
+        with contextlib.suppress(OSError):
+            if path.stat().st_size < KEY_SIZE:
+                path.unlink()
+        raise
+    return True
+
+
+def _read_key(path: Path, clock: Callable[[], float], sleeper: Callable[[float], None]) -> bytes:
+    """Return the key at ``path``, giving an incomplete file :data:`KEY_SETTLE_SECONDS` to fill."""
+    deadline = clock() + KEY_SETTLE_SECONDS
     key = path.read_bytes()
+    while _incomplete(key) and clock() < deadline:
+        sleeper(_SETTLE_POLL_SECONDS)
+        key = path.read_bytes()
     if len(key) != KEY_SIZE:
         raise ValueError(
             f"the pseudonym key file {path} holds {len(key)} bytes, but a key has exactly "
-            f"{KEY_SIZE}; it is not replaced automatically, because every code depends on it. "
-            "Restore the original key, or move this file away on purpose to start new codes"
+            f"{KEY_SIZE}; {_KEY_KEPT}"
+        )
+    if not any(key):
+        raise ValueError(
+            f"the pseudonym key file {path} holds {KEY_SIZE} zero bytes, which no created key "
+            f"does, so a crash may have stopped its writing; {_KEY_KEPT}"
         )
     return key
+
+
+def _incomplete(key: bytes) -> bool:
+    """Tell whether ``key`` may be a key file still being written: short, or all zero bytes."""
+    return len(key) < KEY_SIZE or not any(key)
+
+
+def _fsync_directory(directory: Path) -> None:
+    """Flush the entries of ``directory`` to the disk, so that a file named in it stays.
+
+    POSIX systems need this after a new name is given to a file. A failure to open or to
+    flush the directory is skipped: Windows cannot open a directory as a file, and some
+    network, FUSE or overlay file systems refuse to flush one (EINVAL). The key is already
+    flushed and named by then, so this step can only make the name more durable; raising
+    would stop a run whose key is in place.
+    """
+    try:
+        descriptor = os.open(directory, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    except OSError:
+        pass
+    finally:
+        os.close(descriptor)
 
 
 def _orcid_check_character(base_digits: str) -> str:

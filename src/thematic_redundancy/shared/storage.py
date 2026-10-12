@@ -9,11 +9,14 @@ type from the field annotation:
   ``00000000-0000-4000-8000-000000000001``;
 - ``bool`` is a boolean, ``int`` a 64-bit integer, ``float`` a double, and ``date`` a date;
   a ``Literal`` takes the type of its values;
-- a ``tuple[X, ...]`` or ``list[X]`` of those is a list, which may be empty;
-- a field that accepts ``None`` is a nullable column, and ``None`` is stored as null.
+- a ``tuple[X, ...]`` or ``list[X]`` of those is a list, which may be empty and whose items
+  are never null;
+- a field that accepts ``None`` is a nullable column, and ``None`` is stored as null; every
+  other column is not nullable.
 
 Any other annotation, such as a dict or a nested model, is refused before anything is
-written. Text is stored as given, accents and ñ included, without any normalization.
+written. Text is stored as given, accents and ñ included, without any normalization. A
+table is read back only when its columns are exactly these, nullability included.
 """
 
 import os
@@ -160,7 +163,7 @@ class ParquetTableStore:
         Raises:
             FileNotFoundError: if there is no file at ``path``.
             SchemaMismatchError: if the file's columns are not those of ``model_cls``, by
-                name or by type.
+                name, by type (the type of list items included) or by nullability.
             ValueError: if the file is not Parquet, or if a row is not a valid record. The
                 message numbers the rows from 1.
             TypeError: if a field of ``model_cls`` has no column type.
@@ -252,24 +255,37 @@ def _schema(columns: Sequence[_Column]) -> pa.Schema:
 def _check_columns(
     schema: pa.Schema, columns: Sequence[_Column], model_name: str, path: Path
 ) -> None:
-    """Raise :class:`SchemaMismatchError` unless ``schema`` has exactly ``columns``."""
+    """Raise :class:`SchemaMismatchError` unless ``schema`` has exactly ``columns``.
+
+    Each column must have the type that :meth:`ParquetTableStore.write` gives its field, list
+    items included, and the same nullability. A column that allows nulls where the field
+    does not, or the other way round, was written for another version of the model or by
+    another writer, so it is refused as well, even when no value is null.
+    """
     expected = {column.name: column for column in columns}
     found = schema.names
     missing = [name for name in expected if name not in found]
     unexpected = [name for name in found if name not in expected]
     repeated = sorted({name for name in found if found.count(name) > 1})
+    checked = [name for name in found if name in expected and name not in repeated]
     mistyped = [
         f"{name} has type {schema.field(name).type}, not {expected[name].arrow_type}"
-        for name in found
-        if name in expected
-        and name not in repeated
-        and not _same_type(schema.field(name).type, expected[name].arrow_type)
+        for name in checked
+        if not _same_type(schema.field(name).type, expected[name].arrow_type)
+    ]
+    renulled = [
+        f"{name} is nullable, but the model field is not"
+        if schema.field(name).nullable
+        else f"{name} is not nullable, but the model field is"
+        for name in checked
+        if schema.field(name).nullable != expected[name].nullable
     ]
     problems = [
         *([f"missing columns: {', '.join(missing)}"] if missing else []),
         *([f"unexpected columns: {', '.join(unexpected)}"] if unexpected else []),
         *([f"repeated columns: {', '.join(repeated)}"] if repeated else []),
         *mistyped,
+        *renulled,
     ]
     if problems:
         raise SchemaMismatchError(
@@ -278,9 +294,17 @@ def _check_columns(
 
 
 def _same_type(found: pa.DataType, expected: pa.DataType) -> bool:
-    """Compare two column types; list types compare by item type, whatever their item name."""
+    """Compare two column types.
+
+    List types compare by the type and the nullability of their items, whatever the items
+    are named: Parquet may store the ``item`` of a list as ``element``.
+    """
     if pa.types.is_list(expected):
-        return pa.types.is_list(found) and found.value_type == expected.value_type
+        return (
+            pa.types.is_list(found)
+            and found.value_type == expected.value_type
+            and found.value_field.nullable == expected.value_field.nullable
+        )
     return found == expected
 
 
