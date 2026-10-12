@@ -16,9 +16,12 @@ type from the field annotation:
 
 Any other annotation, such as a dict or a nested model, is refused before anything is
 written. Text is stored as given, accents and ñ included, without any normalization. A
-table is read back only when its columns are exactly these, nullability included.
+table is read back only when its columns are exactly these, nullability included. A reader
+that knows the table's SHA-256, such as from a manifest, reads it with
+:meth:`TableStore.read_verified`, which checks and parses the same stored bytes.
 """
 
+import hashlib
 import os
 import tempfile
 import types
@@ -60,6 +63,10 @@ class SchemaMismatchError(ValueError):
     """A stored table does not have the columns of the model that it is read as."""
 
 
+class ChecksumMismatchError(ValueError):
+    """A stored table does not have the SHA-256 that its reader expects, so it is not read."""
+
+
 @runtime_checkable
 class TableStore(Protocol):
     """Port that saves a sequence of pydantic records as one table, and loads it back."""
@@ -76,6 +83,17 @@ class TableStore(Protocol):
 
     def read[M: BaseModel](self, model_cls: type[M], path: Path) -> tuple[M, ...]:
         """Load the table at ``path`` as validated ``model_cls`` records, in stored order."""
+        ...
+
+    def read_verified[M: BaseModel](
+        self, model_cls: type[M], path: Path, *, sha256: str
+    ) -> tuple[M, ...]:
+        """Load the table at ``path`` as :meth:`read` does, once its SHA-256 is ``sha256``.
+
+        ``sha256`` is the lowercase hex SHA-256 of the table as it is stored, such as one that
+        a manifest recorded after a write. The stored table is read once, then checked, then
+        parsed, so it cannot change between the check and the parse.
+        """
         ...
 
 
@@ -171,17 +189,49 @@ class ParquetTableStore:
         columns = _columns(model_cls)
         with Path(path).open("rb") as file:
             table = pq.read_table(file)
-        _check_columns(table.schema, columns, model_cls.__name__, path)
-        records = []
-        for number, row in enumerate(table.to_pylist(), start=1):
-            try:
-                values = {column.name: column.from_arrow(row[column.name]) for column in columns}
-                records.append(model_cls.model_validate(values))
-            except ValueError as error:  # pydantic's ValidationError is a ValueError.
-                raise ValueError(
-                    f"row {number} of {path} is not a valid {model_cls.__name__}"
-                ) from error
-        return tuple(records)
+        return _records(table, columns, model_cls, path)
+
+    def read_verified[M: BaseModel](
+        self, model_cls: type[M], path: Path, *, sha256: str
+    ) -> tuple[M, ...]:
+        """Load the Parquet file at ``path`` as :meth:`read` does, once its SHA-256 is
+        ``sha256``.
+
+        The file is read into memory once; its bytes are hashed, and only those same bytes
+        are parsed, with the checks and the messages of :meth:`read`.
+
+        Raises:
+            FileNotFoundError: if there is no file at ``path``.
+            ChecksumMismatchError: if the SHA-256 of the file is not ``sha256``; nothing is
+                parsed then.
+            SchemaMismatchError: if the file's columns are not those of ``model_cls``.
+            ValueError: if the file is not Parquet, or if a row is not a valid record.
+            TypeError: if a field of ``model_cls`` has no column type.
+        """
+        columns = _columns(model_cls)
+        content = Path(path).read_bytes()
+        if hashlib.sha256(content).hexdigest() != sha256:
+            raise ChecksumMismatchError(f"{path} does not have the expected SHA-256")
+        table = pq.read_table(pa.BufferReader(content))
+        return _records(table, columns, model_cls, path)
+
+
+def _records[M: BaseModel](
+    table: pa.Table, columns: Sequence[_Column], model_cls: type[M], path: Path
+) -> tuple[M, ...]:
+    """Return the rows of ``table``, read from ``path``, as validated ``model_cls`` records,
+    once its columns are exactly ``columns``."""
+    _check_columns(table.schema, columns, model_cls.__name__, path)
+    records = []
+    for number, row in enumerate(table.to_pylist(), start=1):
+        try:
+            values = {column.name: column.from_arrow(row[column.name]) for column in columns}
+            records.append(model_cls.model_validate(values))
+        except ValueError as error:  # pydantic's ValidationError is a ValueError.
+            raise ValueError(
+                f"row {number} of {path} is not a valid {model_cls.__name__}"
+            ) from error
+    return tuple(records)
 
 
 def _columns(model_cls: type[BaseModel]) -> tuple[_Column, ...]:

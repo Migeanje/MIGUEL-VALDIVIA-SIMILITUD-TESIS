@@ -8,6 +8,8 @@ results file.
 
 import hashlib
 import json
+import os
+import traceback
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -20,9 +22,12 @@ import yaml
 from thematic_redundancy.corpus import build_fichas as build_fichas_module
 from thematic_redundancy.corpus.anonymize import person_identity, pseudonym
 from thematic_redundancy.corpus.build_fichas import (
+    BUILD_COMMAND,
     NOTE_INVALID_ADVISOR_ORCID,
     FichasCheckError,
     FichaSources,
+    PublishInterrupted,
+    build_dataset,
     build_fichas,
     check_fichas,
     count_fichas,
@@ -1049,6 +1054,172 @@ def test_a_build_stopped_before_its_manifest_leaves_outputs_that_the_reader_refu
     assert leftovers(interim) == []
 
 
+NOTHING_HALF_WRITTEN = "interrupted: nothing half-written was left; run the command again"
+
+
+def test_an_interruption_just_before_the_tables_move_leaves_the_previous_outputs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_project(tmp_path)
+    assert run(tmp_path) == 0
+    interim = tmp_path / "data" / "interim" / SNAPSHOT_ID
+    before = published(interim)
+    change_the_key(tmp_path)
+    staged_when_interrupted: list[str] = []
+
+    def interrupting_clock() -> datetime:
+        # The build reads the clock for its manifest once both tables are staged.
+        staged_when_interrupted.extend(leftovers(interim))
+        raise KeyboardInterrupt
+
+    capsys.readouterr()
+
+    code = main(["--project-root", str(tmp_path)], clock=interrupting_clock)
+
+    assert code == 130
+    assert staged_when_interrupted == ["exclusions.parquet.staged", "fichas.parquet.staged"]
+    assert capsys.readouterr().err.strip() == NOTHING_HALF_WRITTEN
+    assert published(interim) == before
+    assert leftovers(interim) == []
+
+
+def record_the_moves(monkeypatch: pytest.MonkeyPatch, *, stop_at: int | None = None) -> list[str]:
+    """Record the names that staged tables move to, in order.
+
+    Move number ``stop_at`` is interrupted instead of done, as by Ctrl+C.
+    """
+    original = os.replace
+    moved: list[str] = []
+
+    def replace(source: Any, destination: Any) -> None:
+        if Path(source).name.endswith(".staged"):
+            if len(moved) + 1 == stop_at:
+                raise KeyboardInterrupt
+            original(source, destination)
+            moved.append(Path(destination).name)
+        else:
+            original(source, destination)
+
+    monkeypatch.setattr(os, "replace", replace)
+    return moved
+
+
+def interrupting_write(path: Path, content: str) -> None:
+    raise KeyboardInterrupt
+
+
+def being_replaced(interim: Path) -> str:
+    """Return the message of an interruption once the tables have begun to move."""
+    return (
+        f"interrupted: the outputs in {interim} were being replaced, so the tables may not "
+        "match fichas_manifest.json, and readers refuse them until they do; run the command "
+        "again"
+    )
+
+
+def interrupt_the_cleanup(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Interrupt the first removal of a staged table, as a second Ctrl+C would; return the
+    name of the file whose removal was interrupted."""
+    original = Path.unlink
+    interrupted: list[str] = []
+
+    def unlink(self: Path, missing_ok: bool = False) -> None:
+        if self.name.endswith(".staged") and not interrupted:
+            interrupted.append(self.name)
+            raise KeyboardInterrupt
+        original(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    return interrupted
+
+
+@pytest.mark.parametrize(
+    ("stop_at", "manifest_write_interrupted", "moved_before_the_stop"),
+    [(2, False, ["fichas.parquet"]), (None, True, ["fichas.parquet", "exclusions.parquet"])],
+    ids=["between-the-moves", "before-the-manifest"],
+)
+def test_an_interruption_while_the_tables_move_says_that_the_outputs_need_a_new_run(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    stop_at: int | None,
+    manifest_write_interrupted: bool,
+    moved_before_the_stop: list[str],
+) -> None:
+    write_project(tmp_path)
+    assert run(tmp_path) == 0
+    interim = tmp_path.resolve() / "data" / "interim" / SNAPSHOT_ID
+    before = published(interim)
+    change_the_key(tmp_path)
+    moved = record_the_moves(monkeypatch, stop_at=stop_at)
+    if manifest_write_interrupted:
+        monkeypatch.setattr(build_fichas_module, "write_text_atomically", interrupting_write)
+    capsys.readouterr()
+
+    assert run(tmp_path) == 130
+
+    assert moved == moved_before_the_stop
+    assert capsys.readouterr().err.strip() == being_replaced(interim)
+    after = published(interim)
+    assert after["fichas.parquet"] != before["fichas.parquet"]
+    assert after["fichas_manifest.json"] == before["fichas_manifest.json"]
+    assert leftovers(interim) == []
+    with pytest.raises(ValueError, match="fichas.parquet differs from fichas_manifest.json"):
+        load_fichas(interim)
+
+
+def test_a_second_interruption_during_the_cleanup_keeps_the_message_of_the_moves(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_project(tmp_path)
+    assert run(tmp_path) == 0
+    interim = tmp_path.resolve() / "data" / "interim" / SNAPSHOT_ID
+    change_the_key(tmp_path)
+    record_the_moves(monkeypatch, stop_at=2)
+    interrupted = interrupt_the_cleanup(monkeypatch)
+    capsys.readouterr()
+
+    assert run(tmp_path) == 130
+
+    assert interrupted == ["fichas.parquet.staged"]
+    assert capsys.readouterr().err.strip() == being_replaced(interim)
+    with pytest.raises(ValueError, match="fichas.parquet differs from fichas_manifest.json"):
+        load_fichas(interim)
+
+
+def test_an_interruption_during_the_cleanup_of_a_complete_publish_left_nothing_half_written(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_project(tmp_path)
+    assert run(tmp_path) == 0
+    interim = tmp_path / "data" / "interim" / SNAPSHOT_ID
+    before = published(interim)
+    change_the_key(tmp_path)
+    interrupted = interrupt_the_cleanup(monkeypatch)
+    capsys.readouterr()
+
+    assert run(tmp_path) == 130
+
+    assert interrupted == ["fichas.parquet.staged"]
+    assert capsys.readouterr().err.strip() == NOTHING_HALF_WRITTEN
+    assert published(interim)["fichas_manifest.json"] != before["fichas_manifest.json"]
+    assert load_fichas(interim) == ParquetTableStore().read(Ficha, interim / "fichas.parquet")
+
+
+def test_an_interruption_while_the_tables_move_stays_a_keyboard_interrupt_for_callers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_project(tmp_path)
+    record_the_moves(monkeypatch, stop_at=2)
+    config = load_config(tmp_path / "config" / "default.yaml")
+
+    with pytest.raises(KeyboardInterrupt) as caught:
+        build_dataset(config, tmp_path, key=KEY, clock=lambda: RUN_TIME)
+
+    assert isinstance(caught.value, PublishInterrupted)
+    assert caught.value.interim_dir == tmp_path / "data" / "interim" / SNAPSHOT_ID
+
+
 def test_the_reader_returns_the_fichas_of_outputs_that_match_their_manifest(
     tmp_path: Path,
 ) -> None:
@@ -1060,6 +1231,37 @@ def test_the_reader_returns_the_fichas_of_outputs_that_match_their_manifest(
 
     assert (manifest.snapshot_id, manifest.counts["included"]) == (SNAPSHOT_ID, 2)
     assert load_fichas(interim) == ParquetTableStore().read(Ficha, interim / "fichas.parquet")
+
+
+def test_the_reader_returns_the_table_it_checked_even_when_it_is_replaced_right_after(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_project(tmp_path)
+    assert run(tmp_path) == 0
+    interim = tmp_path / "data" / "interim" / SNAPSHOT_ID
+    table = interim / "fichas.parquet"
+    earlier_table = table.read_bytes()
+    change_the_key(tmp_path)
+    assert run(tmp_path) == 0
+    checked = ParquetTableStore().read(Ficha, table)
+    original_read_bytes = Path.read_bytes
+    replaced: list[Path] = []
+
+    def read_bytes(self: Path) -> bytes:
+        content = original_read_bytes(self)
+        if self.name == "fichas.parquet" and not replaced:
+            # A concurrent build puts another table in place right after this read.
+            self.write_bytes(earlier_table)
+            replaced.append(self)
+        return content
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+
+    fichas = load_fichas(interim)
+
+    assert replaced == [table]
+    assert fichas == checked
+    assert ParquetTableStore().read(Ficha, table) != checked
 
 
 @pytest.mark.parametrize("name", ["fichas.parquet", "exclusions.parquet"])
@@ -1084,6 +1286,66 @@ def test_the_reader_refuses_outputs_with_a_missing_file(tmp_path: Path, name: st
 
     with pytest.raises(FileNotFoundError, match=name):
         verify_fichas_outputs(path.parent)
+
+
+LEAK = "SYNTHETICLEAK"
+"""Text put into a damaged manifest; no error message may repeat it."""
+
+
+def truncated(content: bytes) -> bytes:
+    return content[: len(content) // 2]
+
+
+def garbled(content: bytes) -> bytes:
+    return b"\x00\xff" + LEAK.encode() + content[2 + len(LEAK) :]
+
+
+def with_a_bad_snapshot_id(content: bytes) -> bytes:
+    """Replace the snapshot id with one that its validator refuses, quoting the value."""
+    return content.replace(SNAPSHOT_ID.encode(), f"../{LEAK}".encode())
+
+
+def with_an_unknown_key(content: bytes) -> bytes:
+    manifest = json.loads(content)
+    manifest[f"{LEAK} key"] = 1
+    return json.dumps(manifest).encode()
+
+
+def with_a_count_key_on_two_lines(content: bytes) -> bytes:
+    manifest = json.loads(content)
+    manifest["counts"][f"{LEAK}\nsecond line"] = -5
+    return json.dumps(manifest).encode()
+
+
+@pytest.mark.parametrize(
+    ("damage", "issues"),
+    [
+        (truncated, "json_invalid"),
+        (garbled, "json_invalid"),
+        (with_a_bad_snapshot_id, "snapshot_id: value_error"),
+        (with_an_unknown_key, "<key>: extra_forbidden"),
+        (with_a_count_key_on_two_lines, "counts.<key>: greater_than_equal"),
+    ],
+    ids=["truncated", "garbled", "bad-snapshot-id", "unknown-key", "count-key-on-two-lines"],
+)
+@pytest.mark.parametrize("reader", [verify_fichas_outputs, load_fichas])
+def test_a_damaged_manifest_is_refused_in_one_line_that_points_to_the_build(
+    tmp_path: Path, damage: Any, issues: str, reader: Any
+) -> None:
+    write_project(tmp_path)
+    assert run(tmp_path) == 0
+    interim = tmp_path / "data" / "interim" / SNAPSHOT_ID
+    path = interim / "fichas_manifest.json"
+    path.write_bytes(damage(path.read_bytes()))
+
+    with pytest.raises(ValueError) as caught:
+        reader(interim)
+
+    # The issues name the manifest's own fields only, never a key or a value of the file.
+    assert str(caught.value) == (
+        f"fichas_manifest.json in {interim} is damaged ({issues}); run {BUILD_COMMAND} again"
+    )
+    assert LEAK not in "".join(traceback.format_exception(caught.value))
 
 
 def two_word_lemmatizer(texts: Sequence[str]) -> list[list[str]]:

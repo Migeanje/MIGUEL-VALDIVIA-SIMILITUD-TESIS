@@ -41,7 +41,9 @@ into the gitignored ``data/interim/<snapshot_id>/``:
 The three files are published as one unit. Both tables are staged beside their final names
 and hashed there, then moved into place, and the manifest is written last: it is the commit
 point. :func:`verify_fichas_outputs` accepts the tables only while they match the manifest,
-and :func:`load_fichas`, which later steps read the fichas with, checks them first.
+and :func:`load_fichas`, which later steps read the fichas with, checks them first and then
+parses the very bytes it checked. Ctrl+C before the moves leaves the previous outputs; once
+the moves have begun, the command says that the outputs need a new run.
 
 ``--report-out DIR`` also writes the quality report, numbers, handles and lemmas only, as
 ``DIR/quality_report.json`` and ``DIR/quality_report.md``
@@ -153,7 +155,11 @@ from thematic_redundancy.shared.config import (
     load_config,
 )
 from thematic_redundancy.shared.filesystem import write_text_atomically
-from thematic_redundancy.shared.storage import ParquetTableStore, TableStore
+from thematic_redundancy.shared.storage import (
+    ChecksumMismatchError,
+    ParquetTableStore,
+    TableStore,
+)
 
 CONFIG_PATH = Path("config") / "default.yaml"
 """Configuration that the command line loads, relative to the project root."""
@@ -204,6 +210,19 @@ Metadata = Mapping[str, Sequence[Mapping[str, JsonValue]]]
 
 class FichasCheckError(ValueError):
     """The fichas break a rule that the build enforces, so nothing was written."""
+
+
+class PublishInterrupted(KeyboardInterrupt):
+    """An interruption while the new tables moved into place, before the manifest was written.
+
+    The tables in ``interim_dir`` may then differ from the manifest, which
+    :func:`verify_fichas_outputs` refuses until the build runs again. It stays a
+    :class:`KeyboardInterrupt`, so any caller that handles one handles it too.
+    """
+
+    def __init__(self, interim_dir: Path) -> None:
+        super().__init__(f"interrupted while the fichas outputs in {interim_dir} were replaced")
+        self.interim_dir = interim_dir
 
 
 class _Model(BaseModel):
@@ -588,6 +607,9 @@ def build_dataset(
         ValueError: if ``fichas.expected`` belongs to another snapshot, if an input is
             damaged, changed or belongs to another snapshot, or if the inputs disagree.
         OSError: if reading or writing the disk fails.
+        PublishInterrupted: if an interruption comes while the tables move into place or
+            before the manifest is written, or during the cleanup that follows one; any
+            other stays a plain :class:`KeyboardInterrupt`.
     """
     started = timer()
     store = store or ParquetTableStore()
@@ -632,35 +654,49 @@ def build_dataset(
     fichas_path = interim_dir / FICHAS_FILE_NAME
     exclusions_path = interim_dir / EXCLUSIONS_FILE_NAME
     staged = {path: _staged(path) for path in (fichas_path, exclusions_path)}
+    replacing = False  # True from the first move of a table until the manifest is written.
     try:
-        store.write(fichas, staged[fichas_path], model_cls=Ficha)
-        store.write(
-            [_exclusion(ficha, handles[ficha.item_uuid]) for ficha in fichas if not ficha.include],
-            staged[exclusions_path],
-            model_cls=Exclusion,
-        )
-        manifest = FichasManifest(
-            snapshot_id=snapshot_id,
-            created_at=clock().astimezone(UTC),
-            metadata_sha256=snapshot_manifest.metadata_sha256,
-            objectives_table_sha256=objectives_sha256,
-            fichas_file=fichas_path.name,
-            fichas_sha256=_sha256(staged[fichas_path]),
-            exclusions_file=exclusions_path.name,
-            exclusions_sha256=_sha256(staged[exclusions_path]),
-            counts=counts,
-            seconds=round(max(timer() - started, 0.0), 3),
-        )
-        for path, staged_path in staged.items():
-            os.replace(staged_path, path)
-    finally:
-        # A staged table has moved into place by now, or it is removed.
-        for staged_path in staged.values():
-            staged_path.unlink(missing_ok=True)
-    # The commit point: until it is written, the manifest describes the previous tables.
-    write_text_atomically(
-        interim_dir / FICHAS_MANIFEST_FILE_NAME, manifest.model_dump_json(indent=2)
-    )
+        try:
+            store.write(fichas, staged[fichas_path], model_cls=Ficha)
+            store.write(
+                [
+                    _exclusion(ficha, handles[ficha.item_uuid])
+                    for ficha in fichas
+                    if not ficha.include
+                ],
+                staged[exclusions_path],
+                model_cls=Exclusion,
+            )
+            manifest = FichasManifest(
+                snapshot_id=snapshot_id,
+                created_at=clock().astimezone(UTC),
+                metadata_sha256=snapshot_manifest.metadata_sha256,
+                objectives_table_sha256=objectives_sha256,
+                fichas_file=fichas_path.name,
+                fichas_sha256=_sha256(staged[fichas_path]),
+                exclusions_file=exclusions_path.name,
+                exclusions_sha256=_sha256(staged[exclusions_path]),
+                counts=counts,
+                seconds=round(max(timer() - started, 0.0), 3),
+            )
+            replacing = True
+            for path, staged_path in staged.items():
+                os.replace(staged_path, path)
+            # The commit point: until it is written, the manifest describes the previous tables.
+            write_text_atomically(
+                interim_dir / FICHAS_MANIFEST_FILE_NAME, manifest.model_dump_json(indent=2)
+            )
+            replacing = False
+        finally:
+            # A staged table has moved into place by now, or it is removed.
+            for staged_path in staged.values():
+                staged_path.unlink(missing_ok=True)
+    except KeyboardInterrupt as interruption:
+        # Checked out here, so that a second Ctrl+C during the cleanup, which replaces the
+        # first one, still gets the label of the moves.
+        if replacing:
+            raise PublishInterrupted(interim_dir) from interruption
+        raise
     return FichasBuild(
         snapshot_id=snapshot_id,
         fichas=fichas,
@@ -726,22 +762,9 @@ def verify_fichas_outputs(interim_dir: Path) -> FichasManifest:
         FileNotFoundError: if the manifest or one of the tables is missing.
         ValueError: if the manifest is damaged, or if a table differs from it.
     """
-    path = interim_dir / FICHAS_MANIFEST_FILE_NAME
-    if not path.is_file():
-        raise FileNotFoundError(f"no {path.name} in {interim_dir}; run {BUILD_COMMAND} first")
-    manifest = FichasManifest.model_validate_json(path.read_bytes())
-    for name, expected in (
-        (FICHAS_FILE_NAME, manifest.fichas_sha256),
-        (EXCLUSIONS_FILE_NAME, manifest.exclusions_sha256),
-    ):
-        table = interim_dir / name
-        if not table.is_file():
-            raise FileNotFoundError(f"{name} is missing from {interim_dir}; run {BUILD_COMMAND}")
-        if _sha256(table) != expected:
-            raise ValueError(
-                f"{name} differs from {path.name}, as after a stopped build or a later edit; "
-                f"run {BUILD_COMMAND} again"
-            )
+    manifest = _fichas_manifest(interim_dir)
+    _check_table(interim_dir, FICHAS_FILE_NAME, manifest.fichas_sha256)
+    _check_table(interim_dir, EXCLUSIONS_FILE_NAME, manifest.exclusions_sha256)
     return manifest
 
 
@@ -749,12 +772,64 @@ def load_fichas(interim_dir: Path, *, store: TableStore | None = None) -> tuple[
     """Return the fichas saved in ``interim_dir``, once :func:`verify_fichas_outputs` accepts
     the outputs.
 
+    The manifest and the exclusion log are checked as there. The fichas table goes through
+    :meth:`~thematic_redundancy.shared.storage.TableStore.read_verified`, which checks and
+    parses the same stored bytes, so a build that replaces the table meanwhile cannot slip
+    another table in.
+
     Raises:
         FileNotFoundError: if an output is missing.
         ValueError: if the outputs disagree with their manifest, or the table is damaged.
     """
-    verify_fichas_outputs(interim_dir)
-    return (store or ParquetTableStore()).read(Ficha, interim_dir / FICHAS_FILE_NAME)
+    manifest = _fichas_manifest(interim_dir)
+    _check_table(interim_dir, EXCLUSIONS_FILE_NAME, manifest.exclusions_sha256)
+    try:
+        return (store or ParquetTableStore()).read_verified(
+            Ficha, _table_path(interim_dir, FICHAS_FILE_NAME), sha256=manifest.fichas_sha256
+        )
+    except ChecksumMismatchError as error:
+        raise ValueError(_differs_from_the_manifest(FICHAS_FILE_NAME)) from error
+
+
+def _fichas_manifest(interim_dir: Path) -> FichasManifest:
+    """Return the fichas manifest in ``interim_dir``.
+
+    Raises:
+        FileNotFoundError: if there is none.
+        ValueError: if it is damaged; the message names its fields, never its content.
+    """
+    path = interim_dir / FICHAS_MANIFEST_FILE_NAME
+    if not path.is_file():
+        raise FileNotFoundError(f"no {path.name} in {interim_dir}; run {BUILD_COMMAND} first")
+    try:
+        return FichasManifest.model_validate_json(path.read_bytes())
+    except ValidationError as error:
+        # Not chained: the validation error may quote the content of the file.
+        raise ValueError(
+            f"{path.name} in {interim_dir} is damaged ({_issue_types(error, FichasManifest)}); "
+            f"run {BUILD_COMMAND} again"
+        ) from None
+
+
+def _table_path(interim_dir: Path, name: str) -> Path:
+    """Return the path of the output table ``name`` once it exists."""
+    table = interim_dir / name
+    if not table.is_file():
+        raise FileNotFoundError(f"{name} is missing from {interim_dir}; run {BUILD_COMMAND}")
+    return table
+
+
+def _check_table(interim_dir: Path, name: str, sha256: str) -> None:
+    """Raise ``ValueError`` unless the SHA-256 of the output table ``name`` is ``sha256``."""
+    if _sha256(_table_path(interim_dir, name)) != sha256:
+        raise ValueError(_differs_from_the_manifest(name))
+
+
+def _differs_from_the_manifest(name: str) -> str:
+    return (
+        f"{name} differs from {FICHAS_MANIFEST_FILE_NAME}, as after a stopped build or a later "
+        f"edit; run {BUILD_COMMAND} again"
+    )
 
 
 # Helpers
@@ -803,6 +878,28 @@ def _problems(error: ValidationError) -> str:
         f"{'.'.join(str(part) for part in issue['loc']) or 'ficha'}: {issue['msg']}"
         for issue in error.errors(include_input=False, include_url=False)
     )
+
+
+KEY_PLACEHOLDER = "<key>"
+"""What an issue's location shows instead of a key or an index taken from the file."""
+
+
+def _issue_types(error: ValidationError, model_cls: type[BaseModel]) -> str:
+    """Return where and of which type each issue of ``error`` is, such as
+    ``fichas_sha256: string_pattern_mismatch`` or ``counts.<key>: greater_than_equal``.
+
+    The location names a field of ``model_cls`` only. Any other part of it comes from the
+    file, such as an unknown key or a key of a mapping, and shows as :data:`KEY_PLACEHOLDER`.
+    The message of the issue is left out, since it may quote the refused value.
+    """
+    issues = []
+    for issue in error.errors(include_input=False, include_url=False):
+        where = ".".join(
+            part if position == 0 and part in model_cls.model_fields else KEY_PLACEHOLDER
+            for position, part in enumerate(issue["loc"])
+        )
+        issues.append(f"{where}: {issue['type']}" if where else issue["type"])
+    return "; ".join(issues)
 
 
 def _sha256(path: Path) -> str:
@@ -889,6 +986,14 @@ def main(
             config, project_root, snapshot_id=arguments.snapshot_id, clock=clock, timer=timer
         )
         print(describe(built))
+    except PublishInterrupted as interruption:
+        print(
+            f"interrupted: the outputs in {interruption.interim_dir} were being replaced, so the "
+            f"tables may not match {FICHAS_MANIFEST_FILE_NAME}, and readers refuse them until "
+            "they do; run the command again",
+            file=sys.stderr,
+        )
+        return 130
     except KeyboardInterrupt:
         print("interrupted: nothing half-written was left; run the command again", file=sys.stderr)
         return 130

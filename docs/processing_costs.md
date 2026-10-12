@@ -128,6 +128,8 @@ across sessions with care.
 | 2026-10-12 | all | Test suite (`pytest -q`) | 1,251 tests, plus 3 skipped | 22.3–32.6 s (2 runs) | — | 0 | After T08a and its review fixes | plan T08a; time: run output |
 | 2026-10-12 | T09b | Text extraction re-run of one already extracted item (`extract_text --only`, without `--summary-out`), 2 runs | 1 PDF selected of 731 | 0.0 s (the command's own wall time); 1.2 s for the whole command, start-up included (second run) | — | 0 | Both runs skipped the item (0 extracted) through the shared run lock. The text manifest and all 731 page files kept their SHA-256 and modification times; the manifest was not rewritten | plan T09b; time: run output |
 | 2026-10-12 | all | Test suite (`pytest -q`) | 1,290 tests, plus 3 skipped | 23.1–25.0 s (2 runs) | — | 0 | After T09b item 1, the characterization tests of item 2, and the review fixes | plan T09b; time: run output |
+| 2026-10-12 | T12b | Read-only load of the real fichas through the one-read reader (`load_fichas`) | `fichas.parquet` (766 rows), with `exclusions.parquet` and `fichas_manifest.json` checked | 0.4–0.5 s (0.498 s, then 0.385 s after the review fixes), 2 runs; the check alone (`verify_fichas_outputs`) took 0.001–0.002 s | about 1,540–1,990 fichas/s (derived) | 0 | 766 fichas, 744 included, in both runs. The three files kept their SHA-256, sizes and modification times; nothing was built or written | plan T12b; time: run output |
+| 2026-10-12 | all | Test suite (`pytest -q`) | 1,319 tests, plus 3 skipped | 26.3–26.7 s (2 runs) | — | 0 | After T12b and its review fixes (1,310 tests in 25.8–29.3 s before them) | plan T12b; time: run output |
 
 ### Notes on the ledger
 

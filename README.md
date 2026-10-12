@@ -298,9 +298,11 @@ only when every check passes:
 
 The two tables are staged, moved into place together, and the manifest is written last, as the
 commit point. Later steps read the fichas with `load_fichas` (`corpus/build_fichas.py`), which
-refuses tables that differ from the manifest's SHA-256 values, as after a stopped build. When
-`--report-out` fails after the build, the `error:` line says that the fichas outputs were
-written and the quality report was not.
+refuses tables that differ from the manifest's SHA-256 values, as after a stopped build, and
+parses the same bytes that it checked. Ctrl+C before the moves leaves the previous outputs;
+once the moves have begun, the `interrupted:` line says that the tables may not match the
+manifest and that the command must run again. When `--report-out` fails after the build, the
+`error:` line says that the fichas outputs were written and the quality report was not.
 
 | Rule | Decision |
 |---|---|

@@ -4,6 +4,7 @@ The records are synthetic fichas, plus a small synthetic model for the column ty
 ficha does not use. Every test writes into its own temporary directory.
 """
 
+import hashlib
 import os
 import re
 from datetime import date
@@ -18,6 +19,7 @@ from pydantic import BaseModel, ConfigDict
 
 from thematic_redundancy.corpus.ficha import Ficha, doc_code_for
 from thematic_redundancy.shared.storage import (
+    ChecksumMismatchError,
     ParquetTableStore,
     SchemaMismatchError,
     TableStore,
@@ -508,3 +510,138 @@ def test_a_file_that_is_not_parquet_is_refused(tmp_path: Path) -> None:
 def test_a_missing_table_is_reported_as_missing(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         STORE.read(Ficha, tmp_path / "fichas.parquet")
+
+
+# Reading a table whose SHA-256 is known
+
+
+def sha256_of(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_a_verified_read_equals_the_plain_read(tmp_path: Path) -> None:
+    path = tmp_path / "fichas.parquet"
+    STORE.write(edge_fichas(), path)
+
+    stored = STORE.read_verified(Ficha, path, sha256=sha256_of(path))
+
+    assert stored == STORE.read(Ficha, path) == tuple(edge_fichas())
+
+
+def test_an_empty_table_passes_a_verified_read(tmp_path: Path) -> None:
+    path = tmp_path / "fichas.parquet"
+    STORE.write([], path, model_cls=Ficha)
+
+    assert STORE.read_verified(Ficha, path, sha256=sha256_of(path)) == ()
+
+
+def test_a_table_with_another_sha256_is_refused_before_it_is_parsed(tmp_path: Path) -> None:
+    path = tmp_path / "fichas.parquet"
+    path.write_bytes(b"not a parquet file")
+
+    with pytest.raises(ChecksumMismatchError) as caught:
+        STORE.read_verified(Ficha, path, sha256="0" * 64)
+
+    assert isinstance(caught.value, ValueError)
+    assert str(caught.value) == f"{path} does not have the expected SHA-256"
+
+
+def test_a_verified_read_parses_the_bytes_it_checked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "fichas.parquet"
+    STORE.write(edge_fichas(), path)
+    checked = sha256_of(path)
+    STORE.write([ficha(9)], tmp_path / "other.parquet")
+    other = (tmp_path / "other.parquet").read_bytes()
+    original_read_bytes = Path.read_bytes
+    replaced: list[Path] = []
+
+    def read_bytes(self: Path) -> bytes:
+        content = original_read_bytes(self)
+        if self == path and not replaced:
+            # Another writer puts a different table in place right after this read.
+            self.write_bytes(other)
+            replaced.append(self)
+        return content
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+
+    stored = STORE.read_verified(Ficha, path, sha256=checked)
+
+    assert replaced == [path]
+    assert stored == tuple(edge_fichas())
+
+
+def missing_and_unexpected_columns(tmp_path: Path) -> pa.Table:
+    table = stored_table(tmp_path).drop_columns(["abstract"])
+    return table.append_column("author_name", pa.array(["x", "y", "z"]))
+
+
+def nullable_title(tmp_path: Path) -> pa.Table:
+    return with_field(stored_table(tmp_path), pa.field("title", pa.string(), nullable=True))
+
+
+def invalid_second_row(tmp_path: Path) -> pa.Table:
+    table = stored_table(tmp_path)
+    codes = table.column("doc_code").to_pylist()
+    return with_field(
+        table, table.schema.field("doc_code"), pa.array([codes[0], "DOC-00000000", codes[2]])
+    )
+
+
+@pytest.mark.parametrize(
+    "damage", [missing_and_unexpected_columns, nullable_title, invalid_second_row]
+)
+def test_a_verified_read_refuses_a_table_with_the_error_of_the_plain_read(
+    tmp_path: Path, damage: Any
+) -> None:
+    path = tmp_path / "fichas.parquet"
+    write_raw(path, damage(tmp_path))
+
+    with pytest.raises(ValueError) as plain:
+        STORE.read(Ficha, path)
+    with pytest.raises(ValueError) as verified:
+        STORE.read_verified(Ficha, path, sha256=sha256_of(path))
+
+    assert type(verified.value) is type(plain.value)
+    assert str(verified.value) == str(plain.value)
+    assert str(path) in str(verified.value)
+
+
+def half_of_a_table(tmp_path: Path) -> bytes:
+    path = tmp_path / "source.parquet"
+    STORE.write(edge_fichas(), path)
+    content = path.read_bytes()
+    return content[: len(content) // 2]
+
+
+@pytest.mark.parametrize(
+    "content",
+    [lambda _: b"not a parquet file", lambda _: b"", half_of_a_table],
+    ids=["not-parquet", "empty", "truncated"],
+)
+def test_a_file_that_is_not_a_whole_table_is_refused_with_its_sha256(
+    tmp_path: Path, content: Any
+) -> None:
+    path = tmp_path / "fichas.parquet"
+    path.write_bytes(content(tmp_path))
+
+    with pytest.raises(ValueError):
+        STORE.read(Ficha, path)
+    with pytest.raises(ValueError) as caught:
+        STORE.read_verified(Ficha, path, sha256=sha256_of(path))
+    assert not isinstance(caught.value, ChecksumMismatchError)
+
+
+def test_a_verified_read_as_a_model_without_column_types_is_refused(tmp_path: Path) -> None:
+    path = tmp_path / "fichas.parquet"
+    STORE.write(edge_fichas(), path)
+
+    with pytest.raises(TypeError, match=r"Unstorable\.extra"):
+        STORE.read_verified(Unstorable, path, sha256=sha256_of(path))
+
+
+def test_a_verified_read_of_a_missing_table_reports_it_as_missing(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        STORE.read_verified(Ficha, tmp_path / "fichas.parquet", sha256="0" * 64)
