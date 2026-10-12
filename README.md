@@ -296,6 +296,12 @@ only when every check passes:
 | `data/interim/<snapshot_id>/fichas_manifest.json` | The SHA-256 of the inputs and outputs, the counts and the seconds | No |
 | `results/fichas/<snapshot_id>/quality_report.json` and `.md` | Written by `--report-out`: counts, public handles and lemmas only | Yes |
 
+The two tables are staged, moved into place together, and the manifest is written last, as the
+commit point. Later steps read the fichas with `load_fichas` (`corpus/build_fichas.py`), which
+refuses tables that differ from the manifest's SHA-256 values, as after a stopped build. When
+`--report-out` fails after the build, the `error:` line says that the fichas outputs were
+written and the quality report was not.
+
 | Rule | Decision |
 |---|---|
 | Inclusion (D01) | The exact `renati.type` fragment `#tesis`. Any other type is excluded as `non_thesis_type` and keeps its raw type |

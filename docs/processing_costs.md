@@ -122,6 +122,8 @@ across sessions with care.
 | 2026-10-11 | T13 (U8) | Offline load of both models from the cache (`SentenceTransformer`, CPU) | MiniLM and mpnet | 3.0 s; 3.9 s | — | 0 | `HF_HUB_OFFLINE=1`; checked dimensions 384 and 768, `max_seq_length` 128 and 250,002-token tokenizers | plan T13 and progress log; time: run output |
 | 2026-10-11 | all | Test suite (`pytest -q`) | 1,194 tests, plus 1 skipped | 38.6 s | — | 0 | The resume check, before the closure unit | time: run output |
 | 2026-10-11 | all | Test suite (`pytest -q`) | 1,196 tests, plus 1 skipped | 23.7 s | — | 0 | After the closure unit (D26) | plan progress log; time: run output |
+| 2026-10-11 | T12a | Fichas build re-run (`build_fichas`, without `--report-out`) | 766 records, 731 objectives rows: 766 fichas (744 included), 22 exclusions | 0.8 s (0.843 s); the whole command took 2.8 s, start-up included | about 910 records/s (derived) | 0 | The new one-unit publish wrote the same fichas and exclusions tables as on 2026-10-07 (same SHA-256) and left no staged file. The verified reader then checked the outputs in 0.002 s and loaded the 766 fichas in 0.46 s | `data/interim/20261002T224412Z/fichas_manifest.json` (`seconds`); plan T12a; run output |
+| 2026-10-11 | all | Test suite (`pytest -q`) | 1,215 tests, plus 1 skipped | 42.7–48.0 s (2 runs) | — | 0 | After T12a | plan T12a; time: run output |
 
 ### Notes on the ledger
 

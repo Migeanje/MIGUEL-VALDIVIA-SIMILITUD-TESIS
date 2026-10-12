@@ -17,6 +17,7 @@ from uuid import UUID
 import pytest
 import yaml
 
+from thematic_redundancy.corpus import build_fichas as build_fichas_module
 from thematic_redundancy.corpus.anonymize import person_identity, pseudonym
 from thematic_redundancy.corpus.build_fichas import (
     NOTE_INVALID_ADVISOR_ORCID,
@@ -26,7 +27,9 @@ from thematic_redundancy.corpus.build_fichas import (
     check_fichas,
     count_fichas,
     document_type,
+    load_fichas,
     main,
+    verify_fichas_outputs,
 )
 from thematic_redundancy.corpus.ficha import Ficha, doc_code_for
 from thematic_redundancy.corpus.pdf_manifest import (
@@ -957,3 +960,208 @@ def test_an_objectives_table_changed_since_its_manifest_is_refused(
     assert run(tmp_path) == 1
 
     assert "changed since" in capsys.readouterr().err
+
+
+OUTPUT_NAMES = ("fichas.parquet", "exclusions.parquet", "fichas_manifest.json")
+
+
+def published(interim: Path) -> dict[str, bytes]:
+    """Return the bytes of the three fichas outputs, by file name."""
+    return {name: (interim / name).read_bytes() for name in OUTPUT_NAMES}
+
+
+def leftovers(interim: Path) -> list[str]:
+    """Return the names in ``interim`` that are neither an input nor an output of the build."""
+    known = {"pages", "objectives.parquet", "objectives_manifest.json", *OUTPUT_NAMES}
+    return sorted(path.name for path in interim.iterdir() if path.name not in known)
+
+
+def change_the_key(root: Path) -> None:
+    """Replace the pseudonym key, which changes every person code and so the fichas table."""
+    (root / "data" / "interim" / "pseudonym.key").write_bytes(bytes(range(32, 64)))
+
+
+def failing_exclusions(error: BaseException) -> Any:
+    """Return a ``ParquetTableStore.write`` that raises ``error`` on the exclusion log."""
+    original = ParquetTableStore.write
+
+    def write(self: ParquetTableStore, models: Any, path: Path, *, model_cls: Any = None) -> None:
+        if model_cls is not None and model_cls.__name__ == "Exclusion":
+            raise error
+        original(self, models, path, model_cls=model_cls)
+
+    return write
+
+
+@pytest.mark.parametrize(
+    ("error", "code", "message"),
+    [
+        (OSError("synthetic disk failure"), 1, "error: synthetic disk failure"),
+        (
+            KeyboardInterrupt(),
+            130,
+            "interrupted: nothing half-written was left; run the command again",
+        ),
+    ],
+)
+def test_a_build_stopped_while_saving_leaves_the_previous_outputs_as_they_were(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    error: BaseException,
+    code: int,
+    message: str,
+) -> None:
+    write_project(tmp_path)
+    assert run(tmp_path) == 0
+    interim = tmp_path / "data" / "interim" / SNAPSHOT_ID
+    before = published(interim)
+    change_the_key(tmp_path)
+    monkeypatch.setattr(ParquetTableStore, "write", failing_exclusions(error))
+    capsys.readouterr()
+
+    assert run(tmp_path) == code
+
+    assert capsys.readouterr().err.strip() == message
+    assert published(interim) == before
+    assert leftovers(interim) == []
+
+
+def test_a_build_stopped_before_its_manifest_leaves_outputs_that_the_reader_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_project(tmp_path)
+    assert run(tmp_path) == 0
+    interim = tmp_path / "data" / "interim" / SNAPSHOT_ID
+    change_the_key(tmp_path)
+
+    def failing_write(path: Path, content: str) -> None:
+        raise OSError("synthetic disk failure")
+
+    monkeypatch.setattr(build_fichas_module, "write_json_atomically", failing_write)
+
+    assert run(tmp_path) == 1
+
+    # The tables moved into place, but the manifest, the commit point, still describes the
+    # previous ones.
+    with pytest.raises(ValueError, match="fichas.parquet differs from fichas_manifest.json"):
+        load_fichas(interim)
+    assert leftovers(interim) == []
+
+
+def test_the_reader_returns_the_fichas_of_outputs_that_match_their_manifest(
+    tmp_path: Path,
+) -> None:
+    write_project(tmp_path)
+    assert run(tmp_path) == 0
+    interim = tmp_path / "data" / "interim" / SNAPSHOT_ID
+
+    manifest = verify_fichas_outputs(interim)
+
+    assert (manifest.snapshot_id, manifest.counts["included"]) == (SNAPSHOT_ID, 2)
+    assert load_fichas(interim) == ParquetTableStore().read(Ficha, interim / "fichas.parquet")
+
+
+@pytest.mark.parametrize("name", ["fichas.parquet", "exclusions.parquet"])
+def test_the_reader_refuses_a_table_that_differs_from_the_manifest(
+    tmp_path: Path, name: str
+) -> None:
+    write_project(tmp_path)
+    assert run(tmp_path) == 0
+    path = tmp_path / "data" / "interim" / SNAPSHOT_ID / name
+    path.write_bytes(path.read_bytes() + b"\0")
+
+    with pytest.raises(ValueError, match=f"{name} differs from fichas_manifest.json"):
+        load_fichas(path.parent)
+
+
+@pytest.mark.parametrize("name", OUTPUT_NAMES)
+def test_the_reader_refuses_outputs_with_a_missing_file(tmp_path: Path, name: str) -> None:
+    write_project(tmp_path)
+    assert run(tmp_path) == 0
+    path = tmp_path / "data" / "interim" / SNAPSHOT_ID / name
+    path.unlink()
+
+    with pytest.raises(FileNotFoundError, match=name):
+        verify_fichas_outputs(path.parent)
+
+
+def two_word_lemmatizer(texts: Sequence[str]) -> list[list[str]]:
+    """A lemmatizer whose only lemma has two words, which the report's privacy gate refuses."""
+    return [["dos palabras"] for _ in texts]
+
+
+@pytest.mark.parametrize("failure", ["refused", "failed"])
+def test_a_quality_report_that_fails_after_the_build_says_that_the_fichas_were_written(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], failure: str
+) -> None:
+    write_project(tmp_path)
+    report_dir = tmp_path / "results" / "fichas" / SNAPSHOT_ID
+    if failure == "failed":
+        # The report directory cannot be made, since a file holds its name.
+        report_dir.parent.mkdir(parents=True)
+        report_dir.write_bytes(b"not a directory")
+    lemmatize = two_word_lemmatizer if failure == "refused" else fake_lemmatizer
+
+    code = main(
+        ["--project-root", str(tmp_path), "--report-out", str(report_dir)],
+        clock=lambda: RUN_TIME,
+        lemmatize=lemmatize,
+    )
+
+    assert code == 1
+    interim = tmp_path.resolve() / "data" / "interim" / SNAPSHOT_ID
+    error = capsys.readouterr().err
+    assert error.startswith(
+        f"error: the fichas outputs were written to {interim}, but the quality report was not: "
+    )
+    assert len(error.strip().splitlines()) == 1
+    manifest = json.loads((interim / "fichas_manifest.json").read_text(encoding="utf-8"))
+    fichas_sha256 = hashlib.sha256((interim / "fichas.parquet").read_bytes()).hexdigest()
+    assert manifest["fichas_sha256"] == fichas_sha256
+    assert not (report_dir / "quality_report.json").exists()
+
+
+def interrupting_lemmatizer(texts: Sequence[str]) -> list[list[str]]:
+    raise KeyboardInterrupt
+
+
+def test_an_interruption_during_the_quality_report_says_that_the_fichas_were_written(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_project(tmp_path)
+    report_dir = tmp_path / "results" / "fichas" / SNAPSHOT_ID
+
+    code = main(
+        ["--project-root", str(tmp_path), "--report-out", str(report_dir)],
+        clock=lambda: RUN_TIME,
+        lemmatize=interrupting_lemmatizer,
+    )
+
+    assert code == 130
+    interim = tmp_path.resolve() / "data" / "interim" / SNAPSHOT_ID
+    assert capsys.readouterr().err.strip() == (
+        f"interrupted: the fichas outputs were written to {interim}, but the quality report "
+        "was not; run the command again"
+    )
+    assert (interim / "fichas_manifest.json").is_file()
+    assert not report_dir.exists()
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["snapshot: [not closed\nfichas: {}\n", "fichas: {}\nfichas: {}\n"],
+    ids=["bad-syntax", "repeated-key"],
+)
+def test_an_unreadable_configuration_fails_in_one_line_and_writes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], content: str
+) -> None:
+    write_project(tmp_path)
+    (tmp_path / "config" / "default.yaml").write_bytes(content.encode())
+
+    assert run(tmp_path) == 1
+
+    error = capsys.readouterr().err
+    assert error.startswith("error: ")
+    assert len(error.strip().splitlines()) == 1
+    assert not (tmp_path / "data" / "interim" / SNAPSHOT_ID / "fichas.parquet").exists()

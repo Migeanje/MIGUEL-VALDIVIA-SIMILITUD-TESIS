@@ -14,7 +14,7 @@ is never changed here.
 :func:`write_quality_report` writes ``quality_report.json`` and a short
 ``quality_report.md``, but only after searching both for every title, abstract, abstract
 sentence, person's name and ORCID iD of the snapshot, and checking that each lemma is a
-single word. One failure writes nothing.
+single word. One failure writes neither file.
 """
 
 import hashlib
@@ -246,13 +246,13 @@ def write_quality_report(
     paths, once :func:`report_problems` finds nothing.
 
     Raises:
-        ValueError: if the report may not be published; nothing is written then.
+        ValueError: if the report may not be published; neither file is written then.
     """
     content = json.dumps(report, ensure_ascii=False, indent=2)
     markdown = render_markdown(report)
     problems = report_problems((content, markdown), report, records)
     if problems:
-        raise ValueError(f"{'; '.join(problems)}; nothing was written")
+        raise ValueError(f"{'; '.join(problems)}; the quality report was not written")
     directory.mkdir(parents=True, exist_ok=True)
     paths = (directory / REPORT_JSON_FILE_NAME, directory / REPORT_MARKDOWN_FILE_NAME)
     # The atomic writer of the JSON manifests takes any text.
@@ -355,7 +355,10 @@ def _advisor_orcid(
         with_orcid += orcid is not None
         is_valid = orcid is not None and normalize_orcid(orcid) is not None
         valid += is_valid
-        with_name += not is_valid and bool(metadata.get(ADVISOR_KEY))
+        # As the builder does, a name counts only when one of its values is not blank.
+        names = [entry.get("value") for entry in metadata.get(ADVISOR_KEY, ())]
+        has_name = any(isinstance(value, str) and value.strip() for value in names)
+        with_name += not is_valid and has_name
     return {
         "theses_with_orcid": with_orcid,
         "valid": valid,

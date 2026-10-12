@@ -86,11 +86,16 @@ def metadata_only(number: int, **overrides: Any) -> Ficha:
 
 
 def record(
-    number: int, *, orcid: str | None = None, advisor: str | None = ADVISOR
+    number: int,
+    *,
+    orcid: str | None = None,
+    advisor: str | Sequence[str | None] | None = ADVISOR,
 ) -> SnapshotRecord:
+    """Return a synthetic record; ``advisor`` gives one advisor value, or several as a list."""
     metadata: dict[str, Any] = {"dc.title": [{"value": f"{TITLE} {number}"}]}
     if advisor is not None:
-        metadata["dc.contributor.advisor"] = [{"value": advisor}]
+        values = [advisor] if isinstance(advisor, str) else advisor
+        metadata["dc.contributor.advisor"] = [{"value": value} for value in values]
     if orcid is not None:
         metadata["renati.advisor.orcid"] = [{"value": orcid}]
     return SnapshotRecord(
@@ -197,6 +202,27 @@ def test_the_report_counts_notes_by_type_orcids_dates_and_completeness() -> None
     assert completeness["pdf_sha256"] == 2
 
 
+@pytest.mark.parametrize(
+    ("advisor", "from_name"),
+    [
+        ([" "], 0),
+        (["", "\t"], 0),
+        ([None], 0),
+        ([], 0),
+        ([" ", ADVISOR], 1),
+    ],
+)
+def test_an_advisor_name_counts_only_when_one_of_its_values_is_not_blank(
+    advisor: list[str | None], from_name: int
+) -> None:
+    fichas = [metadata_only(1, advisor_code=None), ficha(2)]
+
+    orcid = report_of(fichas, [record(1, advisor=advisor), record(2)])["advisor_orcid"]
+
+    assert orcid["advisor_code_from_name"] == from_name + 1
+    assert orcid["without_advisor"] == 1
+
+
 def test_text_lengths_give_the_median_and_the_nearest_rank_p95() -> None:
     fichas = [ficha(n, title="x" * (10 * n)) for n in range(1, 21)]
 
@@ -283,12 +309,15 @@ def test_the_report_and_its_markdown_hold_numbers_handles_and_lemmas_only(
     assert "| Included theses | 3 |" in markdown_path.read_text(encoding="utf-8")
 
 
-def test_a_report_that_holds_a_title_is_refused_and_nothing_is_written(tmp_path: Path) -> None:
+def test_a_report_that_holds_a_title_is_refused_and_not_written(tmp_path: Path) -> None:
     fichas, records = corpus()
     report = report_of(fichas, records)
     report["provenance"]["note"] = f"{TITLE} 1"
 
-    with pytest.raises(ValueError, match="1 string.* taken from the snapshot; nothing was written"):
+    # The message names the report alone: the fichas outputs are written before it.
+    with pytest.raises(
+        ValueError, match="1 string.* taken from the snapshot; the quality report was not written$"
+    ):
         write_quality_report(tmp_path / "out", report, records)
 
     assert not (tmp_path / "out").exists()

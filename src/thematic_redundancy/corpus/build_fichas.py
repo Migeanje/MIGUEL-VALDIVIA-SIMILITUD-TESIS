@@ -31,12 +31,17 @@ fully. :func:`check_fichas` then stops the build unless every document code is u
 PDF serves two included theses, and the counts equal those declared in ``fichas.expected``
 for the snapshot.
 
-:func:`build_dataset` reads the inputs, builds and checks the fichas, and only then writes,
-atomically, into the gitignored ``data/interim/<snapshot_id>/``:
+:func:`build_dataset` reads the inputs, builds and checks the fichas, and only then writes
+into the gitignored ``data/interim/<snapshot_id>/``:
 
 - ``fichas.parquet``: every ficha, through the table-store port; it holds thesis texts;
 - ``exclusions.parquet``: the excluded records with their reason, and no text;
 - ``fichas_manifest.json``: the inputs' and outputs' SHA-256, the counts and the seconds.
+
+The three files are published as one unit. Both tables are staged beside their final names
+and hashed there, then moved into place, and the manifest is written last: it is the commit
+point. :func:`verify_fichas_outputs` accepts the tables only while they match the manifest,
+and :func:`load_fichas`, which later steps read the fichas with, checks them first.
 
 ``--report-out DIR`` also writes the quality report, numbers, handles and lemmas only, as
 ``DIR/quality_report.json`` and ``DIR/quality_report.md``
@@ -48,6 +53,7 @@ atomically, into the gitignored ``data/interim/<snapshot_id>/``:
 
 import argparse
 import hashlib
+import os
 import sys
 import time
 from collections import Counter
@@ -155,9 +161,14 @@ CONFIG_PATH = Path("config") / "default.yaml"
 LOCATE_COMMAND = "uv run python -m thematic_redundancy.extraction.locate_objectives"
 """Command that writes the objectives table; error messages point to it."""
 
+BUILD_COMMAND = "uv run python -m thematic_redundancy.corpus.build_fichas"
+"""Command that writes the fichas outputs; the reader's error messages point to it."""
+
 FICHAS_FILE_NAME = "fichas.parquet"
 EXCLUSIONS_FILE_NAME = "exclusions.parquet"
 FICHAS_MANIFEST_FILE_NAME = "fichas_manifest.json"
+STAGED_SUFFIX = ".staged"
+"""Suffix of a table staged beside its final name until the outputs are published."""
 
 AUTHOR_KEY = "dc.contributor.author"
 ACCESSIONED_KEY = "dc.date.accessioned"
@@ -565,6 +576,12 @@ def build_dataset(
     ``key`` is the pseudonym key; by default it is loaded, or created once, at
     :func:`~thematic_redundancy.corpus.anonymize.default_key_path`.
 
+    Both tables are staged and hashed before either one replaces its previous version, and
+    the manifest is written last. A failure or an interruption before the tables move into
+    place removes the staged files and leaves the previous outputs as they were. A stop
+    between the two moves, or before the manifest is written, leaves tables that the manifest
+    does not describe, which :func:`verify_fichas_outputs` refuses until the build runs again.
+
     Raises:
         FileNotFoundError: if the snapshot or an input of an earlier step is missing.
         FichasCheckError: if the fichas fail an enforced check; nothing is written then.
@@ -614,24 +631,33 @@ def build_dataset(
     handles = {record.uuid: record.handle for record in records}
     fichas_path = interim_dir / FICHAS_FILE_NAME
     exclusions_path = interim_dir / EXCLUSIONS_FILE_NAME
-    store.write(fichas, fichas_path, model_cls=Ficha)
-    store.write(
-        [_exclusion(ficha, handles[ficha.item_uuid]) for ficha in fichas if not ficha.include],
-        exclusions_path,
-        model_cls=Exclusion,
-    )
-    manifest = FichasManifest(
-        snapshot_id=snapshot_id,
-        created_at=clock().astimezone(UTC),
-        metadata_sha256=snapshot_manifest.metadata_sha256,
-        objectives_table_sha256=objectives_sha256,
-        fichas_file=fichas_path.name,
-        fichas_sha256=_sha256(fichas_path),
-        exclusions_file=exclusions_path.name,
-        exclusions_sha256=_sha256(exclusions_path),
-        counts=counts,
-        seconds=round(max(timer() - started, 0.0), 3),
-    )
+    staged = {path: _staged(path) for path in (fichas_path, exclusions_path)}
+    try:
+        store.write(fichas, staged[fichas_path], model_cls=Ficha)
+        store.write(
+            [_exclusion(ficha, handles[ficha.item_uuid]) for ficha in fichas if not ficha.include],
+            staged[exclusions_path],
+            model_cls=Exclusion,
+        )
+        manifest = FichasManifest(
+            snapshot_id=snapshot_id,
+            created_at=clock().astimezone(UTC),
+            metadata_sha256=snapshot_manifest.metadata_sha256,
+            objectives_table_sha256=objectives_sha256,
+            fichas_file=fichas_path.name,
+            fichas_sha256=_sha256(staged[fichas_path]),
+            exclusions_file=exclusions_path.name,
+            exclusions_sha256=_sha256(staged[exclusions_path]),
+            counts=counts,
+            seconds=round(max(timer() - started, 0.0), 3),
+        )
+        for path, staged_path in staged.items():
+            os.replace(staged_path, path)
+    finally:
+        # A staged table has moved into place by now, or it is removed.
+        for staged_path in staged.values():
+            staged_path.unlink(missing_ok=True)
+    # The commit point: until it is written, the manifest describes the previous tables.
     write_json_atomically(
         interim_dir / FICHAS_MANIFEST_FILE_NAME, manifest.model_dump_json(indent=2)
     )
@@ -681,6 +707,54 @@ def _exclusion(ficha: Ficha, handle: str | None) -> Exclusion:
         exclusion_reason=ficha.exclusion_reason,
         duplicate_of=ficha.duplicate_of,
     )
+
+
+def _staged(path: Path) -> Path:
+    return path.with_name(f"{path.name}{STAGED_SUFFIX}")
+
+
+# Reading the outputs
+
+
+def verify_fichas_outputs(interim_dir: Path) -> FichasManifest:
+    """Return the fichas manifest in ``interim_dir`` once both tables match its SHA-256 values.
+
+    The manifest is written after the tables, so the tables of a build that stopped before
+    its manifest are refused here, and so is a table edited later.
+
+    Raises:
+        FileNotFoundError: if the manifest or one of the tables is missing.
+        ValueError: if the manifest is damaged, or if a table differs from it.
+    """
+    path = interim_dir / FICHAS_MANIFEST_FILE_NAME
+    if not path.is_file():
+        raise FileNotFoundError(f"no {path.name} in {interim_dir}; run {BUILD_COMMAND} first")
+    manifest = FichasManifest.model_validate_json(path.read_bytes())
+    for name, expected in (
+        (FICHAS_FILE_NAME, manifest.fichas_sha256),
+        (EXCLUSIONS_FILE_NAME, manifest.exclusions_sha256),
+    ):
+        table = interim_dir / name
+        if not table.is_file():
+            raise FileNotFoundError(f"{name} is missing from {interim_dir}; run {BUILD_COMMAND}")
+        if _sha256(table) != expected:
+            raise ValueError(
+                f"{name} differs from {path.name}, as after a stopped build or a later edit; "
+                f"run {BUILD_COMMAND} again"
+            )
+    return manifest
+
+
+def load_fichas(interim_dir: Path, *, store: TableStore | None = None) -> tuple[Ficha, ...]:
+    """Return the fichas saved in ``interim_dir``, once :func:`verify_fichas_outputs` accepts
+    the outputs.
+
+    Raises:
+        FileNotFoundError: if an output is missing.
+        ValueError: if the outputs disagree with their manifest, or the table is damaged.
+    """
+    verify_fichas_outputs(interim_dir)
+    return (store or ParquetTableStore()).read(Ficha, interim_dir / FICHAS_FILE_NAME)
 
 
 # Helpers
@@ -815,32 +889,49 @@ def main(
             config, project_root, snapshot_id=arguments.snapshot_id, clock=clock, timer=timer
         )
         print(describe(built))
-        if arguments.report_out is not None:
-            started = timer()
-            report = quality_report(
-                built.fichas,
-                built.records,
-                program_keys=[program.key for program in config.snapshot.programs],
-                domain_stopwords=load_domain_stopwords(project_root / DOMAIN_STOPWORDS_FILE),
-                lemmatize=lemmatize or spacy_lemmatizer,
-                provenance={
-                    "snapshot_id": built.snapshot_id,
-                    "created_at": built.manifest.created_at.isoformat().replace("+00:00", "Z"),
-                    "metadata_sha256": built.manifest.metadata_sha256,
-                    "objectives_table_sha256": built.manifest.objectives_table_sha256,
-                    "fichas_sha256": built.manifest.fichas_sha256,
-                },
-            )
-            paths = write_quality_report(arguments.report_out, report, built.records)
-            seconds = max(timer() - started, 0.0)
-            print(f"Quality report {paths[0].parent} ({seconds:.1f} s, stopword re-check included)")
     except KeyboardInterrupt:
         print("interrupted: nothing half-written was left; run the command again", file=sys.stderr)
         return 130
     except (OSError, ValueError, yaml.YAMLError) as error:
-        print(f"error: {' '.join(str(error).split())}", file=sys.stderr)
+        print(f"error: {_one_line(error)}", file=sys.stderr)
         return 1
+    if arguments.report_out is None:
+        return 0
+    # The fichas outputs are published by now, so a failed report must not read as theirs.
+    outcome = (
+        f"the fichas outputs were written to {built.fichas_path.parent}, but the quality report "
+        "was not"
+    )
+    try:
+        started = timer()
+        report = quality_report(
+            built.fichas,
+            built.records,
+            program_keys=[program.key for program in config.snapshot.programs],
+            domain_stopwords=load_domain_stopwords(project_root / DOMAIN_STOPWORDS_FILE),
+            lemmatize=lemmatize or spacy_lemmatizer,
+            provenance={
+                "snapshot_id": built.snapshot_id,
+                "created_at": built.manifest.created_at.isoformat().replace("+00:00", "Z"),
+                "metadata_sha256": built.manifest.metadata_sha256,
+                "objectives_table_sha256": built.manifest.objectives_table_sha256,
+                "fichas_sha256": built.manifest.fichas_sha256,
+            },
+        )
+        paths = write_quality_report(arguments.report_out, report, built.records)
+    except KeyboardInterrupt:
+        print(f"interrupted: {outcome}; run the command again", file=sys.stderr)
+        return 130
+    except (OSError, ValueError) as error:
+        print(f"error: {outcome}: {_one_line(error)}", file=sys.stderr)
+        return 1
+    seconds = max(timer() - started, 0.0)
+    print(f"Quality report {paths[0].parent} ({seconds:.1f} s, stopword re-check included)")
     return 0
+
+
+def _one_line(error: BaseException) -> str:
+    return " ".join(str(error).split())
 
 
 if __name__ == "__main__":

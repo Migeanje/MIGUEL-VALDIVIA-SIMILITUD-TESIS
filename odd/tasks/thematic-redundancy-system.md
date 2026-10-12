@@ -731,6 +731,7 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
 - [ ] **T11b** Follow-ups from the T11a reviews (non-blocking):
   - `_fsync_directory` in `experiments/domain_stopwords.py` tolerates only a failure to open the directory. An `OSError` from `os.fsync` on an opened directory (EINVAL on some network, FUSE or overlay filesystems) propagates after `os.replace` has already published the output, which contradicts its docstring. Tolerate it, and add a test. Both reviews raised it.
   - The documents-per-second test couples to the number of `perf_counter` readings in `main`. Assert only the format, or control the two readings that bracket the cleaner.
+  - Pin the D26 list in a test, by its 89-lemma count or the file's SHA-256, so the freeze before T18 is observable (review R3-001 of the closure unit `b6943fa`).
   - Route D. Risk M.
 - [x] **T12** Build the fichas dataset, the exclusion log, and a quality report. Inclusion requires an exact `renati.type` fragment `#tesis` (746 in snapshot `20261002T224412Z`). Suficiencia profesional appears in 5 spellings and is excluded with its reason.
   - Route D. Risk M.
@@ -768,12 +769,35 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - Slice 1 (849 lines): the config unit and the quality report: `shared/config.py`, `config/default.yaml`, `test_config.py`, `corpus/fichas_quality.py`, `test_fichas_quality.py`. Checked alone on a copy of `c121d78`: 1,127 passed, 1 skipped.
     - Slice 2 (2,312 lines): the builder, its CLI and the outputs: `corpus/build_fichas.py`, `test_build_fichas.py`, `results/fichas/20261002T224412Z/`, the README, the ledger and this plan. It depends on slice 1; both together give the 1,194 above.
   - Commit: `73f1676`, made by the user as one commit of 12 files instead of the two planned slices, since the whole 3,161-line candidate fit the review budget. Its tree `760a5e9…` is identical to the reviewed one. Approved before and after the commit, so the reviewed boundary is now `73f1676`.
-- [ ] **T12a** Follow-ups from the T12 reviews (non-blocking):
+- [x] **T12a** Follow-ups from the T12 reviews (non-blocking):
   - The three outputs of `build_dataset` (`fichas.parquet`, `exclusions.parquet`, `fichas_manifest.json`) are each written atomically, but not as a set (`corpus/build_fichas.py`, lines 615–637 at `73f1676`): a failure between writes leaves a mix of new and old files. Publish them as one unit, or have readers check the manifest's SHA-256 values.
   - When `--report-out` fails after the build has published the fichas, `write_quality_report` raises "…; nothing was written" (`corpus/fichas_quality.py:255`), which reads as if the fichas were not written either. Say which files were written.
   - Some command-line paths of `build_fichas.main` have no test: an interruption (exit code 130), a refused or failed `--report-out` after the build (exit code 1, see above), and an unreadable configuration (`yaml.YAMLError`). The refusals for undeclared or missed counts and for a changed objectives table are tested.
   - `_advisor_orcid` (`corpus/fichas_quality.py:347`) counts an advisor name as present when its metadata list is not empty, even when every value is blank, so `advisor_code_from_name` can overcount. Count only non-blank values.
-  - Route D. Risk M.
+  - Route D. Risk M. Trigger: the builder, the quality report and their two test modules (4 non-trivial files), plus this plan, the ledger and the README.
+  - Evidence (2026-10-11):
+    - Finding 1, one publish unit. `build_dataset` stages both tables as `<name>.staged` through the table-store port and takes their SHA-256 from the staged files. It then moves both into place and writes `fichas_manifest.json` last, as the commit point.
+      - A failure or an interruption before the moves removes the staged files and leaves the previous outputs untouched, so the command's "nothing half-written was left" stays true.
+      - A stop between the two renames, or before the manifest, leaves tables that the manifest does not describe.
+      - The new reader `verify_fichas_outputs` checks both tables against the manifest's SHA-256 values and raises on a missing file or a mismatch. `load_fichas` reads the fichas through it; T13 and T14 read them with it.
+    - Finding 2. `write_quality_report` now ends a refusal with "the quality report was not written". When the report fails after the build, `main` prints one line, "error: the fichas outputs were written to <dir>, but the quality report was not: <reason>", and returns 1. An interruption there says the same and returns 130.
+    - Finding 3. New command-line tests: an interruption while saving (exit 130), a refused and a failed `--report-out` after the build (exit 1), an interruption during the report (exit 130), and an unreadable configuration, with bad syntax or a repeated key (exit 1).
+    - Finding 4. `_advisor_orcid` counts a name only when one advisor value is a non-blank string, as the builder reads it. The other counters are unchanged.
+    - RED → GREEN:
+      - Finding 4: 3 failed, 13 passed (a blank value, an empty and a tab value, and a null value were counted as names) → 16 passed.
+      - Finding 2, the report: 1 failed, 15 passed, on the old message "…; nothing was written" → 16 passed.
+      - Command line and publish: 5 failed, 69 passed. The two stopped-build tests failed because the old code had already replaced `fichas.parquet`; the other three were the report-failure and report-interruption messages. The two configuration tests passed at once, as characterization.
+      - Reader: a collection error, with `load_fichas` absent → 97 passed in the two modules.
+    - 17 throwaway mutants, each with a fresh bytecode cache, the modules byte-identical after each restore: all killed. They covered staged files not removed, the manifest written before the moves, the fichas table written straight to its final name, the reader skipping the exclusions or never comparing hashes, `load_fichas` not verifying, the wrong directory or exit code in the report messages, YAML errors not caught or not kept to one line, the old refusal message, and three weaker advisor rules (any string, a non-empty list, the first value only).
+    - Real data, numbers only:
+      - Before: `fichas.parquet` `4918fbc6…` and `exclusions.parquet` `bb915e46…`, equal to the manifest of 2026-10-07 (0.628 s).
+      - Re-run without `--report-out`: the same two SHA-256 values. Build 0.843 s by the manifest, 2.8 s for the whole command. No staged or temporary file was left.
+      - The reader accepted the real outputs in 0.002 s and loaded 766 fichas, 744 included, in 0.46 s.
+      - Finding 4 on the 744 included theses, in memory: 53 advisor codes from the name under the old rule and under the new one; 0 advisor lists hold only blank values. The committed `quality_report.json` (53) is unaffected, and nothing under `results/` changed.
+    - Checks: `pytest` 1,215 passed, 1 skipped (1,196 + 19 new: builder 14, report 5) in 42.7–48.0 s (2 runs); `ruff check` and `ruff format --check` clean; the attribution scan of the added lines found 0 hits.
+    - Size: 473 authored changed lines: 245 in the two test modules, 182 in the two source modules, 38 in this plan, 6 in the README and 2 in the ledger. That is above the 400-line guide, because the tests cover each failure path of the publish and of the command line.
+    - Known limit, outside the review findings: the two quality-report files (`quality_report.json`, then `quality_report.md`) are each written atomically but not as a pair. A stop between them leaves a new JSON beside an old Markdown, and the message "the quality report was not written" is then too strong. Harmless for the committed report; revisit if the report is regenerated.
+  - Commit: handed to the user.
 
 ### P3 — Representation and topic map (M3–M5)
 - [ ] **T13** Sentence-aligned chunker that is valid for both tokenizers. Property tests check that every chunk fits both tokenizers and no text is lost.
@@ -1023,6 +1047,13 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
   - Measured on the way: the MiniLM and mpnet tokenizers share one vocabulary (noted under D09 and T13).
   - Checks: `pytest` 1,196 passed, 1 skipped (1,194 + 2 new); `ruff check` and `ruff format --check` clean.
 
+- 2026-10-11: The user committed the closure unit as `b6943fa`. Its tree `810f8a5…` is identical to the reviewed one. It was approved before the commit; the post-commit check found it under the slice budget (medium risk, 115 lines), so the reviewed boundary stays `73f1676`.
+
+- 2026-10-11: T12a started and implemented on top of `b6943fa`, the closure unit. Route: D. Trigger: the builder, the quality report and their two test modules, plus this plan, the ledger and the README. The closure unit's review finding R3-001 joined T11b.
+  - The fichas outputs are now published as one unit, with the manifest as the commit point, and later steps read the fichas through the verified reader `load_fichas`.
+  - The real re-run wrote the same fichas and exclusions tables (same SHA-256). The committed quality report is unaffected by the advisor fix.
+  - Checks: `pytest` 1,215 passed, 1 skipped; `ruff check` and `ruff format --check` clean. The commit is handed to the user.
+
 ## Next step
 
 Resume checklist, in order:
@@ -1030,8 +1061,8 @@ Resume checklist, in order:
 1. **Re-sync.**
    - Read this document fully.
    - Run `git status`, `git log -5`, `uv run pytest -q`, `uv run ruff check .` and `uv run ruff format --check .`.
-   - Confirm that HEAD holds the 2026-10-11 closure unit (D26, U8, T12a) and that its tree is identical to the reviewed one. The last reviewed boundary before it is `73f1676`.
-2. **Follow-ups, by priority.** T12a, T08a and T09b first; then T11b, T07a, T05a, T04a and T02a, grouped. T10c waits for the user's redactor policy, which is needed before any new workbook, so before T20.
-3. **Phase 3.** T13, the chunker (both models are cached); T14; T15, with the 89-lemma stopword list of D26; then T16 to T19.
+   - Confirm that HEAD holds the T12a unit and that its tree is identical to the reviewed one. The commit before it is `b6943fa`, the 2026-10-11 closure unit (D26, U8). The last reviewed boundary is `73f1676`: `b6943fa` stays pending in the slice, so the next post-commit check starts from `73f1676`.
+2. **Follow-ups, by priority.** T08a and T09b first; then T11b (its D26 pin before T18), T07a, T05a, T04a and T02a, grouped. T10c waits for the user's redactor policy, which is needed before any new workbook, so before T20.
+3. **Phase 3.** T13, the chunker (both models are cached), reading the fichas through `load_fichas`; T14; T15, with the 89-lemma stopword list of D26; then T16 to T19.
 
 Pending user inputs: U1; U2 (before T19); U3 (month 3); U4, which must be agreed before any topic result exists, so before T16; U5; U6; U8 for any new download (the OpenAlex topics for T25 and, optionally, the 7 expired-embargo PDFs); the T10c redactor policy (before T20).
