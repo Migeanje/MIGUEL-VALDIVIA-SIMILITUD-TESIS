@@ -4,7 +4,9 @@
 # experiments/domain_stopwords.py. It ranks the 411 lemmas held by at least 5% of the 744
 # distinct theses (title without its place and year suffix, plus abstract), after spaCy's
 # Spanish stopwords. Curated by hand for task T11 on 2026-10-02 and revised for T11a on
-# 2026-10-03.
+# 2026-10-03. On 2026-10-11, decision D26 added ten verbs that the objectives re-check of
+# task T12 found in the objectives of 728 theses (results/fichas/20261002T224412Z/
+# quality_report.json).
 #
 # Criteria. A lemma is listed only when it carries no topic, because it:
 # - names the thesis genre: the document, its parts, aims and findings, or the type of
@@ -15,7 +17,8 @@
 # Frequent words that can tell topics apart stay out, even the most common ones: análisis,
 # estudio, metodología, implementación, diseño, proceso, sistema, trabajo, tiempo, costo,
 # productividad, mantenimiento. So do frequent words that fit no criterion above: empresa,
-# mejora, mejorar, desarrollo, desarrollar. When in doubt, a word stays out.
+# mejora, desarrollo. Outcome verbs that may name a topic (mejorar, optimizar, reducir,
+# incrementar) stay out until the topic review of task T16. When in doubt, a word stays out.
 #
 # Lemmas are written as the full cleaner produces them: in lower case, with accents and ñ.
 
@@ -72,6 +75,18 @@ establecer
 contribuir
 alcanzar
 basado
+# Added by D26: verbs that the objectives use to say what the research did. T11a had taken
+# desarrollar out with a group that fit no criterion; it returns under this one.
+diseñar
+desarrollar
+implementar
+elaborar
+diagnosticar
+seleccionar
+validar
+comparar
+definir
+medir
 
 # Institution, place and time of the study.
 universidad

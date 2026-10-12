@@ -1,7 +1,7 @@
 # Feature: Thematic Redundancy System (MVP)
 
 - **Locator:** `odd/tasks/thematic-redundancy-system.md`
-- **Status (2026-10-07):** Plan approved by the user on 2026-10-02, including O02 and O08 (direct commits on `main`). Phases 0, 1 and 2 are done: T08 to T12 are done. T10 met O05 with 60/60 general objectives correct, and T10b shipped as `c121d78`. T12 built the 766 fichas (744 included theses) and passed every enforced check; its commit is pending. Next: Phase 3 (T13, T15).
+- **Status (2026-10-11):** Plan approved by the user on 2026-10-02, including O02 and O08 (direct commits on `main`). Phases 0, 1 and 2 are done (T01 to T12). T10 met O05 with 60/60 general objectives correct, and T12 shipped the 766 fichas (744 included theses) as `73f1676`. D26 (ten more domain stopwords) and the mpnet model download (U8) are recorded, and T12a holds the T12 review findings. Next: the follow-ups T12a, T08a and T09b, then Phase 3 (T13).
 - **Source:** the thesis plan v3 `Plan_de_Tesis_UCSM_v3_Directiva.pdf` (119 pages, kept outside the repo), plus the decisions recorded below.
 
 ## Objective
@@ -62,7 +62,7 @@ Institutional integrity tools such as Turnitin detect textual overlap. They do n
 | D06 | Stack as listed below; Python 3.13 with uv | PyPI wheels verified 2026-10-01. Python 3.14 is excluded because gensim 4.4.0 ships no cp314 Windows wheel |
 | D07 | OCR uses PyMuPDF's built-in Tesseract plus tessdata files; no Tesseract install | Tested 2026-10-01 on a rasterized page using `spa.traineddata` only |
 | D08 | Develop natively; add the Dockerfile at M5–M6 | Docker/WSL are not installed, and `uv.lock` already pins dependencies |
-| D09 | Chunking: per section, sentence-aligned, ≤128 tokens under BOTH tokenizers. Section vector = mean of its chunks. Document vector = equal-weight mean of the sections, L2-normalized | Both models have `max_seq_length` 128. Vocab sizes differ (250037 vs 250002) |
+| D09 | Chunking: per section, sentence-aligned, ≤128 tokens under BOTH tokenizers. Section vector = mean of its chunks. Document vector = equal-weight mean of the sections, L2-normalized | Both models have `max_seq_length` 128. Vocab sizes differ (250037 vs 250002). Measured on 2026-10-11, those are the models' `config.json` `vocab_size` (embedding rows); the two tokenizers hold the same 250,002 tokens (see T13) |
 | D10 | Strip the place/year suffix from titles. For TF-IDF, also remove domain stopwords and legal suffixes (S.A.C., E.I.R.L.) | 10 of the 20 most recent titles end with a place and/or year |
 | D11 | Pass precomputed embeddings to BERTopic | Decouples BERTopic 0.17.4 (2025-12-03) from sentence-transformers 6 and transformers 5, both released later |
 | D12 | Metrics: silhouette with cosine on the original embeddings; DB/CH on L2-normalized vectors; NPMI coherence on the top-10 c-TF-IDF terms; HDBSCAN noise excluded from internal metrics with the noise % reported; ARI for stability across seeds | sklearn's DB/CH accept only Euclidean distance |
@@ -79,6 +79,7 @@ Institutional integrity tools such as Turnitin detect textual overlap. They do n
 | D23 | No backup copy of the raw snapshot; U7 is dropped | User decision 2026-10-03, risk R8 accepted. Partial mitigation: the metadata and PDF manifests record item uuids, bitstream uuids and sha256, so a later re-harvest can be diffed and documented |
 | D24 | Deduplicate exact duplicate records before anything else | T07 found 2 pairs of `#tesis` records with identical title, abstract, author, advisor and date under different item uuids, so there are 744 distinct theses, not 746. T12 keeps the record accessioned first (`dc.date.accessioned`; a tie goes to the smaller item uuid) and logs the other as `duplicate_of`. Duplicates never enter the labeled pairs (T20) or the redundancy evaluation, where they would be trivial positives |
 | D25 | OCR is selective: only low-text pages among the first `extraction.ocr_window_pages` pages (default 100) of a PDF are OCR'd. Other low-text pages keep their few text-layer characters, or are `empty`, with their low-text flag | The PDF text serves only the objectives (T10); title and abstract come from metadata (D03, D09). Measured 2026-10-03: the first text-layer page with "objetivo general" was found in 658 of 731 PDFs, at median page index 7, P95 25, P99 102. The window cuts OCR from about 8,600 low-text pages to about 1,960. It is configurable, so a wider pass can run later |
+| D26 | Add ten research-action verbs to the domain stopwords: diseñar, desarrollar, implementar, elaborar, diagnosticar, seleccionar, validar, comparar, definir, medir, so the list goes from 79 to 89 lemmas. The outcome verbs mejorar, optimizar, reducir and incrementar stay out until the T16 review. The list is frozen before T18 | User decision 2026-10-09, from the T12 objectives re-check. Theses whose objectives hold each verb, of 728: diseñar 282, desarrollar 206, implementar 182, elaborar 124, diagnosticar 77, seleccionar 74, validar 67, comparar 65, definir 47, medir 39 (`results/fichas/20261002T224412Z/quality_report.json`). They play the role of the listed reporting verbs determinar (284), evaluar (282) and analizar (270). The nouns are separate lemmas (diseño 130, implementación 168), so their topic signal stays. Only the lexical side changes (TF-IDF, c-TF-IDF, NPMI), not the SBERT embeddings. T11a had removed `desarrollar` with a group that fit no criterion; it returns under the reporting-verb criterion. The outcome verbs may name a topic: mejorar 157, optimizar 141, reducir 86, incrementar 63 |
 
 D15, labeled set, in detail:
 - ≈120 pairs drawn from four pools: SBERT-high, TF-IDF-high, mid-range, and random.
@@ -112,7 +113,7 @@ D15, labeled set, in detail:
 | U5 | Review of the OpenAlex subfield mapping per program | Before T25 |
 | U6 | Expert panel (6–8 people), V de Aiken judges, consent forms | T30 (M6) |
 | U7 | ~~A backup location for the raw snapshot~~. Dropped by the user on 2026-10-03 (D23) | — |
-| U8 | Authorization for the remote operations: UCSM harvesting (T04/T05) and the OpenAlex topics download (T25) | At each task start |
+| U8 | Authorization for each remote operation: UCSM harvesting (T04/T05, granted), the mpnet model download (granted 2026-10-07, done) and the OpenAlex topics download (T25) | At each task start |
 
 ## Architecture and data layout
 
@@ -376,7 +377,7 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
       - Documents: 604 text (<10% low-text pages), 126 mixed (10–80%), 1 scanned (≥80%, mecanica). Mixed by program: mecanica 56, industrial 37, minas 15, electronica 12, sistemas 6.
       - 0 encrypted files. Median file size 6.96 MB, max 412 MB. Every PDF has a text layer on its first 4 pages.
       - Implication: OCR selectively (only the sections the pipeline needs), and run long jobs as resumable CLIs in the user's own terminal.
-    - **Models.** The mpnet model is not cached; only MiniLM is (about 480 MB). Downloading it from Hugging Face before T13 needs the user's authorization.
+    - **Models.** The mpnet model is not cached; only MiniLM is (about 480 MB). Downloading it from Hugging Face before T13 needs the user's authorization. (Granted and done on 2026-10-07; see the progress log.)
   - Size: about 3,400 authored lines, about 1,760 of them tests and fixtures. Commit slices:
     - A: port, adapter, fixture, `test_dspace`.
     - B: selection rules, manifest, use case, CLI, their tests, README, plan doc.
@@ -700,7 +701,7 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
       - legal suffixes (S.A.C., E.I.R.L., …), URLs and emails dropped;
       - keeps "Lean", which spaCy mislemmatized as *leer* in 61 of 172 cases;
       - throughput 25–76 docs/s.
-    - `stopwords.py` loads `config/stopwords_domain_es.txt`: 79 curated lemmas covering genre, reporting verbs, institution, place and time, and generic words. It shipped with 84; T11a removed 5.
+    - `stopwords.py` loads `config/stopwords_domain_es.txt`: 79 curated lemmas covering genre, reporting verbs, institution, place and time, and generic words. It shipped with 84; T11a removed 5, and D26 added 10 (89).
   - The candidates come from `experiments/domain_stopwords.py`. The output is aggregate only: 411 lemmas with DF ≥ 5% over 744 documents, after the D24 dedupe. Privacy: 0 hits.
   - Tests: 124 new, RED → GREEN. `ruff` clean. `pytest`: 762 passed, 1 skipped (independent re-run).
   - Moved to T09: header and footer removal, which needs page-level PDF text.
@@ -761,19 +762,28 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - 27 of the 79 domain stopwords reach 5% of the objectives; 3 never occur (`concluir`, `evaluó`, `posteriormente`). The most frequent: determinar 284, evaluar 282, analizar 270, identificar 257.
     - 102 lemmas not on the list reach 5%, led by diseñar 282, sistema 272, proceso 262, empresa 260 and mejora 251.
     - 14 infinitive-shaped candidates, for the user to decide: diseñar 282, desarrollar 206, implementar 182, mejorar 157, optimizar 141, elaborar 124, reducir 86, diagnosticar 77, seleccionar 74, validar 67, comparar 65, incrementar 63, definir 47, medir 39. T11a removed `desarrollar` and `mejorar` on purpose; some candidates may name topics (optimizar, diagnosticar).
+    - Decided on 2026-10-09 as D26: the 10 research-action verbs join the list, and mejorar, optimizar, reducir and incrementar wait for the T16 review. The committed quality report describes this run, with the 79-lemma list.
   - Checks: `pytest` 1,194 passed, 1 skipped (1,107 + 87 new: config 9, builder 67, report 11) in 22.5 s; `ruff check` and `ruff format --check` clean. The attribution scan and the privacy scan of the tracked new and changed files found 0 hits; the synthetic test names share no word with the snapshot names.
   - Size: 3,161 authored changed lines (2,913 in new files), 1,326 of them tests and 391 the report files. That is above the 2,500-line target and close to the review limit, so two slices:
     - Slice 1 (849 lines): the config unit and the quality report: `shared/config.py`, `config/default.yaml`, `test_config.py`, `corpus/fichas_quality.py`, `test_fichas_quality.py`. Checked alone on a copy of `c121d78`: 1,127 passed, 1 skipped.
     - Slice 2 (2,312 lines): the builder, its CLI and the outputs: `corpus/build_fichas.py`, `test_build_fichas.py`, `results/fichas/20261002T224412Z/`, the README, the ledger and this plan. It depends on slice 1; both together give the 1,194 above.
-  - Commit: pending; the user commits in GitHub Desktop.
+  - Commit: `73f1676`, made by the user as one commit of 12 files instead of the two planned slices, since the whole 3,161-line candidate fit the review budget. Its tree `760a5e9…` is identical to the reviewed one. Approved before and after the commit, so the reviewed boundary is now `73f1676`.
+- [ ] **T12a** Follow-ups from the T12 reviews (non-blocking):
+  - The three outputs of `build_dataset` (`fichas.parquet`, `exclusions.parquet`, `fichas_manifest.json`) are each written atomically, but not as a set (`corpus/build_fichas.py`, lines 615–637 at `73f1676`): a failure between writes leaves a mix of new and old files. Publish them as one unit, or have readers check the manifest's SHA-256 values.
+  - When `--report-out` fails after the build has published the fichas, `write_quality_report` raises "…; nothing was written" (`corpus/fichas_quality.py:255`), which reads as if the fichas were not written either. Say which files were written.
+  - Some command-line paths of `build_fichas.main` have no test: an interruption (exit code 130), a refused or failed `--report-out` after the build (exit code 1, see above), and an unreadable configuration (`yaml.YAMLError`). The refusals for undeclared or missed counts and for a changed objectives table are tested.
+  - `_advisor_orcid` (`corpus/fichas_quality.py:347`) counts an advisor name as present when its metadata list is not empty, even when every value is blank, so `advisor_code_from_name` can overcount. Count only non-blank values.
+  - Route D. Risk M.
 
 ### P3 — Representation and topic map (M3–M5)
 - [ ] **T13** Sentence-aligned chunker that is valid for both tokenizers. Property tests check that every chunk fits both tokenizers and no text is lost.
   - Route D. Risk M.
+  - Inputs (2026-10-11): both models are cached (U8), so the chunker can run offline (`HF_HUB_OFFLINE=1`). Measured offline with transformers 5.18.0: the MiniLM tokenizer (model type `bert`) and the mpnet tokenizer (`xlm-roberta`) hold the same 250,002-token vocabulary, with the same 5 special tokens, and gave the same token ids for 3 Spanish sample sentences with accents, ñ and symbols. D09's 250,037 vs 250,002 are the models' `config.json` `vocab_size`. Keep the check under both tokenizers, since it is cheap and guards a model swap; comparing both tokenizations over the whole corpus would confirm the equality.
 - [ ] **T14** Embedding pipeline: section means, an equal-weight document vector, L2 normalization, cached chunk vectors, and a plain-mean sensitivity flag.
   - Route D. Risk M.
 - [ ] **T15** TF-IDF baseline representations, used for both clustering and redundancy.
   - Route D. Risk M.
+  - Input: the 89-lemma domain stopword list of D26. Since the list is frozen before T18, record its SHA-256 with the outputs.
 - [ ] **T16** Topic map builder (must pass `language="spanish"` to BERTopic, see D22):
   - UMAP + K-means/HDBSCAN + BERTopic, using precomputed embeddings and the full-clean documents;
   - outputs topics, assignments, centroids and 2D coordinates;
@@ -997,6 +1007,22 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
   - T12 implemented and verified: 766 fichas, 744 included theses, every enforced check passed on the real snapshot. The D24 rule agrees with the T10 placeholder in both pairs. The stopword re-check proposes candidates only; the list is unchanged.
   - Phase 2 is done. The T12 commits are handed to the user as two slices.
 
+- 2026-10-07: The user committed T12 as the single commit `73f1676`. Its tree `760a5e9…` is identical to the reviewed one. It was approved before and after the commit, so the reviewed boundary is now `73f1676`, and Phase 2 is closed. The four review findings became T12a.
+
+- 2026-10-07: U8 was granted for the mpnet model. The scope: an anonymous, read-only download of `sentence-transformers/paraphrase-multilingual-mpnet-base-v2` from the Hugging Face Hub into the user's model cache, with no credentials.
+  - The download and the first load took 287.6 s together, from 2026-10-08T04:08:21Z. The cache's last write, 04:13:09Z, agrees.
+  - Checked again offline on 2026-10-11: dimension 768, `max_seq_length` 128, a 250,002-token tokenizer, 11 files and 1,126,358,977 bytes on disk, at revision `4328cf26390c`. The model loads from the cache in 3.9 s.
+  - The costs are in `docs/processing_costs.md`.
+
+- 2026-10-09: The user accepted D26: ten research-action verbs join the domain stopwords, and four outcome verbs wait for the T16 review.
+
+- 2026-10-11: Closure unit. D26 applied to `config/stopwords_domain_es.txt`, test first; U8 and the mpnet download recorded here and in the ledger; T12a added.
+  - Route I. Trigger check: one non-trivial file (the stopword test), plus mechanical edits to the list, this plan and the ledger; the parent already held the whole plan.
+  - RED: the new test `test_the_curated_list_holds_the_research_action_verbs_of_the_objectives` failed on the 79-lemma list (1 failed, 6 passed). GREEN after the edit: 7 passed, and the list loads 89 lemmas. Two throwaway mutants were both caught and reverted, the list byte-identical afterwards: `medir` dropped, and `optimizar` added.
+  - `mejorar` moved from the test's frequent words left out to the deferred outcome verbs, with optimizar, reducir and incrementar. Both sets are tested to stay off the list.
+  - Measured on the way: the MiniLM and mpnet tokenizers share one vocabulary (noted under D09 and T13).
+  - Checks: `pytest` 1,196 passed, 1 skipped (1,194 + 2 new); `ruff check` and `ruff format --check` clean.
+
 ## Next step
 
 Resume checklist, in order:
@@ -1004,11 +1030,8 @@ Resume checklist, in order:
 1. **Re-sync.**
    - Read this document fully.
    - Run `git status`, `git log -5`, `uv run pytest -q`, `uv run ruff check .` and `uv run ruff format --check .`.
-   - Confirm whether HEAD contains T12 (the last reviewed commit is `c121d78`).
-2. **T12 commit handoff.** If T12 is not committed, hand the user its two slices, as listed under T12, with Conventional Commit messages; the user commits in GitHub Desktop. If it is committed, verify that each tree is identical to the reviewed one.
-3. **Phase 3.**
-   - T13, the chunker. It needs the U8 authorization to download the mpnet model.
-   - T15, the TF-IDF baseline. Before it, the user decides on the stopword candidates of the T12 re-check.
-   - The batched follow-ups, when scheduled: T02a, T04a, T05a, T07a, T08a, T09b, T10c, T11b.
+   - Confirm that HEAD holds the 2026-10-11 closure unit (D26, U8, T12a) and that its tree is identical to the reviewed one. The last reviewed boundary before it is `73f1676`.
+2. **Follow-ups, by priority.** T12a, T08a and T09b first; then T11b, T07a, T05a, T04a and T02a, grouped. T10c waits for the user's redactor policy, which is needed before any new workbook, so before T20.
+3. **Phase 3.** T13, the chunker (both models are cached); T14; T15, with the 89-lemma stopword list of D26; then T16 to T19.
 
-Pending user inputs: U1; U2 (before T19); U3 (month 3); U4, which must be agreed before any topic result exists, so before T16; U5; U6; U8 for any new download, including the mpnet model before T13 and, optionally, the 7 expired-embargo PDFs.
+Pending user inputs: U1; U2 (before T19); U3 (month 3); U4, which must be agreed before any topic result exists, so before T16; U5; U6; U8 for any new download (the OpenAlex topics for T25 and, optionally, the 7 expired-embargo PDFs); the T10c redactor policy (before T20).

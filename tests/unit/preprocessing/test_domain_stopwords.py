@@ -143,8 +143,23 @@ GENRE_AND_BOILERPLATE = {
     "arequipa",
     "perú",
 }
-FREQUENT_WORDS_LEFT_OUT = {"empresa", "mejora", "mejorar", "desarrollo", "desarrollar"}
+FREQUENT_WORDS_LEFT_OUT = {"empresa", "mejora", "desarrollo"}
 """Frequent words that fit no criterion of the list, so they stay out of it (T11a)."""
+RESEARCH_ACTION_VERBS = {
+    "diseñar",
+    "desarrollar",
+    "implementar",
+    "elaborar",
+    "diagnosticar",
+    "seleccionar",
+    "validar",
+    "comparar",
+    "definir",
+    "medir",
+}
+"""Verbs that report what the research did, found in the objectives by the T12 re-check (D26)."""
+OUTCOME_VERBS = {"mejorar", "optimizar", "reducir", "incrementar"}
+"""Outcome verbs that may name a topic; they stay out until the T16 review (D26)."""
 TOPIC_WORDS = {
     "productividad",
     "mantenimiento",
@@ -171,6 +186,14 @@ def test_the_curated_list_leaves_out_frequent_words_that_fit_no_criterion() -> N
 
     assert stopwords.isdisjoint(FREQUENT_WORDS_LEFT_OUT)
     assert "universidad" in stopwords
+
+
+def test_the_curated_list_holds_the_research_action_verbs_of_the_objectives() -> None:
+    assert load_domain_stopwords(CURATED_LIST) >= RESEARCH_ACTION_VERBS
+
+
+def test_the_curated_list_leaves_out_the_outcome_verbs_until_the_topic_review() -> None:
+    assert load_domain_stopwords(CURATED_LIST).isdisjoint(OUTCOME_VERBS)
 
 
 def test_the_curated_list_writes_each_lemma_once_in_nfc_lower_case() -> None:

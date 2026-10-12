@@ -19,6 +19,7 @@ row here, in the same commit.
 | Objectives locator (T10) | 6.0 s for 731 PDFs and 141,076 pages, no OCR: about 122 PDFs/s (derived) |
 | Manual verification of the objectives (T10) | about 2 h of the user's time for 60 theses (reported by the user, not timed): about 2 min per thesis (derived) |
 | Fichas build (T12) | 0.6 s for 766 records; the quality report with the spaCy stopword re-check, 8.5–9.2 s |
+| mpnet model download (U8) | 287.6 s, the first load included, for 1,126,358,977 B (1.13 GB) on disk |
 
 ## 1. Purpose and conventions
 
@@ -117,6 +118,10 @@ across sessions with care.
 | 2026-10-07 | T12 | Fichas build (`build_fichas`) | 766 records, 731 objectives rows: 766 fichas (744 included), 22 exclusions | 0.6 s (0.628 s), 2 runs; the whole command took 11.1 s, start-up and quality report included | about 1,200 records/s (derived) | 0 | Every enforced check passed. The first run created the pseudonym key; both runs wrote the same fichas table (same SHA-256) | `data/interim/20261002T224412Z/fichas_manifest.json` (`seconds`); run output |
 | 2026-10-07 | T12 | Quality report with the stopword re-check (spaCy) | objectives text of the 728 included theses that have it | 8.5 s and 9.2 s (2 runs), spaCy model load included | about 80 theses/s (derived) | 0 | Full cleaner without domain stopwords | run output |
 | 2026-10-07 | all | Test suite (`pytest -q`) | 1,194 tests, plus 1 skipped | 22.5 s | — | 0 | — | plan T12; time: run output |
+| 2026-10-07 | T13 (U8) | mpnet model download from the Hugging Face Hub, then its first load | `paraphrase-multilingual-mpnet-base-v2`: 11 files, 1,126,358,977 B on disk | 287.6 s, download and first load together | about 3.9 MB/s, the load included (derived) | not measured | Anonymous GET, no credentials. Started 2026-10-08T04:08:21Z; the cache's last write is 04:13:09Z, which agrees. The power plan was not recorded | run output; Hugging Face cache (`scan_cache_dir`, file sizes) |
+| 2026-10-11 | T13 (U8) | Offline load of both models from the cache (`SentenceTransformer`, CPU) | MiniLM and mpnet | 3.0 s; 3.9 s | — | 0 | `HF_HUB_OFFLINE=1`; checked dimensions 384 and 768, `max_seq_length` 128 and 250,002-token tokenizers | plan T13 and progress log; time: run output |
+| 2026-10-11 | all | Test suite (`pytest -q`) | 1,194 tests, plus 1 skipped | 38.6 s | — | 0 | The resume check, before the closure unit | time: run output |
+| 2026-10-11 | all | Test suite (`pytest -q`) | 1,196 tests, plus 1 skipped | 23.7 s | — | 0 | After the closure unit (D26) | plan progress log; time: run output |
 
 ### Notes on the ledger
 
@@ -180,12 +185,14 @@ Measured on 2026-10-05 with `os.stat` (no file was hashed) and, for the reposito
 | `data/interim/pseudonym.key` | the pseudonym key (T08), created by the first T12 run | 32 | 32 B |
 | `tessdata/*.traineddata` | `spa` and `eng`, tessdata_best | 28,970,788 | 29.0 MB |
 | Hugging Face cache | `paraphrase-multilingual-MiniLM-L12-v2` | 479,729,050 | 479.7 MB |
-| Hugging Face cache | `paraphrase-multilingual-mpnet-base-v2` | not downloaded yet | pending (T13) |
+| Hugging Face cache | `paraphrase-multilingual-mpnet-base-v2` (measured 2026-10-11) | 1,126,358,977 | 1.13 GB |
 | `.venv/` | the locked environment, spaCy model included (54,361,316 B) | 1,907,548,544 | 1.91 GB |
 | Repository at `7334e66` | 79 tracked files, of which `results/` holds 8 (371,040 B) | 1,479,941 | 1.48 MB |
 
 `data/`, `tessdata/` and `.venv/` are gitignored. The Hugging Face cache lives outside the
-repository, in `%USERPROFILE%\.cache\huggingface\hub`.
+repository, in `%USERPROFILE%\.cache\huggingface\hub`. Each of its two rows sums every file in
+the model's cache folder; `huggingface_hub.scan_cache_dir` reports 40 B less for each, since it
+leaves out the 40-byte `refs/main` file.
 
 ## 5. Monetary and external costs
 
@@ -194,9 +201,9 @@ repository, in `%USERPROFILE%\.cache\huggingface\hub`.
 - **Network.** Every request was an anonymous, read-only GET:
   - the public UCSM repository (DSpace REST API): 14 metadata requests and about 1,463 PDF
     requests (estimate), at least 1 s apart; 11.40 GB of PDFs and 4.7 MB of metadata stored;
-  - one-time downloads: the two tessdata files from GitHub, the MiniLM model from Hugging Face
-    (479.7 MB on disk), and the packages of `uv sync` from PyPI, the PyTorch CPU index and
-    GitHub (the spaCy model).
+  - one-time downloads: the two tessdata files from GitHub, the MiniLM and mpnet models from
+    Hugging Face (479.7 MB and 1.13 GB on disk), and the packages of `uv sync` from PyPI, the
+    PyTorch CPU index and GitHub (the spaCy model).
 - **Electricity: not measured.** An estimate would take energy (kWh) = average power draw (W)
   × wall time (h) / 1,000, with the draw read from a plug-in power meter during a
   representative run, or bounded by the processor's rated power. Any such figure is an
@@ -211,7 +218,8 @@ repository, in `%USERPROFILE%\.cache\huggingface\hub`.
 - [x] Size of `data/interim/20261002T224412Z/pages/` after T09 (2026-10-05).
 - [x] T10 manual verification time for the 60 theses of the workbook: about 2 h, reported by
   the user and not timed, against the estimate of 4 to 6 h (2026-10-07).
-- [ ] mpnet model download size and time (T13; needs U8).
+- [x] mpnet model download size and time: 1,126,358,977 B and 287.6 s, the first load
+  included (2026-10-07, under U8).
 - [ ] T14 embeddings for the 2 models: wall time, chunks per second, vector file sizes.
 - [ ] T19 experiment grid: time per configuration and in total.
 - [ ] T21 labeling workload: annotator hours per pair and in total.
