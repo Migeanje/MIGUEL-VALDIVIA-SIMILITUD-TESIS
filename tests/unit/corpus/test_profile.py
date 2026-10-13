@@ -40,6 +40,11 @@ from thematic_redundancy.corpus.profile import (
     title_profile,
 )
 from thematic_redundancy.corpus.snapshot import SnapshotRecord
+from thematic_redundancy.preprocessing.title_suffix import (
+    PLACE_SUFFIX_PATTERNS,
+    TITLE_SUFFIX_PATTERNS,
+    YEAR_SUFFIX_PATTERNS,
+)
 
 RENATI_TYPE = "https://purl.org/pe-repo/renati/type#"
 TESIS = f"{RENATI_TYPE}tesis"
@@ -385,6 +390,39 @@ def test_title_profile_counts_suffix_patterns_places_and_tokens() -> None:
     assert lengths is not None
     assert (lengths.tokens.min, lengths.tokens.max) == (6, 10)
     assert (lengths.above_limit, lengths.share_above_limit) == (3, pytest.approx(0.6))
+
+
+YEAR_PATTERNS = {
+    "place_and_year",
+    "year_after_separator",
+    "year_after_temporal_word",
+    "year_after_other_word",
+}
+"""The suffix patterns that end a title with a year, named one by one."""
+PLACE_PATTERNS = {"place_and_year", "place_after_separator", "place_after_word"}
+"""The suffix patterns that end a title with a place, named one by one."""
+
+
+def test_title_profile_counts_a_year_and_a_place_by_the_patterns_named_for_each() -> None:
+    titles = {
+        "place_and_year": "Mejora de procesos, Arequipa 2023",
+        "year_after_separator": "Mejora de procesos, 2025",
+        "year_after_temporal_word": "Mejora de procesos al 2021",
+        "year_after_other_word": "Mejora de procesos productivos 2024",
+        "place_after_separator": "Mejora de procesos, Moquegua",
+        "place_after_word": "Mejora de procesos de Arequipa",
+        "none": "Mejora de la calidad",
+    }
+    theses = [record(number, {"dc.title": title}) for number, title in enumerate(titles.values())]
+
+    profile = title_profile(theses, count_tokens, token_limit=128)
+
+    # A pattern counts as a year or a place by its name, never by its position in the list of
+    # patterns, so reordering that list changes neither set.
+    assert (YEAR_SUFFIX_PATTERNS, PLACE_SUFFIX_PATTERNS) == (YEAR_PATTERNS, PLACE_PATTERNS)
+    assert set(TITLE_SUFFIX_PATTERNS) == YEAR_PATTERNS | PLACE_PATTERNS
+    assert profile.suffix_patterns == dict.fromkeys(titles, 1)
+    assert (profile.with_year_suffix, profile.with_place_suffix) == (4, 3)
 
 
 # Keywords

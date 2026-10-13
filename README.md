@@ -341,11 +341,22 @@ How it works:
   `src/thematic_redundancy/corpus/profile.py`.
 - **Tokens.** It counts tokens, special tokens included, with the tokenizer of
   `paraphrase-multilingual-MiniLM-L12-v2` from the local Hugging Face cache. The
-  [smoke test](#smoke-test) fetches that model once.
+  [smoke test](#smoke-test) fetches that model once. When the tokenizer of the other configured
+  model, `paraphrase-multilingual-mpnet-base-v2`, is in the cache too, it counts every text
+  again, and `summary.md` says whether the counts hold for both models (D09). A cached
+  tokenizer with another vocabulary size, as a partly downloaded cache gives, is reported as
+  such, and its counts are not compared.
 - **Aggregates only.** No title, abstract or person's name appears in the outputs. Before
   writing, the script searches every output for each title, abstract, abstract sentence,
   author, advisor and juror name, and ORCID of the snapshot. A single hit stops it with nothing
-  written.
+  written. The search reads the bytes of each file, so text drawn inside a figure is outside
+  it; the figures draw only fixed labels and values that `metadata_profile.json` also holds.
+- **Writing.** All outputs are staged and flushed before the first one is renamed into place,
+  so a failure while they are staged leaves the previous outputs. A rename cannot be undone: if
+  one fails, as on Windows while a viewer holds a figure open, or the run is interrupted
+  between two renames, the outputs renamed before it are new and the others are the previous
+  ones. The script then says so, and running it again writes them all. Other files in the
+  folder, such as `stopword_candidates.json`, stay as they are.
 
 ## Text cleaning
 
@@ -365,8 +376,9 @@ Two cleaning variants live in `src/thematic_redundancy/preprocessing/`:
 and reports what it cut for the quality notes.
 
 The domain stopwords are in `config/stopwords_domain_es.txt`: genre and boilerplate lemmas
-such as `tesis` or `arequipa`, picked by hand. The file's header states the criteria. The
-candidates come from this script, which runs offline:
+such as `tesis` or `arequipa`, picked by hand. The file's header states the criteria. A test
+pins the 89 lemmas decided in D26, so any change to a lemma needs a new decision in the plan.
+The candidates come from this script, which runs offline:
 
 ```sh
 uv run python experiments/domain_stopwords.py

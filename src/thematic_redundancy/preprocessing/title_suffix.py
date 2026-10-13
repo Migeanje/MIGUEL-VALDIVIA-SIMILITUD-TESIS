@@ -24,7 +24,9 @@ TITLE_SUFFIX_PATTERNS = (
 )
 """How a title may end with a place, a year or both; see :func:`classify_title_suffix`."""
 NO_SUFFIX = "none"
-YEAR_SUFFIX_PATTERNS = frozenset(TITLE_SUFFIX_PATTERNS[:4])
+YEAR_SUFFIX_PATTERNS = frozenset(
+    {"place_and_year", "year_after_separator", "year_after_temporal_word", "year_after_other_word"}
+)
 PLACE_SUFFIX_PATTERNS = frozenset({"place_and_year", "place_after_separator", "place_after_word"})
 
 PLACE_NAMES = (

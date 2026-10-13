@@ -1,4 +1,4 @@
-"""The file-system helpers that the commands share: the run lock and the atomic text write.
+"""The file-system helpers that the commands share: the run lock and the atomic writes.
 
 Every test works in its own temporary directory. The lock is checked from a second handle in
 this process and, where the operating system's behavior across processes matters, from a
@@ -19,6 +19,8 @@ from thematic_redundancy.shared.filesystem import (
     LOCK_FILE_NAME,
     exclusive_run,
     fsync_directory,
+    write_bytes_atomically,
+    write_files_atomically,
     write_text_atomically,
 )
 
@@ -426,3 +428,150 @@ def test_a_staged_file_that_cannot_be_removed_does_not_hide_the_failure(
 def test_flushing_a_real_directory_never_fails(tmp_path: Path) -> None:
     # Windows cannot open a directory, so there the step is skipped; elsewhere it flushes.
     fsync_directory(tmp_path)
+
+
+# --- Atomic byte writes, of one file or of several -----------------------------------------
+
+PNG_LIKE = b"\x89PNG\r\n\x1a\n\x00\xff binary \r\n data"
+"""Bytes that a text write would change: line breaks of both kinds and no final line feed."""
+
+
+def test_bytes_are_written_exactly_as_given(tmp_path: Path) -> None:
+    path = tmp_path / "figure.png"
+    path.write_bytes(b"previous figure, longer than the new one")
+
+    write_bytes_atomically(path, PNG_LIKE)
+
+    assert path.read_bytes() == PNG_LIKE
+    assert listing(tmp_path) == ["figure.png"]
+
+
+def test_several_files_are_written_and_other_files_of_the_directory_stay(tmp_path: Path) -> None:
+    (tmp_path / "profile.json").write_bytes(b"previous profile\n")
+    (tmp_path / "candidates.json").write_bytes(b"written by another command\n")
+
+    write_files_atomically(tmp_path, {"profile.json": b"{}\n", "figure.png": PNG_LIKE})
+
+    assert (tmp_path / "profile.json").read_bytes() == b"{}\n"
+    assert (tmp_path / "figure.png").read_bytes() == PNG_LIKE
+    assert (tmp_path / "candidates.json").read_bytes() == b"written by another command\n"
+    assert listing(tmp_path) == ["candidates.json", "figure.png", "profile.json"]
+
+
+def test_every_file_is_staged_and_flushed_before_the_first_move(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = tmp_path / "out"
+    directory.mkdir()
+    calls = record_file_calls(monkeypatch, tmp_path, directory)
+
+    write_files_atomically(directory, {"profile.json": b"{}\n", "figure.png": PNG_LIKE})
+
+    assert calls == [
+        "fsync file of 3 bytes",
+        f"fsync file of {len(PNG_LIKE)} bytes",
+        "replace out/profile.json.part -> out/profile.json",
+        "replace out/figure.png.part -> out/figure.png",
+        "open directory",
+        "fsync directory",
+        "close directory",
+    ]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [OSError(errno.ENOSPC, "No space left on device"), KeyboardInterrupt()],
+    ids=["disk-full", "interrupt"],
+)
+def test_a_failure_while_staging_keeps_every_previous_file_and_removes_the_staged_ones(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: BaseException
+) -> None:
+    names = ("profile.json", "summary.md", "figure.png")
+    for name in names:
+        (tmp_path / name).write_bytes(f"previous {name}\n".encode())
+    real_fsync = os.fsync
+    flushed: list[int] = []
+
+    def fsync_failing_on_the_second_file(descriptor: int) -> None:
+        flushed.append(descriptor)
+        if len(flushed) == 2:
+            raise error
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", fsync_failing_on_the_second_file)
+
+    with pytest.raises(type(error)) as caught:
+        write_files_atomically(tmp_path, {name: b"new\n" for name in names})
+
+    assert caught.value is error
+    for name in names:
+        assert (tmp_path / name).read_bytes() == f"previous {name}\n".encode()
+    assert listing(tmp_path) == sorted(names)
+
+
+def test_a_failed_move_leaves_the_files_moved_before_it_and_removes_the_staged_ones(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    names = ("profile.json", "summary.md", "figure.png")
+    for name in names:
+        (tmp_path / name).write_bytes(b"previous\n")
+    real_replace = os.replace
+
+    def replace_failing_on_the_summary(source: Any, target: Any) -> None:
+        if Path(target).name == "summary.md":
+            raise PermissionError(errno.EACCES, "The process cannot access the file", target)
+        real_replace(source, target)
+
+    monkeypatch.setattr(os, "replace", replace_failing_on_the_summary)
+
+    with pytest.raises(PermissionError):
+        write_files_atomically(tmp_path, {name: b"new\n" for name in names})
+
+    # Moves cannot be undone, so a failed move is the one case that mixes new and old files.
+    assert (tmp_path / "profile.json").read_bytes() == b"new\n"
+    assert (tmp_path / "summary.md").read_bytes() == b"previous\n"
+    assert (tmp_path / "figure.png").read_bytes() == b"previous\n"
+    assert listing(tmp_path) == sorted(names)
+
+
+def test_the_directory_of_the_files_must_exist(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        write_files_atomically(tmp_path / "missing", {"profile.json": b"{}\n"})
+
+    assert listing(tmp_path) == []
+
+
+@pytest.mark.parametrize("name", ["", ".", "..", "eda/profile.json", "../profile.json"])
+def test_a_file_name_must_name_a_file_of_the_directory(tmp_path: Path, name: str) -> None:
+    with pytest.raises(ValueError, match="file name"):
+        write_files_atomically(tmp_path, {"profile.json": b"{}\n", name: b"{}\n"})
+
+    # The names are checked before anything is written.
+    assert listing(tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    ("contents", "reason"),
+    [
+        pytest.param(
+            {"profile.json.part": b"staged name\n", "profile.json": b"{}\n"},
+            "staged files",
+            id="the staged name of another file",
+        ),
+        pytest.param({"summary.PART": b"# Report\n"}, "staged files", id="a staged name"),
+        pytest.param(
+            {"Profile.json": b"upper\n", "profile.json": b"lower\n"},
+            "same file where letter case is ignored",
+            id="names equal but for their case",
+        ),
+    ],
+)
+def test_names_that_could_name_the_same_file_are_refused_before_anything_is_written(
+    tmp_path: Path, contents: dict[str, bytes], reason: str
+) -> None:
+    # A staged name taken by another file, or two names that one file holds where letter case
+    # is ignored (Windows, macOS), would make one write overwrite another.
+    with pytest.raises(ValueError, match=reason):
+        write_files_atomically(tmp_path, contents)
+
+    assert listing(tmp_path) == []

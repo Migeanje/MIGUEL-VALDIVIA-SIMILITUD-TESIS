@@ -7,7 +7,9 @@ Run it from the project root, offline::
 It reads ``data/raw/<snapshot_id>/`` (by default the snapshot harvested last) through
 :func:`read_snapshot`, so a snapshot changed after its harvest is refused. Tokens are counted
 with the tokenizer of the MiniLM embedding model, loaded from the local Hugging Face cache
-only. The outputs go to ``results/eda/<snapshot_id>/``:
+only. The tokenizer of each other configured model, when it is in that cache, then counts
+every text again, and the report says whether the counts hold for both (D09). The outputs go
+to ``results/eda/<snapshot_id>/``:
 
 - ``metadata_profile.json``: the whole profile, with its provenance;
 - ``summary.md``: tables, observations, and notes on the method;
@@ -15,7 +17,17 @@ only. The outputs go to ``results/eda/<snapshot_id>/``:
 
 Every output holds aggregates only. Before anything is written, each output is searched for
 every title, abstract, long abstract sentence, person's name and ORCID of the snapshot, and a
-single hit stops the run with nothing written.
+single hit stops the run with nothing written. The search reads the bytes of each file, so
+the text that a figure draws, which becomes pixels, is outside it. Each figure draws only
+fixed labels and values of the profile (program keys, years, counts and keywords), which
+``metadata_profile.json`` also holds, and that file is searched.
+
+The outputs are written together (:func:`write_files_atomically`): all of them are staged and
+flushed before the first one is renamed into place, so a failure while they are staged leaves
+the previous outputs. A rename cannot be undone, so a failed rename, or an interruption
+between two renames, leaves the outputs renamed before it new and the others as they were;
+the run then says so, and running it again writes them all. Other files of the directory,
+such as the stopword candidates, stay as they are.
 """
 
 import argparse
@@ -25,7 +37,7 @@ import json
 import re
 import subprocess
 import sys
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +54,7 @@ from thematic_redundancy.corpus.profile import (
     NO_SUFFIX,
     PLACE_NAMES,
     TITLE_SUFFIX_PATTERNS,
+    TOP_ADVISORS,
     Distribution,
     LengthProfile,
     MetadataProfile,
@@ -58,6 +71,7 @@ from thematic_redundancy.corpus.snapshot import (
     read_snapshot,
 )
 from thematic_redundancy.shared.config import load_config
+from thematic_redundancy.shared.filesystem import write_files_atomically
 
 CONFIG_PATH = Path("config") / "default.yaml"
 SCRIPT_PATH = "experiments/eda_metadata.py"
@@ -66,6 +80,9 @@ OUTPUT_DIR_NAME = "eda"
 
 TOKENIZER_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 """Embedding model whose tokenizer counts the tokens; it must be a configured model."""
+
+TokenizerLoader = Callable[[str], tuple[TokenCounter, dict[str, Any]]]
+"""Loads the tokenizer of a model, as :func:`load_token_counter` does."""
 
 SUFFIX_SHAPES = {
     "place_and_year": "`…, Arequipa 2023`, `… - Arequipa, Perú 2021`",
@@ -132,13 +149,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 1
     programs = {program.key: program.name for program in config.snapshot.programs}
+    counted: dict[str, int] = {}
+
+    def count_and_keep(text: str) -> int:
+        counted[text] = count_tokens(text)
+        return counted[text]
+
     profile = profile_metadata(
         records,
         snapshot_id=snapshot_id,
         snapshot_date=manifest.harvested_at.date(),
         thesis_type=config.snapshot.thesis_type,
         program_keys=list(programs),
-        count_tokens=count_tokens,
+        count_tokens=count_and_keep,
         token_limit=config.chunking.max_tokens,
     )
     future_dated = profile.calendar.future_dated + profile.other_items.future_dated
@@ -149,7 +172,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
-    provenance = _provenance(project_root, config_path, manifest, tokenizer)
+    other_tokenizers = [
+        compare_tokenizer(model, counted, load_token_counter, tokenizer)
+        for model in config.embedding.models
+        if model != TOKENIZER_MODEL
+    ]
+    provenance = _provenance(project_root, config_path, manifest, tokenizer, other_tokenizers)
     outputs = render_outputs(profile, provenance, programs)
     sensitive = sensitive_strings(records)
     leaks = {
@@ -165,9 +193,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("error: nothing was written", file=sys.stderr)
         return 1
     output_dir = paths.results_dir / OUTPUT_DIR_NAME / snapshot_id
-    output_dir.mkdir(parents=True, exist_ok=True)
-    for name, content in outputs.items():
-        (output_dir / name).write_bytes(content)
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        write_files_atomically(output_dir, outputs)
+    except OSError as error:
+        print(f"error: {error}", file=sys.stderr)
+        print(
+            f"error: some outputs in {output_dir} may already have been replaced; run the "
+            "script again to write them all",
+            file=sys.stderr,
+        )
+        return 1
     print(f"Profiled snapshot {snapshot_id}: {profile.items} items, {profile.theses} theses")
     print(
         f"Privacy check: {len(outputs)} outputs searched for {len(sensitive)} strings taken "
@@ -224,8 +260,40 @@ def load_token_counter(model_id: str) -> tuple[TokenCounter, dict[str, Any]]:
     return count_tokens, description
 
 
+def compare_tokenizer(
+    model_id: str,
+    counted: Mapping[str, int],
+    load: TokenizerLoader,
+    reference: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Say whether the tokenizer of ``model_id`` counts each text of ``counted`` the same.
+
+    ``counted`` maps each distinct text that the profile tokenized to its token count, by the
+    tokenizer that ``reference`` describes, and ``load`` loads a tokenizer as
+    :func:`load_token_counter` does. A tokenizer missing from the local cache is reported as
+    not cached. Otherwise the result describes it, vocabulary size included, and counts the
+    texts that it counts differently, but only when its vocabulary has the size of the
+    reference's. A partly downloaded cache, with the configuration files but without
+    ``tokenizer.json`` or ``sentencepiece.bpe.model``, loads offline as a stub tokenizer of a
+    few tokens, whose counts would say nothing about the model.
+    """
+    try:
+        count_tokens, description = load(model_id)
+    except OSError:
+        return {"model": model_id, "cached": False}
+    found = {**description, "cached": True}
+    if description["vocabulary_size"] != reference["vocabulary_size"]:
+        return found
+    differing = sum(count_tokens(text) != tokens for text, tokens in counted.items())
+    return {**found, "texts_compared": len(counted), "texts_counted_differently": differing}
+
+
 def _provenance(
-    project_root: Path, config_path: Path, manifest: SnapshotManifest, tokenizer: dict[str, Any]
+    project_root: Path,
+    config_path: Path,
+    manifest: SnapshotManifest,
+    tokenizer: dict[str, Any],
+    other_tokenizers: Sequence[dict[str, Any]],
 ) -> dict[str, Any]:
     return {
         "script": SCRIPT_PATH,
@@ -238,6 +306,7 @@ def _provenance(
             _git(project_root, "status", "--porcelain", "--untracked-files=no")
         ),
         "tokenizer": tokenizer,
+        "other_tokenizers": list(other_tokenizers),
     }
 
 
@@ -253,7 +322,11 @@ def _git(project_root: Path, *arguments: str) -> str | None:
 
 
 def _searchable(content: bytes) -> str:
-    """Return ``content`` as text to search: as UTF-8, and byte for byte as Latin-1."""
+    """Return ``content`` as text to search: as UTF-8, and byte for byte as Latin-1.
+
+    This finds text stored in a file, such as a PNG metadata chunk, but not text drawn into
+    a figure's pixels; see the module notes.
+    """
     return f"{content.decode('utf-8', errors='ignore')}\n{content.decode('latin-1')}"
 
 
@@ -322,7 +395,7 @@ def render_summary(
         *_ocde_section(profile),
         *_advisor_section(profile),
         *_rights_section(profile),
-        *_method_section(profile),
+        *_method_section(profile, provenance),
         "## Figures",
         "",
         "![Theses per issue year, by program](program_year.png)",
@@ -377,18 +450,26 @@ def observations(profile: MetadataProfile, programs: Mapping[str, str]) -> list[
             f"and the most frequent one appears in {keywords.top[0].theses} theses. They can "
             "label topics, but they are too sparse to define them."
         )
+    # A snapshot without theses has no program to compare, and one whose theses carry no
+    # readable issue date has no busiest year.
     by_program = {key: count for key, count in profile.calendar.by_program.items() if count}
-    largest = max(by_program, key=by_program.__getitem__)
-    smallest = min(by_program, key=by_program.__getitem__)
-    by_year = profile.calendar.by_year
-    busiest = max(by_year, key=by_year.__getitem__)
-    found.append(
-        f"**The programs are unbalanced.** {programs.get(largest, largest)} holds "
-        f"{_share_text(by_program[largest], profile.theses)} of the theses and "
-        f"{programs.get(smallest, smallest)} {_share_text(by_program[smallest], profile.theses)}, "
-        f"so topic sizes and gap rules need per-program normalization (R5). The busiest year "
-        f"is {busiest} ({by_year[busiest]} theses)."
-    )
+    if by_program:
+        largest = max(by_program, key=by_program.__getitem__)
+        smallest = min(by_program, key=by_program.__getitem__)
+        by_year = profile.calendar.by_year
+        busiest = max(by_year, key=by_year.__getitem__) if by_year else None
+        busiest_note = (
+            f" The busiest year is {busiest} ({by_year[busiest]} theses)."
+            if busiest is not None
+            else ""
+        )
+        found.append(
+            f"**The programs are unbalanced.** {programs.get(largest, largest)} holds "
+            f"{_share_text(by_program[largest], profile.theses)} of the theses and "
+            f"{programs.get(smallest, smallest)} "
+            f"{_share_text(by_program[smallest], profile.theses)}, so topic sizes and gap rules "
+            f"need per-program normalization (R5).{busiest_note}"
+        )
     dominant = _dominant_codes(profile)
     if dominant:
         shares = [share for _, _, share in dominant.values()]
@@ -642,7 +723,7 @@ def _advisor_section(profile: MetadataProfile) -> list[str]:
         f"{advisors.theses_with_advisor} theses. Theses without an advisor: "
         f"{advisors.theses_without_advisor}; with several: "
         f"{advisors.theses_with_several_advisors}.",
-        f"- {stats} The 10 advisors with the most theses supervised "
+        f"- {stats} The {TOP_ADVISORS} advisors with the most theses supervised "
         f"{_percent(advisors.share_of_theses_with_top_advisors)} of them.",
         f"- Theses with an advisor ORCID: {advisors.theses_with_advisor_orcid}, with "
         f"{advisors.distinct_advisor_orcids} distinct ORCIDs. ORCIDs found with more than one "
@@ -673,7 +754,7 @@ def _rights_section(profile: MetadataProfile) -> list[str]:
     ]
 
 
-def _method_section(profile: MetadataProfile) -> list[str]:
+def _method_section(profile: MetadataProfile, provenance: Mapping[str, Any]) -> list[str]:
     chunks = profile.abstracts.chunks
     budget = chunks.token_limit - chunks.special_tokens
     return [
@@ -692,12 +773,14 @@ def _method_section(profile: MetadataProfile) -> list[str]:
         "which can only lower the estimate, while a missed sentence end can raise it. In "
         f"{chunks.sentence_sums_differing} abstracts the sentence token counts do not add up to "
         "the whole abstract.",
-        "- **Second model.** The tokenizer of `paraphrase-multilingual-mpnet-base-v2` is not in "
-        "the local cache, so D09's check under both tokenizers is still pending.",
+        *(
+            _second_model_note(facts, provenance["tokenizer"])
+            for facts in provenance["other_tokenizers"]
+        ),
         "- **Title suffixes.** `TRAILING_YEAR` and `TRAILING_PLACE` in "
-        "`src/thematic_redundancy/corpus/profile.py` define the patterns. A year is 19xx or "
-        "20xx, or a range, after a comma, a dash, a parenthesis or a space, and never after a "
-        "digit (so `ISO 9001:2015` does not count). Places come from a gazetteer of "
+        "`src/thematic_redundancy/preprocessing/title_suffix.py` define the patterns. A year "
+        "is 19xx or 20xx, or a range, after a comma, a dash, a parenthesis or a space, and "
+        "never after a digit (so `ISO 9001:2015` does not count). Places come from a gazetteer of "
         f"{len(PLACE_NAMES)} names: Peru, its departments, the provinces of the Arequipa region, "
         "the districts of the province of Arequipa, and a few southern towns. Place words "
         "missing from it are not seen, and a place that ends an organization's name counts.",
@@ -711,6 +794,48 @@ def _method_section(profile: MetadataProfile) -> list[str]:
         "collapsed and case folded but accents kept.",
         "",
     ]
+
+
+def _second_model_note(facts: Mapping[str, Any], reference: Mapping[str, Any]) -> str:
+    """Return the method note on another model's tokenizer, from :func:`compare_tokenizer`.
+
+    ``reference`` describes the tokenizer that counted the tokens of the report.
+    """
+    name, first = (_model_name(model) for model in (facts["model"], reference["model"]))
+    if not facts["cached"]:
+        return (
+            f"- **Second model.** The tokenizer of `{name}` is not in the local cache, so D09's "
+            "check under both tokenizers is still pending."
+        )
+    if facts["vocabulary_size"] != reference["vocabulary_size"]:
+        return (
+            f"- **Second model.** The tokenizer of `{name}` in the local cache has a vocabulary "
+            f"of {facts['vocabulary_size']:,} tokens, while that of `{first}` has "
+            f"{reference['vocabulary_size']:,}, so their token counts were not compared: that "
+            "cache may be incomplete, and D09's check under both tokenizers is still pending."
+        )
+    compared, differing = facts["texts_compared"], facts["texts_counted_differently"]
+    texts = (
+        "distinct texts that this profile tokenized (titles, abstracts, their sentences, and "
+        "the empty text that gives the special tokens)"
+    )
+    if not differing:
+        return (
+            f"- **Second model.** The tokenizer of `{name}`, from the local cache, gives the same "
+            f"count as that of `{first}` for each of the {compared:,} {texts}, so every token "
+            "count here holds for both models (D09)."
+        )
+    return (
+        f"- **Second model.** The tokenizer of `{name}`, from the local cache, gives another "
+        f"count than that of `{first}` for {differing:,} of the {compared:,} {texts}, so the "
+        f"token counts here hold for `{first}` only; D09's chunks must fit both tokenizers "
+        "(T13)."
+    )
+
+
+def _model_name(model_id: str) -> str:
+    """Return a Hugging Face model id without its owner, such as ``paraphrase-…-v2``."""
+    return model_id.rpartition("/")[2]
 
 
 def _dominant_codes(profile: MetadataProfile) -> dict[str, tuple[str, int, float]]:
@@ -816,21 +941,22 @@ def plot_program_year(profile: MetadataProfile) -> bytes:
         f"{profile.theses} theses of snapshot {profile.snapshot_id}; "
         f"{years[-1] if years else ''} is partial (harvested {profile.snapshot_date.isoformat()})",
     )
-    figure.legend(
-        handles=[Patch(facecolor=colors[key], label=key) for key in programs],
-        loc="upper left",
-        bbox_to_anchor=(0.25 / 8.0, 1 - 0.8 / 4.6),
-        ncol=len(programs),
-        frameon=False,
-        fontsize=9,
-        labelcolor=INK_SECONDARY,
-        handlelength=0.9,
-        handleheight=0.9,
-        handletextpad=0.5,
-        columnspacing=1.6,
-        borderaxespad=0,
-        borderpad=0,
-    )
+    if programs:  # A legend needs at least one column.
+        figure.legend(
+            handles=[Patch(facecolor=colors[key], label=key) for key in programs],
+            loc="upper left",
+            bbox_to_anchor=(0.25 / 8.0, 1 - 0.8 / 4.6),
+            ncol=len(programs),
+            frameon=False,
+            fontsize=9,
+            labelcolor=INK_SECONDARY,
+            handlelength=0.9,
+            handleheight=0.9,
+            handletextpad=0.5,
+            columnspacing=1.6,
+            borderaxespad=0,
+            borderpad=0,
+        )
     return _png(figure)
 
 

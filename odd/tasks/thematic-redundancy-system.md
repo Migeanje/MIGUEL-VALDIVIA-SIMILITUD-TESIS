@@ -423,7 +423,7 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - The mpnet tokenizer is not cached yet, so D09's check under both tokenizers is pending (T13).
   - Commit: `96c410c`, made by the user. Its tree `c1257fc…` is identical to the reviewed one.
   - Reviews: high risk, four lenses, approved both before and after the commit.
-- [ ] **T07a** EDA script follow-ups from the T07 reviews (non-blocking):
+- [x] **T07a** EDA script follow-ups from the T07 reviews (non-blocking):
   - Write the outputs atomically (stage, then publish) so a failed write leaves no half-written results.
   - Guard against empty programs or years in `observations()`.
   - Derive the mpnet-tokenizer note at runtime instead of hardcoding it.
@@ -431,7 +431,54 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
   - Name the year-suffix patterns explicitly.
   - Add tests for the privacy write gate.
   - Document that text drawn inside the PNG figures is outside the gate's string search.
-  - Route D. Risk M.
+  - Route D. Risk M. Trigger: the profile script, the shared writer, `preprocessing/title_suffix.py`, and three test modules (one new), plus the README, this plan and the ledger; done together with T11b as one unit.
+  - Evidence (2026-10-12):
+    - Item 1, atomic outputs:
+      - `shared/filesystem.py` gains `write_files_atomically(directory, contents)`. It writes each file to `<name>.part` and flushes it, all before the first rename; it then renames them in the given order and flushes the directory once (`fsync_directory`).
+      - A failure or an interruption while staging leaves every previous file, raises the original error, and removes the staged files where the system allows it. A rename cannot be undone, so a failed rename leaves the files moved before it new; the docstring says so.
+      - A key that is not a plain file name (`""`, `.`, `..`, a name with a directory part) is refused with `ValueError` before anything is written.
+      - `write_bytes_atomically(path, content)` is its one-file form, and `write_text_atomically` now goes through it, writing the same bytes as before.
+      - The script creates its folder and stages its 6 outputs together. Other files of the folder, such as `stopword_candidates.json`, stay. A write error gives two `error:` lines (the second since review fix U4-01) and exit code 1.
+    - Item 2: `observations()` leaves out the programs sentence when no program has theses, and its busiest-year clause when no thesis has a readable issue date. The new test of a snapshot without theses also found that the program and year figure crashed on a legend of 0 columns; the figure now skips the legend then.
+    - Item 3, the tokenizer note:
+      - `main` records each distinct text that the profile tokenizes, with its count, through a wrapper around the counter.
+      - `compare_tokenizer(model, counted, load, reference)` loads each other configured model's tokenizer through the given loader, from the local cache only, and counts the texts that it counts differently. A tokenizer missing from the cache is reported as not cached; one whose vocabulary size differs from the reference's is not compared (review fix U4-03).
+      - The facts go into the provenance, as `other_tokenizers`. The note is rendered from them, with four texts: not cached (the old text), another vocabulary size (U4-03), the same count for every text, or another count for some texts.
+      - Tests inject the facts and a stand-in loader, so no model loads.
+    - Item 4: the advisor note reads `TOP_ADVISORS` from `corpus/profile.py`.
+    - Item 5: a new test in `test_profile.py` names the year and place pattern sets one by one, checks both constants against them, and counts one title per pattern. `YEAR_SUFFIX_PATTERNS` in `preprocessing/title_suffix.py`, where T11 moved it, now names its four patterns instead of slicing `TITLE_SUFFIX_PATTERNS[:4]` (review item 4, below).
+    - Item 6: `tests/unit/corpus/test_eda_metadata.py` (new) tests the gate in `main`:
+      - a title in each of the 6 outputs;
+      - an abstract sentence in upper case, a person's name, an ORCID iD, and the title of an item that is not a thesis;
+      - a title inside binary bytes, in UTF-8 or in Latin-1;
+      - each time, the error names the output and not the leak, and nothing is written; earlier outputs stay as they were.
+    - Item 7: the module docstring, `_searchable` and the README say that the search reads the bytes of each file, so text drawn into a figure's pixels is outside it. The figures draw only fixed labels and profile values (program keys, years, counts, keywords), which `metadata_profile.json` also holds, and that file is searched.
+    - Also fixed: the title-suffix method note named `src/thematic_redundancy/corpus/profile.py` as the home of `TRAILING_YEAR` and `TRAILING_PLACE`; since T11 it is `preprocessing/title_suffix.py`.
+    - Test first:
+      - `test_eda_metadata.py`, RED: 16 failed, 17 passed. The failures: `ValueError` from `max()` (3) and from the legend (1); `AttributeError` for `TOP_ADVISORS` and `compare_tokenizer` (4); the hardcoded or missing notes, including the old module path (4); `KeyError: 'other_tokenizers'` (2); and the `OSError` that escaped after 3 of the 6 previous outputs had been overwritten (1). One was a test defect: a person's name also leaks its family-name part, so the error counted 2 strings; the assertion now accepts any positive count. GREEN: 33 passed.
+      - `test_filesystem.py`, RED: a collection error (`ImportError`, 1 error). GREEN: 37 passed (25 + 12).
+      - Passing at once, as characterization tests: 15 of the gate and writing tests, the observation that names the busiest year, the not-cached note, and the pattern test. The gate test of a person's name passed once its assertion was fixed.
+    - Mutants, each with a fresh bytecode cache, the module byte-identical after each restore:
+      - 28 of the profile script and the shared writer, all killed. Profile script (22): the gate disabled; only the first output searched; the search without Latin-1 or without UTF-8; a message that echoes the leak; the strings of the theses only; the outputs written before the gate; direct writes one after another; a write error not caught; each of the two guards removed; the busiest year never named; the advisor count as the literal 10; equal counts reported as different; a missing tokenizer raising; the texts compared off by one; the note's verdict inverted; the first model compared with itself; the counts not recorded; the legend guard removed; the old module path; the note always "not cached". Shared writer (6): each file moved right after it is staged; staged files kept on failure; names not checked; `..` not checked; a line feed added to bytes; no directory flush.
+      - 2 mutants of `preprocessing/title_suffix.py`, made on a copy of the source tree in a scratch folder and loaded through `PYTHONPATH` (the file itself was not touched): two patterns swapped so that the slice holds `place_after_separator`, and a slice of 3. Both were caught only by the new pattern test; the existing profile tests passed on both.
+    - Real data, read-only and in memory, numbers only: the script's own functions profiled snapshot `20261002T224412Z` (766 items, 746 theses) and rendered the 6 outputs without writing, with the committed provenance plus the new `other_tokenizers`.
+      - The mpnet tokenizer (`XLMRobertaTokenizer`, 250,002 tokens, 2 special tokens per sequence) is cached, and it gives the same count as MiniLM's for all 7,097 distinct texts (0 differ). The MiniLM facts equal the committed ones.
+      - Byte-identical to the committed files: the 4 figures, and `metadata_profile.json` once its new key is removed. `summary.md` differs in exactly two method notes: the second-model note, now derived ("the same count … for each of the 7,097 distinct texts … holds for both models"), and the module path of the suffix patterns.
+      - The old script, run the same way, reproduced all 6 committed files byte for byte, so the differences come from this change only.
+      - Privacy gate on the new outputs: 6 outputs, 11,215 strings, 0 hits. The 7 committed files kept their SHA-256; nothing was written.
+      - Times: MiniLM load 1.28 s, profile 1.42 s, mpnet load and comparison 2.77 s, render 0.48 s; 16.8 s for the whole command.
+    - The committed `results/eda/20261002T224412Z/` files predate this change and stay as they are. A real run would keep the 4 figures; `metadata_profile.json` would gain `other_tokenizers` and record the current commit; `summary.md` would change its Code line and the two notes above. Regenerate them once this unit is committed, with one run of `experiments/eda_metadata.py` (the in-memory check took 16.8 s).
+    - Review fixes (2026-10-12): an independent adversarial review raised three findings and asked to close item 5. One scoped correction fixed them, test first.
+      - U4-01, a false claim. The README, the script's docstring and the `write_files_atomically` docstring said that a failed write leaves the previous outputs, which holds only for a failure while staging. A failed rename leaves the outputs renamed before it new: in the review's probe, a Windows reader holding `abstract_tokens.png` open gave WinError 5 after 3 outputs had been replaced. Ctrl+C between two renames does the same. The three texts now say so, and `main` adds a second error line: `some outputs in <folder> may already have been replaced; run the script again to write them all`. RED: the new test, with a rename that fails after the first output, failed without that line. GREEN: passed; it also checks that the first output is new, the other 5 are the previous ones, and no staged file is left.
+      - U4-02, colliding names. `write_files_atomically` now refuses, before writing anything, a key that ends in `.part` in any letter case (`STAGED_SUFFIX`): `{"a.part": …, "a": …}` had left only `a`, holding the content meant for `a.part`. It also refuses two keys equal after `casefold()`: `A.json` and `a.json` name one file on Windows, where the probe got a `FileNotFoundError` after `A.json` had been replaced. RED: 3 failed (2 `DID NOT RAISE`, 1 `FileNotFoundError`). GREEN: passed. The review's probe, rerun on the fixed code: the held-open file still gives the documented mix, and both collisions are refused with nothing written.
+      - U4-03, a wrong verdict. A partly downloaded mpnet cache, with its configuration files but without `tokenizer.json` or `sentencepiece.bpe.model`, loads offline as an `XLMRobertaTokenizer` of 5 tokens, whose counts would have produced a D09 verdict. `compare_tokenizer` now takes the reference tokenizer's description and compares counts only when both vocabularies have the same size. Otherwise the facts keep the vocabulary size without counts, and the note says that the cached tokenizer has a vocabulary of N tokens while the reference's has M, so their counts were not compared, that cache may be incomplete, and D09's check is still pending. RED: 6 failed (a `TypeError` for the new argument in 4 tests, `KeyError: 'texts_compared'` in the note, and counts compared by `main`). GREEN: passed. The review's probe on a real partial cache, rerun on the fixed code: vocabulary size 5 against 250,002, no counts, and that note.
+      - Item 4, which closes T07a: `YEAR_SUFFIX_PATTERNS` names `place_and_year`, `year_after_separator`, `year_after_temporal_word` and `year_after_other_word`; `TITLE_SUFFIX_PATTERNS` keeps its patterns and their order. The pattern test in `test_profile.py` passed before and after, and `test_title_suffix.py` needed no change (122 passed together). Two patterns of `TITLE_SUFFIX_PATTERNS` swapped failed the pattern test before the change and pass it now: the sets no longer depend on that order.
+      - RED in all: 10 failed, 67 passed in `test_eda_metadata.py` and `test_filesystem.py`. GREEN: 77 passed (37 and 40; 7 new tests).
+      - 10 throwaway mutants, each with a fresh bytecode cache and each module byte-identical after its restore, all killed: no line about replaced outputs; that line without the folder; `.part` not refused; `.part` refused in lower case only; case-equal names not refused; names compared with their case; counts compared whatever the vocabulary; the note without its vocabulary branch; a place pattern counted as a year; a year pattern left out.
+      - Real data, rerun read-only and in memory after the fixes: the same results as above (7,097 texts, 0 counted differently, both vocabularies of 250,002 tokens; the 4 figures byte-identical; the same two notes; 0 privacy hits; the 7 committed files kept their SHA-256), in 16.7 s.
+    - Checks (T11b and T07a together, after the review fixes): `pytest` 1,376 passed, 3 skipped (1,319 + 57 new: 37 profile script, 15 shared writer, 4 candidates script, 1 profile) in 33.7–38.6 s (3 runs; before the fixes, 1,369 passed in 33.0–40.4 s); `ruff check` and `ruff format --check` clean; the attribution scan of the added lines found 0 hits.
+    - Size (T11b and T07a together, after the review fixes): 1,417 authored changed lines. 974 are tests, 692 of them the new `test_eda_metadata.py`; 342 are source: 214 in the profile script, 84 in the shared writer, 40 in the candidates script (32 of them removed), and 4 in `title_suffix.py`; 101 are the README (20), this plan (79) and the ledger (2). The review correction accounts for about 180 of them, and T11b alone for about 133. That is above the 400-line guide because the new test module checks the privacy gate for each output and each kind of leak, the tokenizer facts, the empty-snapshot guards and the staged writing, each through `main`.
+  - Commit: pending; prepared on 2026-10-12 as unit 4 of the overnight stack.
 
 ### P2 — Data preparation (M2–M3)
 - [x] **T08** Ficha schema (pydantic) and its parquet adapter. It holds the Anexo B fields plus: handle URL, snapshot id, keywords, OCDE code, objectives status, section source, include/exclude with reason, file hash.
@@ -787,12 +834,25 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
     - Size: about 590 authored changed lines, 428 of them in `test_domain_stopwords.py` and 97 in this plan (T05 closing evidence included). This exceeds the 400-line guide, because the characterization tests cover each branch of the privacy gate and the dedupe.
   - Commit: `633dfd2`, made by the user. Its tree `1b22471…` is identical to the reviewed one.
   - Reviews: medium risk, one lens, approved both before and after the commit.
-- [ ] **T11b** Follow-ups from the T11a reviews (non-blocking):
+- [x] **T11b** Follow-ups from the T11a reviews (non-blocking):
   - `_fsync_directory` in `experiments/domain_stopwords.py` tolerates only a failure to open the directory. An `OSError` from `os.fsync` on an opened directory (EINVAL on some network, FUSE or overlay filesystems) propagates after `os.replace` has already published the output, which contradicts its docstring. Tolerate it, and add a test. Both reviews raised it.
     - `fsync_directory` in `shared/filesystem.py` (T09b) can replace it. That changes the experiment's failure behavior: an EINVAL, or any other `OSError`, from flushing a FUSE or network directory is then swallowed instead of raised, which is the fix above, so its tests must expect it.
   - The documents-per-second test couples to the number of `perf_counter` readings in `main`. Assert only the format, or control the two readings that bracket the cleaner.
   - Pin the D26 list in a test, by its 89-lemma count or the file's SHA-256, so the freeze before T18 is observable (review R3-001 of the closure unit `b6943fa`).
-  - Route D. Risk M.
+  - Route D. Risk M. Trigger: the candidates script and its test module, on top of the shared writer that T07a extends; done together with T07a as one unit.
+  - Evidence (2026-10-12):
+    - Item 1, the directory flush:
+      - `_write_atomically` now creates the output folder and calls `write_bytes_atomically` from `shared/filesystem.py` (T07a). Its directory flush is therefore `fsync_directory`: a directory that cannot be opened (Windows) or flushed (EINVAL on some network, FUSE or overlay file systems, or any other `OSError`) is skipped, since the output is flushed and in place by then.
+      - This is the change in failure behavior noted above: such an error is now swallowed instead of raised after the output was published. The script's own `_fsync_directory` and its `os` and `tempfile` imports are gone.
+      - The bytes written are the same. The staged file is now `<name>.part` beside the output instead of a `mkstemp` name, removed on failure where the system allows it.
+      - RED: the new test `test_write_atomically_publishes_where_the_directory_cannot_be_flushed` (EINVAL and EIO) gave 2 failed, 47 passed: the `OSError` was raised after the replace. GREEN: 49 passed. A test that the folder is created passed at once.
+    - Item 2, the throughput test: the stand-in clock now moves only inside the stand-in model load (1.5 s) and the stand-in cleaner (4.0 s), and the test checks `2 documents in 4.0 s (0.5 documents/s` and `model load 1.5 s`, however often `main` reads the clock. With an extra clock reading added to `main`, the old test failed and the new one passed; both files were restored byte-identical.
+    - Item 3, the D26 pin: `test_the_curated_list_is_frozen_as_decided_in_d26` checks 89 lemmas and the SHA-256 of the sorted lemmas joined by line feeds, `8a889062a2f117e2…`. Its docstring says that a deliberate change, such as one from the T16 review, must update both values together with a decision in this plan. Proven on temporary copies of the list, which itself was not touched: a lemma added, a lemma removed, or one `ñ` dropped fails; a comment edited, a blank line added and two lemmas swapped pass.
+    - Mutants, each with a fresh bytecode cache, the script byte-identical after each restore: 5, all killed (no folder created, seconds per document, the clock read after the cleaner, the cleaner timed from the model load, the load timed after it).
+    - Real data: none; the script writes under `results/`, and its tests cover it.
+    - Review fixes: none in this script. Its one-file write goes through `write_files_atomically`, which now also refuses a name that ends in `.part` (U4-02 under T07a); the candidates file is `stopword_candidates.json`, so it writes as before.
+    - Checks and size: under T07a, which closes the same unit.
+  - Commit: pending; prepared on 2026-10-12 as unit 4 of the overnight stack.
 - [x] **T12** Build the fichas dataset, the exclusion log, and a quality report. Inclusion requires an exact `renati.type` fragment `#tesis` (746 in snapshot `20261002T224412Z`). Suficiencia profesional appears in 5 spellings and is excluded with its reason.
   - Route D. Risk M.
   - Inputs from the T05 findings (2026-10-03): 11777 is metadata-only with a quality note, and the D24 canonical rule must also choose the industrial pair's PDF.
@@ -897,6 +957,7 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
 - [ ] **T13** Sentence-aligned chunker that is valid for both tokenizers. Property tests check that every chunk fits both tokenizers and no text is lost.
   - Route D. Risk M.
   - Inputs (2026-10-11): both models are cached (U8), so the chunker can run offline (`HF_HUB_OFFLINE=1`). Measured offline with transformers 5.18.0: the MiniLM tokenizer (model type `bert`) and the mpnet tokenizer (`xlm-roberta`) hold the same 250,002-token vocabulary, with the same 5 special tokens, and gave the same token ids for 3 Spanish sample sentences with accents, ñ and symbols. D09's 250,037 vs 250,002 are the models' `config.json` `vocab_size`. Keep the check under both tokenizers, since it is cheap and guards a model swap; comparing both tokenizations over the whole corpus would confirm the equality.
+  - Input (2026-10-12, T07a): over the metadata of snapshot `20261002T224412Z`, the two tokenizers give the same token count, special tokens included, for each of the 7,097 distinct texts that the metadata profile tokenizes: titles, abstracts, abstract sentences and the empty text. Counts were compared, not token ids. The PDF objectives were not compared.
 - [ ] **T14** Embedding pipeline: section means, an equal-weight document vector, L2 normalization, cached chunk vectors, and a plain-mean sensitivity flag.
   - Route D. Risk M.
 - [ ] **T15** TF-IDF baseline representations, used for both clustering and redundancy.
@@ -1173,6 +1234,13 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
   - An independent adversarial review raised three findings: keys of a damaged manifest still reached its message, a second Ctrl+C during the cleanup brought back the old message, and the first byte-level read did not fit the table-store port. One scoped correction fixed them, as recorded under T12b.
   - Checks: `pytest` 1,319 passed, 3 skipped; `ruff check` and `ruff format --check` clean. The unit is uncommitted, for the user's review and commit.
 
+- 2026-10-12: T11b and T07a implemented and verified on top of unit 3, as unit 4 of the overnight stack. Route: D. Trigger: the two experiment scripts, the shared writer, `preprocessing/title_suffix.py`, and four test modules (one new).
+  - `shared/filesystem.py` now also writes bytes, and several files of one folder staged together before any moves into place. Both experiment scripts use it: the stopword candidates no longer fail after publishing when a directory cannot be flushed, and the metadata profile stages all its outputs before it renames any.
+  - The D26 list is pinned by a test (89 lemmas and their SHA-256), and the throughput test no longer depends on how often the script reads the clock.
+  - The metadata profile now derives its second-tokenizer note at runtime, guards a snapshot without theses or without readable dates, ties the advisor note to its constant, and has tests for its privacy gate. Rendered in memory from the real snapshot, the 4 figures are byte-identical to the committed ones, and the two tokenizers count all 7,097 distinct texts the same.
+  - An independent adversarial review raised three findings: the docs claimed that any failed write leaves the previous outputs, while a failed rename leaves a mix; names that collide through `.part` or letter case were not refused; and a partly downloaded tokenizer cache could produce a false D09 note. One scoped correction fixed them, test first, as recorded under T07a. It also names the year-suffix patterns in `preprocessing/title_suffix.py`, which closes T07a.
+  - Checks: `pytest` 1,376 passed, 3 skipped; `ruff check` and `ruff format --check` clean. The unit is uncommitted, for the user's review and commit.
+
 ## Next step
 
 Resume checklist, in order:
@@ -1185,7 +1253,8 @@ Resume checklist, in order:
    - Unit 1, T08a: prepared (key creation without hard links, the key directory fsync, and the stricter storage schema check).
    - Unit 2, T09b: prepared (the run lock and the atomic text write moved into `shared/filesystem.py`, and characterization tests for edge lines of digits only). T09b stays open for the user's decision on those lines: options (a) to (c) under T09b; (b) and (c) mean extracting all 731 PDFs again.
    - Unit 3, T12b: prepared, with its review fixes (an accurate message for an interruption while the fichas tables move, a one-line refusal of a damaged fichas manifest, and `load_fichas` parsing the bytes it checked through the port's `read_verified`).
-   - Unit 4, T11b (its D26 pin before T18) with T07a, T05a, T04a and T02a: next. It can reuse `fsync_directory` from `shared/filesystem.py` for `experiments/domain_stopwords.py`, which then swallows a failed directory flush instead of raising it (noted under T11b).
+   - Unit 4, T11b and T07a: prepared, with its review fixes (the D26 pin, the tolerant directory flush of the stopword candidates, a clock-independent throughput test; the metadata profile's staged outputs with an honest message for a failed rename, refused colliding names, a runtime tokenizer note that compares counts only for equal vocabulary sizes, empty-snapshot guards, privacy-gate tests, and the year-suffix patterns named in the source). Once the unit is committed, run `experiments/eda_metadata.py` again so that `results/eda/20261002T224412Z/` records the tokenizer comparison (the figures stay byte-identical; see T07a).
+   - Unit 5, T05a, T04a and T02a: next.
    - T10c waits for the user's redactor policy, which is needed before any new workbook, so before T20.
 3. **Phase 3.** T13, the chunker (both models are cached), reading the fichas through `load_fichas`; T14; T15, with the 89-lemma stopword list of D26; then T16 to T19.
 

@@ -27,10 +27,8 @@ written.
 import argparse
 import hashlib
 import json
-import os
 import subprocess
 import sys
-import tempfile
 import time
 from collections.abc import Iterable, Mapping, Sequence
 from importlib import metadata
@@ -65,6 +63,7 @@ from thematic_redundancy.preprocessing.light_cleaner import clean_light, normali
 from thematic_redundancy.preprocessing.stopwords import stopword_candidates
 from thematic_redundancy.preprocessing.title_suffix import strip_title_suffix
 from thematic_redundancy.shared.config import load_config
+from thematic_redundancy.shared.filesystem import write_bytes_atomically
 
 CONFIG_PATH = Path("config") / "default.yaml"
 SCRIPT_PATH = "experiments/domain_stopwords.py"
@@ -287,39 +286,16 @@ def _git(project_root: Path, *arguments: str) -> str | None:
 
 
 def _write_atomically(path: Path, content: bytes) -> None:
-    """Write ``content`` to a staged file beside ``path``, then move it into place durably.
+    """Create the directory of ``path``, then put ``content`` there atomically and durably.
 
-    The staged file is flushed to the disk before the move, and its directory after it, so
-    readers and a crash find the previous output or the new one, never a partial one.
+    :func:`write_bytes_atomically` flushes a staged file beside ``path`` before it moves it
+    into place, and the directory after it, so readers and a crash find the previous output
+    or the new one, never a partial one. A directory that cannot be opened (Windows) or
+    flushed (EINVAL on some network, FUSE or overlay file systems) is skipped, since the
+    output is already in place by then.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, staged = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    try:
-        with os.fdopen(descriptor, "wb") as file:
-            file.write(content)
-            file.flush()
-            os.fsync(file.fileno())
-        os.replace(staged, path)
-    except BaseException:
-        Path(staged).unlink(missing_ok=True)
-        raise
-    _fsync_directory(path.parent)
-
-
-def _fsync_directory(directory: Path) -> None:
-    """Flush the entries of ``directory`` to the disk, so that a file moved into it stays.
-
-    POSIX systems need this after a rename. Windows cannot open a directory as a file, so
-    there, as wherever the directory cannot be opened, the step is skipped.
-    """
-    try:
-        descriptor = os.open(directory, os.O_RDONLY)
-    except OSError:
-        return
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
+    write_bytes_atomically(path, content)
 
 
 if __name__ == "__main__":

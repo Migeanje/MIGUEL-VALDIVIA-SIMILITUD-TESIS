@@ -6,9 +6,9 @@ curated list of the project. The script tests load no language model: the lemmas
 clock are stand-ins.
 """
 
+import errno
 import hashlib
 import importlib.util
-import itertools
 import json
 import os
 import shutil
@@ -194,6 +194,24 @@ def test_the_curated_list_holds_the_research_action_verbs_of_the_objectives() ->
 
 def test_the_curated_list_leaves_out_the_outcome_verbs_until_the_topic_review() -> None:
     assert load_domain_stopwords(CURATED_LIST).isdisjoint(OUTCOME_VERBS)
+
+
+D26_LEMMAS = 89
+D26_SHA256 = "8a889062a2f117e2e64bd3e97ad0cd1384b8bce1721dbb0622cb24a53ce1b50f"
+"""SHA-256 of the lemmas of the list as decided in D26, sorted and joined by line feeds."""
+
+
+def test_the_curated_list_is_frozen_as_decided_in_d26() -> None:
+    """The list is frozen before the topic runs (T18), so any change to a lemma fails here.
+
+    The pin covers the lemmas as read, sorted, so a change to a comment, a blank line or the
+    order of the lines keeps it. A deliberate change, such as one from the T16 review of the
+    outcome verbs, must update both values here together with a decision in the plan.
+    """
+    lemmas = sorted(load_domain_stopwords(CURATED_LIST))
+
+    assert len(lemmas) == D26_LEMMAS
+    assert hashlib.sha256("\n".join(lemmas).encode()).hexdigest() == D26_SHA256
 
 
 def test_the_curated_list_writes_each_lemma_once_in_nfc_lower_case() -> None:
@@ -499,26 +517,48 @@ def test_main_reports_the_documents_cleaned_per_second(
     cli_root: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     write_test_snapshot(cli_root, [record(1), record(2)])
-    ticks = itertools.count()  # Each reading of the clock is one second after the last one.
-    monkeypatch.setattr(script, "time", SimpleNamespace(perf_counter=lambda: float(next(ticks))))
+    # The clock moves only while the model loads and while the cleaner runs, so the figures
+    # depend on the readings around each step, not on how often the run reads the clock.
+    clock = SimpleNamespace(now=100.0)
+    monkeypatch.setattr(script, "time", SimpleNamespace(perf_counter=lambda: clock.now))
+
+    def slow_pipeline() -> SimpleNamespace:
+        clock.now += 1.5
+        return SimpleNamespace(meta={})
+
+    def four_second_cleaner(
+        texts: Iterable[str], *, domain_stopwords: frozenset[str]
+    ) -> list[list[str]]:
+        clock.now += 4.0
+        return stand_in_lemmas(texts, domain_stopwords=domain_stopwords)
+
+    monkeypatch.setattr(script, "spanish_pipeline", slow_pipeline)
+    monkeypatch.setattr(script, "clean_full_batch", four_second_cleaner)
 
     code = script.main(["--project-root", str(cli_root)])
 
+    out = capsys.readouterr().out
     assert code == 0
-    assert "Full cleaner: 2 documents in 1.0 s (2.0 documents/s, " in capsys.readouterr().out
+    assert "Full cleaner: 2 documents in 4.0 s (0.5 documents/s, " in out
+    assert "model load 1.5 s" in out
 
 
 # The candidates script: publishing the output durably
 
 
 def record_file_calls(
-    monkeypatch: pytest.MonkeyPatch, directory: Path, *, directory_opens: bool = True
+    monkeypatch: pytest.MonkeyPatch,
+    directory: Path,
+    *,
+    directory_opens: bool = True,
+    directory_flush_error: OSError | None = None,
 ) -> list[str]:
     """Record the flushes, moves and directory opens of a write, in order, and return the log.
 
     Opening ``directory`` gives a stand-in descriptor that is never flushed for real, since
-    Windows cannot open a directory; with ``directory_opens`` false it fails as on Windows.
-    Every other call goes through to :mod:`os`.
+    Windows cannot open a directory; with ``directory_opens`` false it fails as on Windows,
+    and ``directory_flush_error`` makes the flush of the directory fail. Every other call
+    goes through to :mod:`os`.
     """
     calls: list[str] = []
     real_open, real_fsync, real_close, real_replace = os.open, os.fsync, os.close, os.replace
@@ -539,6 +579,8 @@ def record_file_calls(
     def fsync(descriptor: int) -> None:
         if descriptor in stand_ins:
             calls.append("fsync directory")
+            if directory_flush_error is not None:
+                raise directory_flush_error
             return
         calls.append(f"fsync file of {os.fstat(descriptor).st_size} bytes")
         real_fsync(descriptor)
@@ -591,3 +633,40 @@ def test_write_atomically_publishes_where_a_directory_cannot_be_opened(
     assert calls == ["fsync file of 3 bytes", "replace", "open directory"]
     assert path.read_bytes() == b"{}\n"
     assert [entry.name for entry in path.parent.iterdir()] == ["candidates.json"]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [OSError(errno.EINVAL, "Invalid argument"), OSError(errno.EIO, "Input/output error")],
+    ids=["unsupported", "disk-failure"],
+)
+def test_write_atomically_publishes_where_the_directory_cannot_be_flushed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: OSError
+) -> None:
+    # Some network, FUSE or overlay file systems refuse to flush a directory (EINVAL). The
+    # output is flushed and in place by then, so the run must not fail after publishing it.
+    path = tmp_path / "eda" / "candidates.json"
+    path.parent.mkdir()
+    path.write_bytes(b"old\n")
+    calls = record_file_calls(monkeypatch, path.parent, directory_flush_error=error)
+
+    script._write_atomically(path, b"{}\n")
+
+    assert calls == [
+        "fsync file of 3 bytes",
+        "replace",
+        "open directory",
+        "fsync directory",
+        "close directory",
+    ]
+    assert path.read_bytes() == b"{}\n"
+    assert [entry.name for entry in path.parent.iterdir()] == ["candidates.json"]
+
+
+def test_write_atomically_creates_the_output_directory(tmp_path: Path) -> None:
+    path = tmp_path / "results" / "eda" / SNAPSHOT_ID / "stopword_candidates.json"
+
+    script._write_atomically(path, b"{}\n")
+
+    assert path.read_bytes() == b"{}\n"
+    assert [entry.name for entry in path.parent.iterdir()] == ["stopword_candidates.json"]
