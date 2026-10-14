@@ -1,7 +1,8 @@
 """Behavior of the OCR assets step, which fetches and verifies the Tesseract language files.
 
 A fake downloader stands in for the network, and the HTTP adapter runs over
-``httpx.MockTransport``, so no test opens a connection.
+``httpx.MockTransport``, so no test opens a connection. Most tests pin the configured
+languages to small fake payloads; a few use the real pins, which no fake payload matches.
 """
 
 import hashlib
@@ -9,7 +10,8 @@ import io
 import json
 import re
 import shutil
-from collections.abc import Callable
+import struct
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -18,9 +20,10 @@ import httpx
 import pytest
 
 from thematic_redundancy.extraction.ocr_assets import (
-    MIN_TRAINEDDATA_BYTES,
+    PINNED_TRAINEDDATA,
     ByteSink,
     HttpxDownloader,
+    PinnedFile,
     TessdataDownloadError,
     TessdataReport,
     ensure_tessdata,
@@ -33,14 +36,12 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "default.
 
 SPA_URL = "https://github.com/tesseract-ocr/tessdata_best/raw/main/spa.traineddata"
 ENG_URL = "https://github.com/tesseract-ocr/tessdata_best/raw/main/eng.traineddata"
+POR_URL = "https://github.com/tesseract-ocr/tessdata_best/raw/main/por.traineddata"
 FAST_SPA_URL = "https://github.com/tesseract-ocr/tessdata_fast/raw/main/spa.traineddata"
 RAW_SPA_URL = "https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/main/spa.traineddata"
 
 DOWNLOAD_TIME = datetime(2026, 10, 2, 15, 4, 5, tzinfo=UTC)
 LATER_TIME = datetime(2026, 10, 3, 8, 30, 0, tzinfo=UTC)
-
-SMALL_FLOOR = 1_024
-"""Size floor for direct calls, which keeps the fake payloads small."""
 
 
 def payload_for(url: str, size: int) -> bytes:
@@ -49,12 +50,42 @@ def payload_for(url: str, size: int) -> bytes:
     return (block * (size // len(block) + 1))[:size]
 
 
-class FakeDownloader:
-    """Serve one payload per URL and record every request; a failing URL breaks midway."""
+def pin_of(content: bytes) -> PinnedFile:
+    return PinnedFile(size_bytes=len(content), sha256=hashlib.sha256(content).hexdigest())
 
-    def __init__(self, payloads: dict[str, bytes], failing: tuple[str, ...] = ()) -> None:
+
+PAYLOADS = {SPA_URL: payload_for(SPA_URL, 4_096), ENG_URL: payload_for(ENG_URL, 3_000)}
+"""Distinct fake payloads for both configured files."""
+
+PINS = {"spa": pin_of(PAYLOADS[SPA_URL]), "eng": pin_of(PAYLOADS[ENG_URL])}
+"""Pins that the fake payloads match, in place of the real ones."""
+
+
+def traineddata(
+    size: int, *, entries: int = 24, offsets: Sequence[int] | None = None, header: bytes = b""
+) -> bytes:
+    """Return ``size`` bytes laid out as a Tesseract language file: an entry count, an offset
+    table with two entries present by default, then filler. ``header`` replaces the start."""
+    table_end = 4 + 8 * entries
+    if offsets is None:
+        offsets = [table_end, table_end + 100, *[-1] * (entries - 2)]
+    start = header or struct.pack(f"<i{len(offsets)}q", entries, *offsets)
+    return (start + payload_for(POR_URL, size))[:size]
+
+
+class FakeDownloader:
+    """Serve one payload per URL, in one write or in chunks of ``chunk_size`` bytes, and
+    record every request; a failing URL breaks midway."""
+
+    def __init__(
+        self,
+        payloads: dict[str, bytes],
+        failing: tuple[str, ...] = (),
+        chunk_size: int | None = None,
+    ) -> None:
         self.payloads = payloads
         self.failing = failing
+        self.chunk_size = chunk_size
         self.requests: list[str] = []
 
     def __call__(self, url: str, sink: ByteSink, /) -> None:
@@ -63,7 +94,9 @@ class FakeDownloader:
         if url in self.failing:
             sink.write(payload[: len(payload) // 2])
             raise ConnectionResetError(f"connection reset while fetching {url}")
-        sink.write(payload)
+        step = self.chunk_size or max(len(payload), 1)
+        for start in range(0, len(payload), step):
+            sink.write(payload[start : start + step])
 
 
 @pytest.fixture
@@ -74,8 +107,8 @@ def config() -> AppConfig:
 
 @pytest.fixture
 def payloads() -> dict[str, bytes]:
-    """Return distinct payloads, above :data:`SMALL_FLOOR`, for both configured files."""
-    return {SPA_URL: payload_for(SPA_URL, 4_096), ENG_URL: payload_for(ENG_URL, 3_000)}
+    """Return a fresh copy of :data:`PAYLOADS`, which a test may change."""
+    return dict(PAYLOADS)
 
 
 @pytest.fixture
@@ -93,10 +126,11 @@ def fetch(
     *,
     force: bool = False,
     at: datetime = DOWNLOAD_TIME,
+    pins: Mapping[str, PinnedFile] = PINS,
 ) -> TessdataReport:
-    """Run the step with the small size floor and a clock fixed at ``at``."""
+    """Run the step with the fake pins and a clock fixed at ``at``."""
     return ensure_tessdata(
-        config, project_root, downloader, force=force, min_bytes=SMALL_FLOOR, clock=lambda: at
+        config, project_root, downloader, force=force, pins=pins, clock=lambda: at
     )
 
 
@@ -304,15 +338,136 @@ def test_files_that_no_longer_match_the_manifest_are_downloaded_again(
     assert settled_run.requests == []
 
 
-def test_an_undersized_download_is_rejected_and_leaves_no_file(
-    config: AppConfig, payloads: dict[str, bytes], tmp_path: Path
+@pytest.mark.parametrize(
+    "served",
+    [PAYLOADS[SPA_URL][:-1], bytes(len(PAYLOADS[SPA_URL]))],
+    ids=["shorter", "same-size-other-bytes"],
+)
+def test_a_download_that_differs_from_its_pin_is_rejected_and_leaves_no_file(
+    config: AppConfig, payloads: dict[str, bytes], tmp_path: Path, served: bytes
 ) -> None:
-    payloads[SPA_URL] = payload_for(SPA_URL, SMALL_FLOOR - 1)
+    payloads[SPA_URL] = served
 
-    with pytest.raises(TessdataDownloadError, match="bytes"):
+    with pytest.raises(TessdataDownloadError) as caught:
         fetch(config, tmp_path, FakeDownloader(payloads))
 
+    message = str(caught.value)
+    assert message.startswith(f"{SPA_URL} returned {len(served):,} bytes")
+    assert hashlib.sha256(served).hexdigest() in message
+    assert f"pinned tessdata_best file of {PINS['spa'].size_bytes:,} bytes" in message
+    assert PINS["spa"].sha256 in message
     assert listing(tmp_path / "tessdata") == []
+
+
+def test_the_real_pins_are_the_files_fetched_for_the_ocr_on_2026_10_02() -> None:
+    assert dict(PINNED_TRAINEDDATA) == {
+        "spa": PinnedFile(
+            size_bytes=13_570_187,
+            sha256="e2c1ffdad8b30f26c45d4017a9183d3a7f9aa69e59918be4f88b126fac99ab2c",
+        ),
+        "eng": PinnedFile(
+            size_bytes=15_400_601,
+            sha256="8280aed0782fe27257a68ea10fe7ef324ca0f8d85bd2fd145d1c2b560bcb66ba",
+        ),
+    }
+
+
+def test_a_kept_file_of_a_pinned_language_must_also_match_its_pin(
+    config: AppConfig, payloads: dict[str, bytes], tmp_path: Path
+) -> None:
+    earlier = payload_for(FAST_SPA_URL, 5_000)
+    fetch(
+        config,
+        tmp_path,
+        FakeDownloader({**payloads, SPA_URL: earlier}),
+        pins={**PINS, "spa": pin_of(earlier)},
+    )
+    later_run = FakeDownloader(payloads)
+
+    report = fetch(config, tmp_path, later_run, at=LATER_TIME)
+
+    assert later_run.requests == [SPA_URL]
+    assert report.downloaded == ("spa",)
+    assert (tmp_path / "tessdata" / "spa.traineddata").read_bytes() == payloads[SPA_URL]
+
+
+@pytest.fixture
+def portuguese_too(config: AppConfig) -> AppConfig:
+    """Return the configuration with a third language that has no pin."""
+    return config.model_copy(update={"ocr": OcrConfig(languages="spa+eng+por", dpi=300)})
+
+
+@pytest.mark.parametrize(
+    ("content", "chunk_size"),
+    [
+        (traineddata(5_000), None),
+        (traineddata(5_000), 100),  # The header arrives over three writes.
+        (traineddata(700, entries=1, offsets=[12]), None),
+    ],
+    ids=["24-entries", "24-entries-in-chunks", "one-entry"],
+)
+def test_a_file_without_a_pin_is_kept_when_it_is_laid_out_as_a_language_file(
+    portuguese_too: AppConfig,
+    payloads: dict[str, bytes],
+    tmp_path: Path,
+    content: bytes,
+    chunk_size: int | None,
+) -> None:
+    downloader = FakeDownloader({**payloads, POR_URL: content}, chunk_size=chunk_size)
+
+    report = fetch(portuguese_too, tmp_path, downloader)
+
+    assert downloader.requests == [SPA_URL, ENG_URL, POR_URL]
+    assert (tmp_path / "tessdata" / "por.traineddata").read_bytes() == content
+    record = report.manifest.files["por.traineddata"]
+    assert (record.size_bytes, record.sha256) == (len(content), hashlib.sha256(content).hexdigest())
+
+
+@pytest.mark.parametrize(
+    ("content", "problem"),
+    [
+        (b"", "too short"),
+        (b"<!DOCTYPE html><html><body>Sign in to continue</body></html>" * 20, "entry count"),
+        (traineddata(5_000, header=struct.pack("<i", 0)), "entry count of 0"),
+        (traineddata(5_000, header=struct.pack("<i", 65)), "entry count of 65"),
+        (traineddata(100), "ends inside its offset table"),
+        (traineddata(5_000, offsets=[-1] * 24), "lists no entry"),
+        (traineddata(5_000, offsets=[196, 6_000, *[-1] * 22]), "past the end of the file"),
+        (traineddata(5_000, offsets=[196, 5_000, *[-1] * 22]), "past the end of the file"),
+        (traineddata(5_000, offsets=[150, 300, *[-1] * 22]), "into the table itself"),
+        (traineddata(5_000, offsets=[400, 300, *[-1] * 22]), "out of order"),
+    ],
+    ids=[
+        "empty",
+        "html-page",
+        "no-entries",
+        "too-many-entries",
+        "cut-in-its-table",
+        "all-entries-absent",
+        "offset-past-the-end",
+        "offset-at-the-end",
+        "offset-inside-the-table",
+        "offsets-out-of-order",
+    ],
+)
+def test_a_file_without_a_pin_is_rejected_when_it_is_not_a_language_file(
+    portuguese_too: AppConfig,
+    payloads: dict[str, bytes],
+    tmp_path: Path,
+    content: bytes,
+    problem: str,
+) -> None:
+    downloader = FakeDownloader({**payloads, POR_URL: content})
+
+    with pytest.raises(TessdataDownloadError) as caught:
+        fetch(portuguese_too, tmp_path, downloader)
+
+    message = str(caught.value)
+    assert message.startswith(
+        f"{POR_URL} returned {len(content):,} bytes that are not a Tesseract language file"
+    )
+    assert problem in message
+    assert listing(tmp_path / "tessdata") == ["eng.traineddata", "manifest.json", "spa.traineddata"]
 
 
 def test_an_interrupted_download_leaves_no_partial_file(
@@ -395,17 +550,16 @@ def test_httpx_downloader_reports_a_network_failure_with_the_url() -> None:
 
 
 def test_cli_downloads_once_and_again_only_when_forced(
-    cli_root: Path, capsys: pytest.CaptureFixture[str]
+    cli_root: Path, payloads: dict[str, bytes], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    full_size = {url: payload_for(url, MIN_TRAINEDDATA_BYTES) for url in (SPA_URL, ENG_URL)}
-    downloader = FakeDownloader(full_size)
+    downloader = FakeDownloader(payloads)
     arguments = ["--project-root", str(cli_root)]
 
-    assert main(arguments, downloader=downloader) == 0
+    assert main(arguments, downloader=downloader, pins=PINS) == 0
     first = capsys.readouterr().out
-    assert main(arguments, downloader=downloader) == 0
+    assert main(arguments, downloader=downloader, pins=PINS) == 0
     second = capsys.readouterr().out
-    assert main([*arguments, "--force"], downloader=downloader) == 0
+    assert main([*arguments, "--force"], downloader=downloader, pins=PINS) == 0
     forced = capsys.readouterr().out
 
     assert downloader.requests == [SPA_URL, ENG_URL, SPA_URL, ENG_URL]
@@ -413,10 +567,10 @@ def test_cli_downloads_once_and_again_only_when_forced(
     assert statuses(first) == fetched
     assert statuses(second) == dict.fromkeys(fetched, "already present")
     assert statuses(forced) == fetched
-    assert hashlib.sha256(full_size[SPA_URL]).hexdigest() in first
+    assert hashlib.sha256(payloads[SPA_URL]).hexdigest() in first
 
 
-def test_cli_rejects_an_undersized_download_with_an_error_exit(
+def test_cli_rejects_a_download_that_is_not_the_pinned_file_with_an_error_exit(
     cli_root: Path, payloads: dict[str, bytes], capsys: pytest.CaptureFixture[str]
 ) -> None:
     exit_code = main(["--project-root", str(cli_root)], downloader=FakeDownloader(payloads))
@@ -425,4 +579,40 @@ def test_cli_rejects_an_undersized_download_with_an_error_exit(
     assert exit_code == 1
     assert error.startswith("error:")
     assert SPA_URL in error
+    assert PINNED_TRAINEDDATA["spa"].sha256 in error
+    assert len(error.splitlines()) == 1
     assert listing(cli_root / "tessdata") == []
+
+
+def edit_config(cli_root: Path, old: str, new: str) -> None:
+    path = cli_root / "config" / "default.yaml"
+    text = path.read_text(encoding="utf-8")
+    assert text.count(old) == 1
+    path.write_bytes(text.replace(old, new).encode("utf-8"))
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        ("languages: spa+eng", "languages: spa+spa", "must be unique"),
+        ("dpi: 300", "dpi: 30", "greater than or equal to 72"),
+        ("tessdata_dir: tessdata", "tessdata_dir: ../outside", "outside"),
+        ("ocr:", "ocr: [", "while parsing"),
+    ],
+    ids=["repeated-language", "invalid-setting", "directory-outside-the-project", "not-yaml"],
+)
+def test_cli_reports_a_configuration_error_on_one_line_with_exit_code_1(
+    cli_root: Path, capsys: pytest.CaptureFixture[str], old: str, new: str, message: str
+) -> None:
+    edit_config(cli_root, old, new)
+    downloader = FakeDownloader({})
+
+    exit_code = main(["--project-root", str(cli_root)], downloader=downloader)
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.err.startswith("error: ")
+    assert message in captured.err
+    assert len(captured.err.splitlines()) == 1
+    assert (captured.out, downloader.requests) == ("", [])
+    assert not (cli_root / "tessdata").exists()

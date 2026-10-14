@@ -1,8 +1,9 @@
 """Smoke checks that the locked third-party stack works together on this machine.
 
 These tests exercise library compatibility, not project code. They are marked ``smoke``,
-the default run excludes them, and ``uv run pytest -m smoke`` runs them. The first run
-downloads the first configured embedding model (about 0.5 GB) into the Hugging Face cache.
+the default run excludes them whatever its ``-m`` filter (``tests/conftest.py``), and
+``uv run pytest -m smoke`` runs them. The first run downloads the first configured
+embedding model (about 0.5 GB) into the Hugging Face cache.
 
 Heavy libraries are imported inside fixtures and tests, so collecting this module during
 the default run stays fast and offline.
@@ -329,6 +330,27 @@ def test_kmeans_topic_map_has_one_topic_per_theme(
     matches = {topic: themes_containing(words[topic], theme_vocabularies) for topic in topics}
     assert all(len(themes) == 1 for themes in matches.values()), words
     assert sorted(themes[0] for themes in matches.values()) == sorted(THEME_TEMPLATES)
+
+
+def test_topic_words_keep_accents_and_enye(
+    kmeans_topic_model: BERTopic, theme_vocabularies: dict[str, frozenset[str]]
+) -> None:
+    """D22: given ``language="spanish"``, BERTopic keeps accented letters and ñ.
+
+    With its default language it would strip them before c-TF-IDF, so "diseño" would enter
+    its vocabulary, and the topic words, as "diseo".
+    """
+    vocabulary = set(kmeans_topic_model.vectorizer_model.get_feature_names_out())
+    words = {
+        word
+        for topic in range(len(THEME_TEMPLATES))
+        for word in top_words(kmeans_topic_model, topic)
+    }
+
+    assert {"diseño", "fragmentación", "subterránea", "útil"} <= vocabulary
+    assert not {"diseo", "fragmentacin", "subterrnea", "til"} & vocabulary
+    assert any(not word.isascii() for word in words), sorted(words)
+    assert words <= frozenset().union(*theme_vocabularies.values())
 
 
 def test_hdbscan_topic_map_finds_at_least_two_topics(

@@ -156,7 +156,10 @@ class SnapshotManifest(_SnapshotModel):
     faculty_community_uuid: UUID
     faculty_total: Count
     """Items of the faculty community under the same filter, as the repository reported them.
-    It equals ``total_items`` when the program collections cover the whole faculty."""
+    It equals ``total_items`` when the program collections cover the whole faculty. The
+    harvest refuses any other value unless its difference from ``total_items`` is given as
+    accepted, so a snapshot whose two totals differ records a difference that was checked and
+    accepted."""
     items_by_type: dict[str, Count]
     """Items per ``renati.type`` value. An item with several values counts under each one,
     and an item without one counts under ``(none)``."""

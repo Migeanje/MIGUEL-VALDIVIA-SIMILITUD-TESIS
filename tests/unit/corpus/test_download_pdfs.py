@@ -22,6 +22,7 @@ from pydantic import HttpUrl
 
 from thematic_redundancy.corpus.download_pdfs import (
     MAX_CONSECUTIVE_FAILURES,
+    MAX_CONSECUTIVE_MISMATCHES,
     DownloadInProgressError,
     DownloadReport,
     DownloadStoppedError,
@@ -159,6 +160,8 @@ class FakeFiles:
         """Message of a repository failure, by item or file uuid."""
         self.during_download: Callable[[UUID], None] | None = None
         """Hook called halfway through every download, with the file uuid."""
+        self.next_bodies: dict[UUID, list[bytes]] = {}
+        """Bodies that the next downloads of a file send, in order, before its usual content."""
         self.calls: list[tuple[str, UUID]] = []
 
     def serve_thesis(
@@ -221,7 +224,8 @@ class FakeFiles:
         self.calls.append(("download", bitstream))
         self._refuse(bitstream)
         sink.restart()
-        content = self.contents[bitstream]
+        queued = self.next_bodies.get(bitstream)
+        content = queued.pop(0) if queued else self.contents[bitstream]
         middle = len(content) // 2
         sink.write(content[:middle])
         if self.during_download is not None:
@@ -357,24 +361,15 @@ def test_the_manifest_records_each_file_and_its_checksums_but_no_file_name(
 
 
 @pytest.mark.parametrize(
-    ("serve", "reason"),
-    [
-        ({"body": b"<html>Maintenance page</html>"}, "not_a_pdf"),
-        ({"listed_size": len(pdf_bytes(1)) + 10}, "size_mismatch"),
-        ({"listed_size": len(pdf_bytes(1)) - 10}, "size_mismatch"),
-        ({"listed_checksum": "0" * 32}, "checksum_mismatch"),
-    ],
-    ids=["not-a-pdf", "shorter-than-listed", "longer-than-listed", "other-checksum"],
+    ("listed_size", "reason"),
+    [(None, "not_a_pdf"), (3, "size_mismatch")],
+    ids=["not-a-pdf", "too-short-to-tell"],
 )
-def test_a_file_that_fails_a_check_is_discarded_as_an_integrity_error(
-    config: AppConfig,
-    tmp_path: Path,
-    files: FakeFiles,
-    serve: dict[str, Any],
-    reason: str,
+def test_a_body_that_is_not_a_pdf_is_an_integrity_error_without_a_second_download(
+    config: AppConfig, tmp_path: Path, files: FakeFiles, listed_size: int | None, reason: str
 ) -> None:
     write_test_snapshot(tmp_path, [record(1)])
-    files.serve_thesis(1, **serve)
+    files.serve_thesis(1, body=b"<html>Maintenance page</html>", listed_size=listed_size)
 
     report = run(config, tmp_path, files)
 
@@ -386,24 +381,279 @@ def test_a_file_that_fails_a_check_is_discarded_as_an_integrity_error(
     assert read_pdf_manifest(tmp_path)["summary"]["by_status"] == {"integrity_error": 1}
 
 
-def test_a_checksum_in_an_unknown_algorithm_is_refused_before_downloading(
+STALE_LISTINGS = pytest.mark.parametrize(
+    ("serve", "reason"),
+    [
+        ({"listed_size": len(pdf_bytes(1)) + 10}, "size_mismatch"),
+        ({"listed_checksum": "0" * 32}, "checksum_mismatch"),
+    ],
+    ids=["shorter-than-listed", "other-checksum"],
+)
+"""Listings that do not describe the file the repository serves, the same way every time,
+with a body that is complete: shorter than listed, or of the listed size."""
+
+
+@STALE_LISTINGS
+def test_a_file_that_differs_from_its_listing_twice_alike_is_recorded_as_unverifiable(
+    config: AppConfig,
+    tmp_path: Path,
+    files: FakeFiles,
+    serve: dict[str, Any],
+    reason: str,
+) -> None:
+    write_test_snapshot(tmp_path, [record(1)])
+    files.serve_thesis(1, **serve)
+
+    report = run(config, tmp_path, files)
+
+    assert statuses(report) == [(item_uuid(1), "unverifiable", reason)]
+    assert "stale" in (report.outcomes[0].entry.detail or "")
+    assert saved_pdfs(tmp_path) == []
+    assert leftovers(tmp_path) == []
+    # A second download tells a stale listing from a faulty transfer; there is no third.
+    assert files.calls == [("list", item_uuid(1)), *[("download", file_uuid(1))] * 2]
+    assert read_pdf_manifest(tmp_path)["summary"]["by_status"] == {"unverifiable": 1}
+
+
+@pytest.mark.parametrize(
+    "trailers",
+    [(b"<trailer A>", b"<trailer BBBB>"), (b"<trailer A>", b"<trailer A>")],
+    ids=["another-trailer-each-time", "the-same-trailer-each-time"],
+)
+def test_a_body_longer_than_listed_is_an_integrity_error_retried_on_the_next_run(
+    config: AppConfig, tmp_path: Path, files: FakeFiles, trailers: tuple[bytes, bytes]
+) -> None:
+    write_test_snapshot(tmp_path, [record(1)])
+    files.serve_thesis(1)  # The listing describes the file exactly.
+    # The right file, then bytes past its listed size: only the listed part could be compared.
+    files.next_bodies[file_uuid(1)] = [pdf_bytes(1) + trailer for trailer in trailers]
+
+    first = run(config, tmp_path, files)
+
+    assert statuses(first) == [(item_uuid(1), "integrity_error", "size_mismatch")]
+    assert "stale" not in (first.outcomes[0].entry.detail or "")
+    assert files.calls.count(("download", file_uuid(1))) == 1  # No second download.
+    files.next_bodies.clear()
+
+    second = run(config, tmp_path, files, at=LATER)
+
+    assert statuses(second) == [(item_uuid(1), "downloaded", None)]
+    assert files.calls.count(("download", file_uuid(1))) == 2
+
+
+def test_a_mismatch_that_changes_between_downloads_is_an_integrity_error_retried_later(
     config: AppConfig, tmp_path: Path, files: FakeFiles
 ) -> None:
     write_test_snapshot(tmp_path, [record(1)])
-    files.serve_thesis(1, algorithm="MD5", listed_checksum="1a2b3c4d")
-    thesis = files.bundles[item_uuid(1)][0].bitstreams[0]
+    files.serve_thesis(1)
+    body = pdf_bytes(1)
+    files.next_bodies[file_uuid(1)] = [with_one_byte_changed(body), truncated(body)]
+
+    first = run(config, tmp_path, files)
+    second = run(config, tmp_path, files, at=LATER)
+
+    assert statuses(first) == [(item_uuid(1), "integrity_error", "size_mismatch")]
+    assert statuses(second) == [(item_uuid(1), "downloaded", None)]
+    assert files.calls.count(("download", file_uuid(1))) == 3
+    assert saved_pdfs(tmp_path) == [f"{item_uuid(1)}.pdf"]
+
+
+def test_a_mismatch_that_passes_on_the_second_download_keeps_the_file(
+    config: AppConfig, tmp_path: Path, files: FakeFiles
+) -> None:
+    write_test_snapshot(tmp_path, [record(1)])
+    files.serve_thesis(1)
+    files.next_bodies[file_uuid(1)] = [with_one_byte_changed(pdf_bytes(1))]
+
+    report = run(config, tmp_path, files)
+
+    assert statuses(report) == [(item_uuid(1), "downloaded", None)]
+    assert files.calls.count(("download", file_uuid(1))) == 2
+    assert (pdf_dir(tmp_path) / f"{item_uuid(1)}.pdf").read_bytes() == pdf_bytes(1)
+
+
+@STALE_LISTINGS
+def test_an_unverifiable_file_is_fetched_again_only_once_its_listing_changes(
+    config: AppConfig,
+    tmp_path: Path,
+    files: FakeFiles,
+    serve: dict[str, Any],
+    reason: str,
+) -> None:
+    write_test_snapshot(tmp_path, [record(1)])
+    files.serve_thesis(1, **serve)
+    run(config, tmp_path, files)
+    calls = len(files.calls)
+
+    unchanged = run(config, tmp_path, files, at=LATER)
+
+    assert statuses(unchanged) == [(item_uuid(1), "unverifiable", reason)]
+    assert unchanged.outcomes[0].entry.checked_at == LATER
+    assert files.calls[calls:] == [("list", item_uuid(1))]  # Listed, but not fetched.
+    files.serve_thesis(1)  # The repository corrects its listing.
+
+    corrected = run(config, tmp_path, files, at=LATER + timedelta(hours=1))
+
+    assert statuses(corrected) == [(item_uuid(1), "downloaded", None)]
+    assert files.calls[calls + 1 :] == [("list", item_uuid(1)), ("download", file_uuid(1))]
+
+
+def serve_unknown_algorithm(files: FakeFiles, number: int) -> None:
+    """Serve item ``number`` with a thesis whose listed checksum is a CRC32."""
+    files.serve_thesis(number)
+    thesis = files.bundles[item_uuid(number)][0].bitstreams[0]
     unknown = Bitstream(
         uuid=thesis.uuid,
         name=thesis.name,
         size_bytes=thesis.size_bytes,
         checksum=Checksum(algorithm="CRC32", value="1a2b3c4d"),
     )
-    files.serve_files(1, [unknown])
+    files.serve_files(number, [unknown])
+
+
+def test_a_checksum_in_an_unknown_algorithm_is_unverifiable_before_downloading(
+    config: AppConfig, tmp_path: Path, files: FakeFiles
+) -> None:
+    write_test_snapshot(tmp_path, [record(1)])
+    serve_unknown_algorithm(files, 1)
 
     report = run(config, tmp_path, files)
 
-    assert statuses(report) == [(item_uuid(1), "integrity_error", "unsupported_checksum_algorithm")]
+    assert statuses(report) == [(item_uuid(1), "unverifiable", "unsupported_checksum_algorithm")]
+    assert "CRC32" in (report.outcomes[0].entry.detail or "")
     assert files.calls == [("list", item_uuid(1))]
+
+
+def serve_stale_checksum(files: FakeFiles, number: int) -> None:
+    files.serve_thesis(number, listed_checksum="0" * 32)
+
+
+def serve_kinds(files: FakeFiles, kinds: Sequence[str]) -> None:
+    """Serve one item per kind, numbered from 1: ``downloaded``, ``error`` (the listing
+    fails), ``stale`` (a wrong checksum listed) or ``unknown`` (a CRC32 checksum listed)."""
+    for number, kind in enumerate(kinds, start=1):
+        if kind == "stale":
+            serve_stale_checksum(files, number)
+        elif kind == "unknown":
+            serve_unknown_algorithm(files, number)
+        else:
+            files.serve_thesis(number)
+        if kind == "error":
+            files.failures[item_uuid(number)] = "GET gave up after 4 attempts: HTTP 503"
+
+
+@pytest.mark.parametrize("unverifiable", ["unknown", "stale"])
+def test_an_unverifiable_thesis_breaks_a_run_of_consecutive_errors(
+    config: AppConfig, tmp_path: Path, files: FakeFiles, unverifiable: str
+) -> None:
+    errors = ["error"] * (MAX_CONSECUTIVE_FAILURES - 1)
+    kinds = [*errors, unverifiable, *errors]
+    write_test_snapshot(tmp_path, [record(number) for number in range(1, len(kinds) + 1)])
+    serve_kinds(files, kinds)
+
+    report = run(config, tmp_path, files)
+
+    assert [status for _, status, _ in statuses(report)] == [
+        *errors,
+        "unverifiable",
+        *errors,
+    ]
+
+
+WRONG_PDF = b"%PDF-1.4\n" + b"document not available\n" * 30 + b"%%EOF\n"
+"""One PDF that a misbehaving server, or a proxy in front of it, sends for every file."""
+
+
+def serve_the_wrong_pdf(files: FakeFiles, numbers: Sequence[int]) -> None:
+    for number in numbers:
+        files.serve_thesis(number)
+        files.contents[file_uuid(number)] = WRONG_PDF
+
+
+def test_the_same_wrong_file_for_several_theses_in_a_row_stops_the_run(
+    config: AppConfig, tmp_path: Path, files: FakeFiles
+) -> None:
+    numbers = range(1, 2 * MAX_CONSECUTIVE_MISMATCHES + 3)
+    write_test_snapshot(tmp_path, [record(number) for number in numbers])
+    serve_the_wrong_pdf(files, numbers)
+
+    with pytest.raises(DownloadStoppedError, match="server or a proxy") as caught:
+        run(config, tmp_path, files)
+
+    assert f"{MAX_CONSECUTIVE_MISMATCHES} theses in a row" in str(caught.value)
+    assert "--recheck-unverifiable" in str(caught.value)
+    assert [kind for kind, _ in files.calls].count("download") == 2 * MAX_CONSECUTIVE_MISMATCHES
+    assert read_pdf_manifest(tmp_path)["summary"]["by_status"] == {
+        "unverifiable": MAX_CONSECUTIVE_MISMATCHES
+    }
+
+
+def test_only_the_runs_own_downloads_count_toward_the_stop_after_unverifiable_theses(
+    config: AppConfig, tmp_path: Path, files: FakeFiles
+) -> None:
+    numbers = range(1, MAX_CONSECUTIVE_MISMATCHES + 2)
+    write_test_snapshot(tmp_path, [record(number) for number in numbers])
+    serve_the_wrong_pdf(files, numbers)
+    run(config, tmp_path, files, limit=MAX_CONSECUTIVE_MISMATCHES - 1)
+
+    # Entries kept from the earlier run, with no download, neither count nor break the run.
+    second = run(config, tmp_path, files, at=LATER)
+
+    assert [status for _, status, _ in statuses(second)] == ["unverifiable"] * len(numbers)
+    assert [outcome.downloads for outcome in second.outcomes] == [
+        *[0] * (MAX_CONSECUTIVE_MISMATCHES - 1),
+        2,
+        2,
+    ]
+    calls = len(files.calls)
+
+    # Asked to fetch them again, the run downloads each one twice at most, and they count.
+    with pytest.raises(DownloadStoppedError, match="server or a proxy"):
+        run(config, tmp_path, files, at=LATER + timedelta(hours=1), recheck_unverifiable=True)
+
+    rechecked = [kind for kind, _ in files.calls[calls:]]
+    assert rechecked.count("download") == 2 * MAX_CONSECUTIVE_MISMATCHES
+
+
+@pytest.mark.parametrize("between", ["downloaded", "error"])
+def test_another_outcome_breaks_a_run_of_unverifiable_theses(
+    config: AppConfig, tmp_path: Path, files: FakeFiles, between: str
+) -> None:
+    stale = ["stale"] * (MAX_CONSECUTIVE_MISMATCHES - 1)
+    kinds = [*stale, between, *stale]
+    write_test_snapshot(tmp_path, [record(number) for number in range(1, len(kinds) + 1)])
+    serve_kinds(files, kinds)
+
+    report = run(config, tmp_path, files)
+
+    unverifiable = ["unverifiable"] * (MAX_CONSECUTIVE_MISMATCHES - 1)
+    assert [found for _, found, _ in statuses(report)] == [*unverifiable, between, *unverifiable]
+    assert [outcome.downloads for outcome in report.outcomes] == [
+        *[2] * len(stale),
+        1 if between == "downloaded" else 0,
+        *[2] * len(stale),
+    ]
+
+
+def test_an_unknown_algorithm_neither_counts_toward_nor_breaks_a_run_of_unverifiable_theses(
+    config: AppConfig, tmp_path: Path, files: FakeFiles
+) -> None:
+    kinds = [
+        *["unknown"] * (MAX_CONSECUTIVE_MISMATCHES + 1),
+        *["stale"] * (MAX_CONSECUTIVE_MISMATCHES - 1),
+        "unknown",
+        "stale",
+        "downloaded",
+    ]
+    write_test_snapshot(tmp_path, [record(number) for number in range(1, len(kinds) + 1)])
+    serve_kinds(files, kinds)
+
+    with pytest.raises(DownloadStoppedError, match="server or a proxy"):
+        run(config, tmp_path, files)
+
+    manifest = read_pdf_manifest(tmp_path)
+    assert len(manifest["items"]) == len(kinds) - 1  # Stopped at the last stale listing.
+    assert manifest["summary"]["by_status"] == {"unverifiable": len(kinds) - 1}
 
 
 @pytest.mark.parametrize("algorithm", ["SHA-256", "sha1", "md5"])
@@ -468,8 +718,11 @@ def test_a_file_changed_on_disk_is_downloaded_again(
 
 
 @pytest.mark.parametrize(
-    ("chunk", "reason", "chunks_taken"),
-    [(b"%PDF" * 256, "size_mismatch", 2), (b"<htm" * 256, "not_a_pdf", 0)],
+    ("chunk", "status", "reason", "chunks_taken"),
+    [
+        (b"%PDF" * 256, "integrity_error", "size_mismatch", 2),
+        (b"<htm" * 256, "integrity_error", "not_a_pdf", 0),
+    ],
     ids=["longer-than-listed", "not-a-pdf"],
 )
 def test_a_body_that_cannot_be_the_listed_pdf_is_cut_off_early(
@@ -477,6 +730,7 @@ def test_a_body_that_cannot_be_the_listed_pdf_is_cut_off_early(
     tmp_path: Path,
     files: FakeFiles,
     chunk: bytes,
+    status: str,
     reason: str,
     chunks_taken: int,
 ) -> None:
@@ -495,7 +749,7 @@ def test_a_body_that_cannot_be_the_listed_pdf_is_cut_off_early(
 
     report = run(config, tmp_path, files)
 
-    assert statuses(report) == [(item_uuid(1), "integrity_error", reason)]
+    assert statuses(report) == [(item_uuid(1), status, reason)]
     assert len(taken) == chunks_taken  # The rest of the body was never read.
     assert leftovers(tmp_path) == []
 
@@ -513,6 +767,79 @@ def test_a_file_missing_from_the_manifest_is_kept_when_it_matches_the_repository
     assert statuses(second) == [(item_uuid(1), "already_present", None)]
     assert files.calls[2:] == [("list", item_uuid(1))]  # Checked against the listing only.
     assert second.outcomes[0].entry.sha256 == digest("SHA256", pdf_bytes(1))
+
+
+@pytest.mark.parametrize("failed", ["listing", "file"])
+def test_a_matching_file_on_disk_is_kept_after_a_failed_attempt(
+    config: AppConfig, tmp_path: Path, files: FakeFiles, failed: str
+) -> None:
+    write_test_snapshot(tmp_path, [record(1)])
+    files.serve_thesis(1)
+    failing = item_uuid(1) if failed == "listing" else file_uuid(1)
+    files.failures[failing] = "GET gave up after 4 attempts: HTTP 503"
+    assert statuses(run(config, tmp_path, files)) == [(item_uuid(1), "error", "repository_error")]
+    del files.failures[failing]
+    # The file reaches the disk another way, such as a copy kept from an earlier run.
+    (pdf_dir(tmp_path) / f"{item_uuid(1)}.pdf").write_bytes(pdf_bytes(1))
+    calls = len(files.calls)
+
+    second = run(config, tmp_path, files, at=LATER)
+
+    assert statuses(second) == [(item_uuid(1), "already_present", None)]
+    assert files.calls[calls:] == [("list", item_uuid(1))]
+    kept = second.outcomes[0].entry
+    assert (kept.bitstream_uuid, kept.sha256) == (file_uuid(1), digest("SHA256", pdf_bytes(1)))
+    assert kept.downloaded_at is None  # No run of this manifest fetched it.
+
+
+def test_a_matching_file_on_disk_is_kept_when_the_repository_lists_another_bitstream(
+    config: AppConfig, tmp_path: Path, files: FakeFiles
+) -> None:
+    write_test_snapshot(tmp_path, [record(1)])
+    files.serve_thesis(1)
+    run(config, tmp_path, files)
+    # The repository replaces the thesis with a new file, and that file is already on disk.
+    revised = pdf_bytes(101)
+    replacement = Bitstream(
+        uuid=file_uuid(1, 5),
+        name="70.0001.SYNTHETICNAME.pdf",
+        size_bytes=len(revised),
+        checksum=Checksum(algorithm="MD5", value=digest("MD5", revised)),
+    )
+    files.serve_files(1, [replacement])
+    files.contents[replacement.uuid] = revised
+    (pdf_dir(tmp_path) / f"{item_uuid(1)}.pdf").write_bytes(revised)
+    calls = len(files.calls)
+
+    second = run(config, tmp_path, files, at=LATER)
+
+    assert statuses(second) == [(item_uuid(1), "already_present", None)]
+    assert files.calls[calls:] == [("list", item_uuid(1))]
+    kept = second.outcomes[0].entry
+    assert (kept.bitstream_uuid, kept.sha256) == (replacement.uuid, digest("SHA256", revised))
+    # The time of the earlier download belongs to the earlier file, so it is not carried over.
+    assert kept.downloaded_at is None
+    assert kept.checked_at == LATER
+
+
+def test_a_pdf_manifest_of_another_snapshot_is_refused_before_any_request(
+    config: AppConfig, tmp_path: Path, files: FakeFiles
+) -> None:
+    write_test_snapshot(tmp_path, [record(1)])
+    files.serve_thesis(1)
+    run(config, tmp_path, files)
+    other_dir = write_test_snapshot(tmp_path, [record(1)], snapshot_id="other-snapshot")
+    (other_dir / "pdfs").mkdir()
+    foreign = (pdf_dir(tmp_path) / "manifest.json").read_bytes()
+    (other_dir / "pdfs" / "manifest.json").write_bytes(foreign)
+    calls = list(files.calls)
+
+    with pytest.raises(ValueError, match=f"belongs to snapshot '{SNAPSHOT_ID}'.*'other-snapshot'"):
+        run(config, tmp_path, files, snapshot_id="other-snapshot", at=LATER)
+
+    assert files.calls == calls
+    assert (other_dir / "pdfs" / "manifest.json").read_bytes() == foreign
+    assert list((other_dir / "pdfs").glob("*.pdf")) == []
 
 
 @pytest.mark.parametrize(("rights", "code"), [(EMBARGOED, "c_f1cf"), (RESTRICTED, "c_16ec")])
@@ -1002,14 +1329,84 @@ def test_cli_exits_with_1_when_an_item_failed_and_says_how_to_retry(
 ) -> None:
     write_test_snapshot(cli_root, [record(1), record(2)])
     files.serve_thesis(1)
-    files.serve_thesis(2, listed_checksum="0" * 32)
+    files.serve_thesis(2, body=b"<html>Maintenance page</html>")
 
     code = main(["--project-root", str(cli_root)], repository=files, clock=lambda: RUN_TIME)
 
     out = capsys.readouterr().out
     assert code == 1
-    assert f"{item_uuid(2)}  integrity_error (checksum_mismatch)" in out
+    assert f"{item_uuid(2)}  integrity_error (not_a_pdf)" in out
     assert "run the command again" in out
+
+
+def test_cli_exits_with_1_when_a_thesis_is_unverifiable_and_says_why(
+    cli_root: Path, files: FakeFiles, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_test_snapshot(cli_root, [record(1), record(2), record(3), record(4)])
+    serve_kinds(files, ["downloaded", "stale", "unknown", "downloaded"])
+
+    code = main(["--project-root", str(cli_root)], repository=files, clock=lambda: RUN_TIME)
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert f"{item_uuid(2)}  unverifiable (checksum_mismatch)" in out
+    assert f"{item_uuid(4)}  downloaded" in out  # The run went on.
+    assert re.search(r"^  unverifiable +2$", out, re.M)
+    assert re.search(
+        r"^2 theses are unverifiable \(checksum_mismatch 1, unsupported_checksum_algorithm 1\): "
+        r".*--recheck-unverifiable",
+        out,
+        re.M,
+    )
+    assert "theses failed" not in out
+
+
+def test_cli_stops_when_the_same_wrong_file_comes_for_several_theses(
+    cli_root: Path, files: FakeFiles, capsys: pytest.CaptureFixture[str]
+) -> None:
+    numbers = range(1, 2 * MAX_CONSECUTIVE_MISMATCHES + 3)
+    write_test_snapshot(cli_root, [record(number) for number in numbers])
+    serve_the_wrong_pdf(files, numbers)
+
+    code = main(["--project-root", str(cli_root)], repository=files, clock=lambda: RUN_TIME)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert err.startswith("error: ")
+    assert "server or a proxy" in err
+    assert len(err.splitlines()) == 1
+    assert len(read_pdf_manifest(cli_root)["items"]) == MAX_CONSECUTIVE_MISMATCHES
+
+
+def test_cli_recheck_unverifiable_fetches_them_again_once_the_server_is_fixed(
+    cli_root: Path, files: FakeFiles, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_test_snapshot(cli_root, [record(1), record(2)])
+    files.serve_thesis(1)
+    files.serve_thesis(2)
+    # A damaged copy comes every time, while the listing describes the right file.
+    files.contents[file_uuid(1)] = with_one_byte_changed(pdf_bytes(1))
+    arguments = ["--project-root", str(cli_root)]
+    assert main(arguments, repository=files, clock=lambda: RUN_TIME) == 1
+    files.contents[file_uuid(1)] = pdf_bytes(1)  # The server is fixed; the listing never changed.
+    calls = len(files.calls)
+
+    assert main(arguments, repository=files, clock=lambda: LATER) == 1
+    assert ("download", file_uuid(1)) not in files.calls[calls:]
+    capsys.readouterr()
+    calls = len(files.calls)
+
+    code = main(
+        [*arguments, "--recheck-unverifiable"],
+        repository=files,
+        clock=lambda: LATER + timedelta(hours=1),
+    )
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert f"{item_uuid(1)}  downloaded" in out
+    assert files.calls[calls:].count(("download", file_uuid(1))) == 1
+    assert (pdf_dir(cli_root) / f"{item_uuid(1)}.pdf").read_bytes() == pdf_bytes(1)
 
 
 def test_cli_stops_cleanly_on_an_interrupt_and_keeps_the_manifest(

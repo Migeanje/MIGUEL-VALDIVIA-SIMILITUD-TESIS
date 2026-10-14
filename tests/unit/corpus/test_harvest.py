@@ -162,10 +162,16 @@ def harvest(
     repository: FakeRepository,
     *,
     snapshot_id: str | None = None,
+    **options: Any,
 ) -> HarvestReport:
     """Run the use case with the clock fixed at :data:`HARVEST_TIME`."""
     return harvest_snapshot(
-        config, project_root, repository, snapshot_id=snapshot_id, clock=lambda: HARVEST_TIME
+        config,
+        project_root,
+        repository,
+        snapshot_id=snapshot_id,
+        clock=lambda: HARVEST_TIME,
+        **options,
     )
 
 
@@ -352,7 +358,7 @@ def test_the_manifest_records_the_source_the_query_and_the_metadata_digest(
 ) -> None:
     repository = FakeRepository({SISTEMAS: [item(1), item(2)], MINAS: [item(3)]}, faculty_total=4)
 
-    report = harvest(config, tmp_path, repository)
+    report = harvest(config, tmp_path, repository, accepted_faculty_difference=1)
 
     manifest = read_manifest(report.snapshot_dir)
     content = (report.snapshot_dir / "metadata.jsonl").read_bytes()
@@ -496,17 +502,103 @@ def test_a_listing_short_of_the_reported_total_is_refused(
 
 
 @pytest.mark.parametrize(
-    "listings",
-    [{SISTEMAS: [item(1), item(1)]}, {SISTEMAS: [item(1)], MINAS: [item(1)]}],
+    ("listings", "message"),
+    [
+        ({SISTEMAS: [item(1), item(1)]}, "is listed twice under program 'sistemas'"),
+        (
+            {SISTEMAS: [item(1)], MINAS: [item(1)]},
+            "is listed under program 'sistemas' and again under program 'minas'",
+        ),
+    ],
     ids=["twice-in-one-collection", "in-two-collections"],
 )
 def test_an_item_listed_twice_is_refused(
-    config: AppConfig, tmp_path: Path, listings: Mapping[UUID, Sequence[RepositoryItem]]
+    config: AppConfig,
+    tmp_path: Path,
+    listings: Mapping[UUID, Sequence[RepositoryItem]],
+    message: str,
 ) -> None:
-    with pytest.raises(HarvestError, match=str(item_uuid(1))):
+    with pytest.raises(HarvestError, match=f"item {item_uuid(1)} {message}; nothing was written"):
         harvest(config, tmp_path, FakeRepository(listings))
 
     assert raw_listing(tmp_path) == []
+
+
+@pytest.mark.parametrize("faculty_total", [4, 2], ids=["more-than-the-programs", "fewer"])
+def test_a_faculty_total_that_the_programs_do_not_add_up_to_is_refused(
+    config: AppConfig, tmp_path: Path, faculty_total: int
+) -> None:
+    repository = FakeRepository(
+        {SISTEMAS: [item(1), item(2)], MINAS: [item(3)]}, faculty_total=faculty_total
+    )
+
+    with pytest.raises(HarvestError) as caught:
+        harvest(config, tmp_path, repository)
+
+    message = str(caught.value)
+    difference = faculty_total - 3
+    assert f"the faculty community {FACULTY} holds {faculty_total} items" in message
+    assert f"the program listings add up to 3, a difference of {difference}" in message
+    assert "nothing was written" in message
+    assert message.endswith(f"run the harvest again with --accept-faculty-difference {difference}")
+    assert raw_listing(tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    ("listings", "faculty_total", "difference"),
+    [
+        ({SISTEMAS: [item(1), item(2)], MINAS: [item(3)]}, 4, 1),
+        ({SISTEMAS: [item(1), item(2)], MINAS: [item(3)]}, 2, -1),
+    ],
+    ids=["faculty-holds-more", "faculty-holds-fewer"],
+)
+def test_a_known_faculty_difference_is_written_once_it_is_accepted(
+    config: AppConfig,
+    tmp_path: Path,
+    listings: Mapping[UUID, Sequence[RepositoryItem]],
+    faculty_total: int,
+    difference: int,
+) -> None:
+    repository = FakeRepository(listings, faculty_total=faculty_total)
+
+    report = harvest(config, tmp_path, repository, accepted_faculty_difference=difference)
+
+    manifest = read_manifest(report.snapshot_dir)
+    assert (manifest["total_items"], manifest["faculty_total"]) == (3, faculty_total)
+
+
+@pytest.mark.parametrize(
+    ("listings", "faculty_total", "found"),
+    [
+        ({SISTEMAS: [item(1), item(2)], MINAS: [item(3)]}, 5, "holds 5 items"),
+        # The faculty total is the one checked before, but a program lost an item since.
+        ({SISTEMAS: [item(1), item(2)]}, 4, "add up to 2, a difference of 2"),
+    ],
+    ids=["faculty-total-changed", "program-total-changed"],
+)
+def test_an_accepted_faculty_difference_is_checked_against_the_current_one(
+    config: AppConfig,
+    tmp_path: Path,
+    listings: Mapping[UUID, Sequence[RepositoryItem]],
+    faculty_total: int,
+    found: str,
+) -> None:
+    repository = FakeRepository(listings, faculty_total=faculty_total)
+
+    with pytest.raises(HarvestError, match=f"{found}.*--accept-faculty-difference 1 was given"):
+        harvest(config, tmp_path, repository, accepted_faculty_difference=1)
+
+    assert raw_listing(tmp_path) == []
+
+
+def test_an_accepted_faculty_difference_is_not_needed_when_the_totals_agree(
+    config: AppConfig, tmp_path: Path
+) -> None:
+    repository = FakeRepository({SISTEMAS: [item(1), item(2)], MINAS: [item(3)]})
+
+    report = harvest(config, tmp_path, repository, accepted_faculty_difference=1)
+
+    assert (report.manifest.total_items, report.manifest.faculty_total) == (3, 3)
 
 
 def test_the_default_snapshot_id_is_the_utc_harvest_time(config: AppConfig, tmp_path: Path) -> None:
@@ -644,6 +736,59 @@ def test_cli_reports_a_failure_on_one_error_line_with_exit_code_1(
     assert len(captured.err.splitlines()) == 1
     assert captured.out == ""
     assert raw_listing(cli_root) == ["taken"]
+
+
+@pytest.mark.parametrize(
+    ("faculty_total", "difference"), [(7, "5"), (1, "-1")], ids=["positive", "negative"]
+)
+def test_cli_refuses_a_faculty_difference_and_accepts_it_when_it_is_given(
+    cli_root: Path, capsys: pytest.CaptureFixture[str], faculty_total: int, difference: str
+) -> None:
+    first = DECLARED.snapshot.programs[0]
+    repository = FakeRepository(
+        {first.collection_uuid: [item(1), item(2)]}, faculty_total=faculty_total
+    )
+    arguments = ["--project-root", str(cli_root), "--snapshot-id", "faculty"]
+
+    refused = main(arguments, repository=repository, clock=lambda: HARVEST_TIME)
+
+    captured = capsys.readouterr()
+    assert refused == 1
+    assert captured.err.startswith("error: ")
+    assert captured.err.rstrip().endswith(f"--accept-faculty-difference {difference}")
+    assert len(captured.err.splitlines()) == 1
+    assert raw_listing(cli_root) == []
+
+    accepted = main(
+        [*arguments, "--accept-faculty-difference", difference],
+        repository=repository,
+        clock=lambda: HARVEST_TIME,
+    )
+
+    out = capsys.readouterr().out
+    assert accepted == 0
+    assert (
+        f"Faculty community total: {faculty_total} (accepted with --accept-faculty-difference "
+        f"{difference}; the programs add up to 2)" in out
+    )
+    manifest = read_manifest(cli_root / "data" / "raw" / "faculty")
+    assert manifest["faculty_total"] == faculty_total
+
+
+@pytest.mark.parametrize("value", ["seven", "1.5", ""])
+def test_cli_rejects_an_accepted_faculty_difference_that_is_not_a_whole_number(
+    cli_root: Path, value: str
+) -> None:
+    repository = FakeRepository({})
+
+    with pytest.raises(SystemExit) as caught:
+        main(
+            ["--project-root", str(cli_root), "--accept-faculty-difference", value],
+            repository=repository,
+        )
+
+    assert caught.value.code == 2
+    assert repository.calls == []
 
 
 def test_cli_harvests_recorded_pages_through_the_dspace_adapter(

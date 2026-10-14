@@ -30,6 +30,7 @@ PdfStatus = Literal[
     "not_found",
     "no_thesis_file",
     "ambiguous",
+    "unverifiable",
     "integrity_error",
     "error",
 ]
@@ -42,7 +43,11 @@ PdfStatus = Literal[
 - ``not_found``: the repository answered HTTP 404;
 - ``no_thesis_file`` / ``ambiguous``: its ``ORIGINAL`` bundle holds no candidate PDF, or
   several, so nothing was fetched;
-- ``integrity_error``: the PDF failed a check and was deleted;
+- ``unverifiable``: its PDF cannot be checked against the repository's listing, and asking
+  again would not change that: the listing gives a checksum in an algorithm that cannot be
+  verified, or two downloads gave the same bytes, which differ from the listed size or
+  checksum, so the listing looks stale. Nothing was kept;
+- ``integrity_error``: the PDF failed a check that may pass another time, and was deleted;
 - ``error``: the repository failed, even after the retries.
 """
 

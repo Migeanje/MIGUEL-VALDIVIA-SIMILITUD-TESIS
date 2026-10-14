@@ -6,6 +6,10 @@ the ``tessdata_best`` models into the configured ``paths.tessdata_dir`` and reco
 source, size, SHA-256 and download time of each one in ``manifest.json``. Later runs check
 the files against the manifest and download only the ones that are missing or changed.
 
+The Spanish and English files are pinned (:data:`PINNED_TRAINEDDATA`): each must be exactly
+the file that the OCR was validated with. A file of any other language must be laid out as
+a Tesseract language file, which an error page or a cut download is not.
+
 Run it once per machine::
 
     uv run python -m thematic_redundancy.extraction.ocr_assets [--project-root PATH] [--force]
@@ -17,16 +21,19 @@ import argparse
 import hashlib
 import os
 import re
+import struct
 import sys
 import tempfile
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import MappingProxyType
 from typing import Annotated, BinaryIO, Protocol
 
 import httpx
+import yaml
 from pydantic import (
     AwareDatetime,
     BaseModel,
@@ -45,8 +52,37 @@ TESSDATA_VARIANT = "tessdata_best"
 TESSDATA_BASE_URL = "https://github.com/tesseract-ocr/tessdata_best/raw/main"
 """GitHub answers with a redirect to the file on raw.githubusercontent.com."""
 
-MIN_TRAINEDDATA_BYTES = 5_000_000
-"""Smallest plausible ``tessdata_best`` file; an HTML error page is far smaller."""
+
+@dataclass(frozen=True)
+class PinnedFile:
+    """The exact bytes expected of one language file."""
+
+    size_bytes: int
+    sha256: str
+
+
+PINNED_TRAINEDDATA: Mapping[str, PinnedFile] = MappingProxyType(
+    {
+        "spa": PinnedFile(
+            size_bytes=13_570_187,
+            sha256="e2c1ffdad8b30f26c45d4017a9183d3a7f9aa69e59918be4f88b126fac99ab2c",
+        ),
+        "eng": PinnedFile(
+            size_bytes=15_400_601,
+            sha256="8280aed0782fe27257a68ea10fe7ef324ca0f8d85bd2fd145d1c2b560bcb66ba",
+        ),
+    }
+)
+"""The ``tessdata_best`` files of the configured languages as fetched on 2026-10-02 (T03),
+the ones that the OCR was validated with, by language code. A file of a pinned language is
+downloaded again unless it is these bytes, and a download of one must be these bytes."""
+
+MAX_TESSDATA_ENTRIES = 64
+"""Most entries that the offset table of a language file may list. The pinned files list
+24; the bound only refuses what cannot be such a table."""
+
+_HEADER_BYTES = 4 + 8 * MAX_TESSDATA_ENTRIES
+"""Bytes that hold the entry count and the longest offset table allowed."""
 
 MANIFEST_FILE_NAME = "manifest.json"
 
@@ -163,21 +199,24 @@ def ensure_tessdata(
     downloader: Downloader,
     *,
     force: bool = False,
-    min_bytes: int = MIN_TRAINEDDATA_BYTES,
+    pins: Mapping[str, PinnedFile] = PINNED_TRAINEDDATA,
     clock: Callable[[], datetime] = _utc_now,
 ) -> TessdataReport:
     """Make sure the tessdata directory holds a verified file for each configured language.
 
     The directory is ``paths.tessdata_dir`` under ``project_root``, and the languages come
     from ``ocr.languages``. A file is kept when its size and SHA-256 still match its
-    manifest record for the same source; any other file is downloaded, and ``force``
-    downloads every file again. A download goes to a temporary file beside its target and
-    replaces the target only once it passes the checks, so a failure never leaves a partial
-    file. The manifest is saved after each download, so a later failure keeps the files
-    already fetched, and an unchanged manifest is not rewritten.
+    manifest record for the same source, and its pin in ``pins`` when its language has one;
+    any other file is downloaded, and ``force`` downloads every file again. A download goes
+    to a temporary file beside its target and replaces the target only once it passes the
+    checks, so a failure never leaves a partial file: the pinned bytes for a pinned
+    language, otherwise the layout of a Tesseract language file. The manifest is saved
+    after each download, so a later failure keeps the files already fetched, and an
+    unchanged manifest is not rewritten.
 
     Raises:
-        TessdataDownloadError: if a download fails or is smaller than ``min_bytes``.
+        TessdataDownloadError: if a download fails, differs from its pin, or is not laid
+            out as a Tesseract language file.
         ValueError: if ``ocr.languages`` repeats a language, or if the directory resolves
             outside the project root.
     """
@@ -193,9 +232,10 @@ def ensure_tessdata(
     for code in codes:
         file_name, source_url = _file_name(code), _source_url(code)
         target = tessdata_dir / file_name
-        if not force and _is_intact(target, records.get(file_name), source_url):
+        pin = pins.get(code)
+        if not force and _is_intact(target, records.get(file_name), source_url, pin):
             continue
-        sha256, size_bytes = _download(downloader, source_url, target, min_bytes)
+        sha256, size_bytes = _download(downloader, source_url, target, pin)
         records[file_name] = TraineddataRecord(
             source_url=source_url, sha256=sha256, size_bytes=size_bytes, downloaded_at=clock()
         )
@@ -229,9 +269,14 @@ def _sha256_of(path: Path) -> str:
         return hashlib.file_digest(file, "sha256").hexdigest()
 
 
-def _is_intact(path: Path, record: TraineddataRecord | None, source_url: str) -> bool:
-    """Tell whether ``path`` still holds the bytes that ``record`` describes for ``source_url``."""
+def _is_intact(
+    path: Path, record: TraineddataRecord | None, source_url: str, pin: PinnedFile | None
+) -> bool:
+    """Tell whether ``path`` still holds the bytes that ``record`` describes for
+    ``source_url``, and that ``pin`` requires when there is one."""
     if record is None or record.source_url != source_url or not path.is_file():
+        return False
+    if pin is not None and (record.size_bytes, record.sha256) != (pin.size_bytes, pin.sha256):
         return False
     return path.stat().st_size == record.size_bytes and _sha256_of(path) == record.sha256
 
@@ -254,30 +299,74 @@ def _write_manifest(path: Path, manifest: TessdataManifest) -> TessdataManifest:
     return manifest
 
 
-def _download(downloader: Downloader, url: str, target: Path, min_bytes: int) -> tuple[str, int]:
+def _download(
+    downloader: Downloader, url: str, target: Path, pin: PinnedFile | None
+) -> tuple[str, int]:
     """Fetch ``url`` into ``target`` atomically and return the file's SHA-256 and size."""
     with _staged(target) as staged:
         downloader(url, staged)
-        if staged.size < min_bytes:
+        if pin is not None:
+            if (staged.size, staged.sha256) != (pin.size_bytes, pin.sha256):
+                raise TessdataDownloadError(
+                    f"{url} returned {staged.size:,} bytes with SHA-256 {staged.sha256}, not "
+                    f"the pinned {TESSDATA_VARIANT} file of {pin.size_bytes:,} bytes with "
+                    f"SHA-256 {pin.sha256} that the OCR was validated with; if "
+                    f"{TESSDATA_VARIANT} changed the file, review it and update "
+                    "PINNED_TRAINEDDATA"
+                )
+        elif (problem := _layout_problem(staged.head, staged.size)) is not None:
             raise TessdataDownloadError(
-                f"{url} returned {staged.size:,} bytes, fewer than the {min_bytes:,} bytes "
-                f"expected of a {TESSDATA_VARIANT} file"
+                f"{url} returned {staged.size:,} bytes that are not a Tesseract language "
+                f"file: {problem}"
             )
     return staged.sha256, staged.size
 
 
+def _layout_problem(head: bytes, size: int) -> str | None:
+    """Tell why a file of ``size`` bytes that starts with ``head`` is not laid out as a
+    Tesseract language file, or return ``None`` when it is.
+
+    Such a file starts with its number of entries, a little-endian 32-bit integer, then an
+    offset table of that many little-endian 64-bit integers: ``-1`` for an absent entry,
+    otherwise where the entry starts, after the table, in increasing order. ``head`` holds
+    the first :data:`_HEADER_BYTES` bytes, or the whole file when it is shorter.
+    """
+    if size < 4:
+        return "it is too short to hold an entry count"
+    (count,) = struct.unpack_from("<i", head)
+    if not 1 <= count <= MAX_TESSDATA_ENTRIES:
+        return f"it starts with an entry count of {count}, not 1 to {MAX_TESSDATA_ENTRIES}"
+    table_end = 4 + 8 * count
+    if size < table_end:
+        return "it ends inside its offset table"
+    present = [offset for offset in struct.unpack_from(f"<{count}q", head, 4) if offset != -1]
+    if not present:
+        return "its offset table lists no entry"
+    if min(present) < table_end:
+        return "its offset table points into the table itself"
+    if max(present) >= size:
+        return "its offset table points past the end of the file"
+    if present != sorted(present):
+        return "its offset table lists its entries out of order"
+    return None
+
+
 class _StagedFile:
-    """Byte sink over a temporary file that tracks the size and SHA-256 of what it wrote."""
+    """Byte sink over a temporary file that tracks the size and SHA-256 of what it wrote,
+    and keeps its first :data:`_HEADER_BYTES` bytes."""
 
     def __init__(self, file: BinaryIO) -> None:
         self._file = file
         self._digest = hashlib.sha256()
         self.size = 0
+        self.head = b""
 
     def write(self, data: bytes, /) -> int:
         self._file.write(data)
         self._digest.update(data)
         self.size += len(data)
+        if len(self.head) < _HEADER_BYTES:
+            self.head += data[: _HEADER_BYTES - len(self.head)]
         return len(data)
 
     @property
@@ -344,8 +433,14 @@ def _parse_arguments(argv: Sequence[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: Sequence[str] | None = None, *, downloader: Downloader | None = None) -> int:
-    """Run the command line and return its exit code; ``downloader`` replaces HTTP in tests."""
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    downloader: Downloader | None = None,
+    pins: Mapping[str, PinnedFile] = PINNED_TRAINEDDATA,
+) -> int:
+    """Run the command line and return its exit code; ``downloader`` replaces HTTP in tests,
+    and ``pins`` the pinned files."""
     arguments = _parse_arguments(argv)
     project_root = arguments.project_root.resolve()
     try:
@@ -354,12 +449,19 @@ def main(argv: Sequence[str] | None = None, *, downloader: Downloader | None = N
             if downloader is None:
                 client = stack.enter_context(httpx.Client(timeout=_HTTP_TIMEOUT))
                 downloader = HttpxDownloader(client)
-            report = ensure_tessdata(config, project_root, downloader, force=arguments.force)
-    except (TessdataDownloadError, OSError) as error:
-        print(f"error: {error}", file=sys.stderr)
+            report = ensure_tessdata(
+                config, project_root, downloader, force=arguments.force, pins=pins
+            )
+    except (TessdataDownloadError, OSError, ValueError, yaml.YAMLError) as error:
+        print(f"error: {_one_line(error)}", file=sys.stderr)
         return 1
     print(_summary(report))
     return 0
+
+
+def _one_line(error: BaseException) -> str:
+    """Return the message of ``error`` on one line, as a validation error spans several."""
+    return " ".join(str(error).split())
 
 
 if __name__ == "__main__":

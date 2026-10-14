@@ -41,6 +41,19 @@ size, SHA-256 and download time of each file in `tessdata/manifest.json`. Later 
 files against the manifest and download only the ones that are missing or changed; `--force`
 downloads them all again.
 
+How the files are checked:
+
+- **Pinned.** `spa.traineddata` and `eng.traineddata` must be exactly the files that the OCR
+  was validated with, fetched on 2026-10-02: 13,570,187 and 15,400,601 bytes, with the
+  SHA-256 values in `PINNED_TRAINEDDATA` (`extraction/ocr_assets.py`). A download that
+  differs is refused, and a kept file that differs is downloaded again. If `tessdata_best`
+  ever changes one of them, review the new file and update the pin.
+- **Other languages.** A file of a language without a pin must be laid out as a Tesseract
+  language file: an entry count, then an offset table whose entries lie after the table and
+  inside the file. An error page or a cut download is refused.
+- **Errors.** A failed download or a configuration error is reported on one `error:` line,
+  with exit code 1.
+
 ## Corpus snapshot
 
 The corpus comes from the public DSpace 7 REST API of the UCSM repository. Harvest the
@@ -70,6 +83,30 @@ How a snapshot behaves:
   with an exclusion log.
 - **Reconciled.** If a listing does not match the repository's own total, or lists an item
   twice, the harvest stops before anything is written.
+- **Faculty total enforced.** The harvest also counts the items of the whole faculty
+  community under the same year filter. If the program collections add up to another
+  number, a program collection may be missing from `snapshot.programs`, so it stops before
+  anything is written and reports both totals and their difference. Once the difference is
+  checked and known to be out of scope, run it again with `--accept-faculty-difference D`,
+  where D is the faculty total minus the programs' sum that it reported (negative when the
+  faculty holds fewer items). Any other difference is still refused, so a later change on
+  either side stops the harvest again. A snapshot whose two totals differ in its manifest
+  therefore records an accepted difference.
+
+**Paging.** The search pages by offset and sorts by `dc.date.issued` alone, so the server
+decides the order of items that share a date on each page request. If that order changed
+between two requests, a listing would repeat one item and skip another. Both are caught: an
+item listed twice stops the harvest with a message that names the item and its two pages,
+and a listing that holds the reported total without a repeat cannot miss an item. One case
+remains unseen: an item withdrawn while another is added to the same collection between two
+page requests keeps the total and repeats nothing. The snapshot `20261002T224412Z` is
+unaffected (766 distinct items, each listing equal to its total, the programs equal to the
+faculty total). A future harvest can narrow or rule out that case, after checking against
+the live server that it works as intended:
+
+- list each collection one issue year at a time, through the year filter that the harvest
+  already sends, and check that each year's listing fits in one page, which needs no paging;
+- or harvest twice and compare the item uuids of both runs.
 
 The harvest is polite to the server:
 
@@ -119,15 +156,42 @@ How a run behaves:
   - None of them is asked again, in this run or in later ones.
 - **Verified.** A download goes to `<item uuid>.pdf.part`. It is renamed into place only when
   it starts with `%PDF` and matches the size and checksum (MD5) that the repository lists.
-  Otherwise it is deleted and recorded as `integrity_error`.
+  Otherwise it is deleted:
+  - a body that is not a PDF, usually an error page, is recorded as `integrity_error`;
+  - so is a body longer than listed, even when its listed part is right: only that part
+    could be compared, so it is retried like any other failure;
+  - a PDF shorter than listed, or of the listed size with another checksum, is downloaded
+    once more. If the second download sends the very same bytes, the repository's listing
+    looks stale and the thesis is recorded as `unverifiable`, with reason `size_mismatch` or
+    `checksum_mismatch`; otherwise as `integrity_error`.
+  - A checksum in an algorithm that cannot be verified is `unverifiable`
+    (`unsupported_checksum_algorithm`), with nothing downloaded.
 - **Resumable.** The manifest is rewritten atomically after every thesis, so a run can stop
   at any point. A rerun:
   - keeps every PDF whose size and SHA-256 still match the manifest, without any request;
-  - retries the theses recorded as `error` or `integrity_error`.
+  - keeps a PDF on disk that matches the repository's current listing, also after an earlier
+    failure or under another bitstream. A thesis refused with HTTP 401, 403 or 404, or
+    closed by its `dc.rights`, is not asked again, so a file on disk does not change it;
+  - retries the theses recorded as `error` or `integrity_error`;
+  - fetches an `unverifiable` thesis again only once the repository lists its file
+    differently, or with `--recheck-unverifiable`, which downloads each one again (twice at
+    most) even when its listing is unchanged.
 - **Bounded.** `--limit N` takes the first N theses in snapshot order, and `--per-program N`
   the first N of each program.
-- **Guarded.** Only one run at a time may use a PDF directory, and a run stops after 3 failed
-  theses in a row, since that points at the server or the network.
+- **Guarded.** Only one run at a time may use a PDF directory. A run stops:
+  - after 3 failed theses in a row (`error` or `integrity_error`), since that points at the
+    server or the network;
+  - after 3 theses in a row that its own downloads found `unverifiable`, since so many stale
+    listings in a row more likely mean that the server, or a proxy in front of it, sends
+    wrong files. Check what it sends before running the command again. An
+    `unverifiable` thesis without a download in this run (an unknown checksum algorithm, or
+    one kept from an earlier run) neither counts nor breaks that run of theses; any other
+    outcome breaks it, and an `unverifiable` thesis also breaks a run of failures.
+- **Exit code.** 0 when no thesis looked at needs anything more; 1 after a fatal error, when
+  a thesis failed (run the command again), or when a thesis is `unverifiable` (the last line
+  then says how many and why, for a person to check them); 130 after an interruption.
+- **One snapshot.** A PDF manifest that belongs to another snapshot is refused before any
+  request.
 
 It is as polite as the harvest: one request at a time, at least
 `repository.request_interval_seconds` apart, with the same User-Agent and retry policy. It
@@ -400,13 +464,21 @@ uv run pytest -q
 
 A separate suite checks that the locked stack works together on this machine. It covers spaCy,
 the embedding model, UMAP with K-means/HDBSCAN inside BERTopic, the metrics, plotly/Streamlit,
-the stats and file libraries, and OCR of a page without a text layer. The OCR check needs the
-files from [OCR assets](#ocr-assets) and fails with the fetch command when they are missing.
-The default test run excludes the suite. Run it with:
+the stats and file libraries, and OCR of a page without a text layer. It also checks that
+BERTopic keeps accents and ñ in its topic words (D22). The OCR check needs the files from
+[OCR assets](#ocr-assets) and fails with the fetch command when they are missing.
+
+A test run leaves the suite out, whatever other `-m` filter it uses (`tests/conftest.py`).
+Run it with a `-m` expression that names the `smoke` marker, read as pytest reads marker
+names (`pre-smoke` or `smoke_fast` is another marker):
 
 ```sh
 uv run pytest -m smoke
 ```
+
+`--smoke` only stops the run from leaving the suite out; `-m` and `-k` still filter it like
+any other test. `uv run pytest --smoke -k ocr` runs the OCR tests of both suites, while
+`uv run pytest --smoke -m unit` selects no smoke test, since none is marked `unit`.
 
 The first run downloads the embedding model `paraphrase-multilingual-MiniLM-L12-v2` (about
 0.5 GB) into the Hugging Face cache. Later runs reuse that copy, take under a minute, and also

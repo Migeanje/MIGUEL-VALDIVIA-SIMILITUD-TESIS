@@ -21,10 +21,19 @@ Anonymous read access is enough, so it sends no credentials. It stays polite to 
 - redirects only within the repository's own scheme, host and port.
 
 Each response is checked before use: its shape, the scope and year filter that the server
-says it applied, the page number, paging that stays the same from page to page, the item
-that a listing describes, and embedded lists that hold every element. Error messages quote
-neither metadata values nor file names: a malformed response is described by the location
-and kind of each problem, and a refused redirect by its scheme, host and port.
+says it applied, the page number, paging that stays the same from page to page, no item
+listed twice by one search, the item that a listing describes, and embedded lists that
+hold every element. Error messages quote neither metadata values nor file names: a
+malformed response is described by the location and kind of each problem, and a refused
+redirect by its scheme, host and port.
+
+Paging is by offset, and the only sort key is the issue date, so the server decides the
+order of items that share a date on each page request. If that order changes between two
+requests, a listing repeats one item and skips another: the repeat is refused here, and the
+harvest refuses a listing that does not hold the reported total. A change to a collection
+between two page requests that keeps its total, such as one item withdrawn while another
+is added, cannot be seen in the pages; see the README for how a later harvest can rule it
+out.
 """
 
 import json
@@ -61,7 +70,10 @@ FILES_EMBED = "bundles/bitstreams"
 USER_AGENT = "thematic-redundancy-research/0.1 (academic thesis research)"
 """Names the project, and no person, so that the repository's operators can identify it."""
 
-SORT = "dc.date.issued,ASC"
+SORT_FIELD = "dc.date.issued"
+SORT = f"{SORT_FIELD},ASC"
+"""The only sort key that the searches send. It does not tell apart items with the same
+date, so page requests rely on the server to keep their order; see :func:`_add_items`."""
 ISSUED_YEAR_FILTER = "dateIssued"
 """Discovery filter on the year of ``dc.date.issued``."""
 
@@ -342,11 +354,13 @@ class DSpaceRestRepository:
                 f"the {MAX_PAGES_PER_SEARCH} allowed; check the scope and the year filter, "
                 "or raise repository.page_size"
             )
-        items = first.items()
+        items: list[RepositoryItem] = []
+        listed_on: dict[UUID, int] = {}
+        _add_items(items, listed_on, first, scope)
         for number in range(1, paging.total_pages):
             response = self._search(scope, years, page=number, size=self._page_size)
             _require_same_paging(response.page, paging, scope)
-            items.extend(response.items())
+            _add_items(items, listed_on, response, scope)
         return ScopeListing(items=tuple(items), reported_total=paging.total_elements)
 
     def count_items(self, scope: UUID, years: IssuedYears) -> int:
@@ -573,6 +587,32 @@ def _retry_after_seconds(response: httpx.Response) -> float | None:
     """
     value = response.headers.get("Retry-After", "").strip()
     return float(value) if value.isascii() and value.isdigit() else None
+
+
+def _add_items(
+    items: list[RepositoryItem],
+    listed_on: dict[UUID, int],
+    response: _SearchResponse,
+    scope: UUID,
+) -> None:
+    """Append the items of one page, refusing an item that an earlier page already listed.
+
+    The search sorts by :data:`SORT_FIELD` alone, so the order of items that share a date is
+    not guaranteed from one page request to the next, and offset paging may then list one
+    item twice and skip another. With the set of items unchanged, a listing that repeats no
+    item and holds the reported total, which the harvest checks, misses none.
+    """
+    for item in response.items():
+        if item.uuid in listed_on:
+            raise RepositoryError(
+                f"item {item.uuid} appears twice in the search under scope {scope}, on pages "
+                f"{listed_on[item.uuid]} and {response.page.number}; the search sorts by "
+                f"{SORT_FIELD} only, and the order of items that share a date is not "
+                "guaranteed between page requests, so the listing may also have skipped "
+                "items; run the harvest again"
+            )
+        listed_on[item.uuid] = response.page.number
+        items.append(item)
 
 
 def _require_same_paging(paging: _Page, first: _Page, scope: UUID) -> None:

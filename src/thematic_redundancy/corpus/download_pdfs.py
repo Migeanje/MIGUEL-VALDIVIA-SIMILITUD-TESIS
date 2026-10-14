@@ -14,20 +14,32 @@ and takes its theses: the items whose ``renati.type`` fragment equals
    several, is recorded as ``no_thesis_file`` or ``ambiguous``, and nothing is fetched;
 4. streams the thesis into ``<item uuid>.pdf.part``, checks that it starts with ``%PDF``
    and that its size and checksum match what the repository lists, and only then renames
-   it to ``<item uuid>.pdf`` and records its MD5 and SHA-256. A PDF that fails a check is
-   deleted and recorded as ``integrity_error``; it is not fetched again within the run.
+   it to ``<item uuid>.pdf`` and records its MD5 and SHA-256. A file that fails a check is
+   deleted. A body that is not a PDF, or that is longer than listed, is recorded as
+   ``integrity_error``: an error page served in place of the file is the usual cause of
+   the first, and of the second only the listed part could be compared. A PDF shorter than
+   listed, or of the listed size with another checksum, is downloaded once more: when the
+   second download sends the very same bytes, the listing looks stale and the thesis is
+   recorded as ``unverifiable``; otherwise as ``integrity_error``.
+
+A checksum in an algorithm that cannot be verified is also ``unverifiable``, without any
+download. Asking again would not change an ``unverifiable`` outcome, so it is not retried:
+a later run fetches the file again only once the repository lists it differently, or when
+``recheck_unverifiable`` asks for it. It is not a failure either, but a person has to look
+at it, so the command line exits with 1 and names the reasons.
 
 The manifest ``pdfs/manifest.json`` is replaced atomically after every thesis, so an
 interrupted run loses nothing, and running the command again resumes it. A PDF found on
 disk without a manifest entry is kept when it matches the repository's listing. One run at
-a time may use a PDF directory, and a run stops after :data:`MAX_CONSECUTIVE_FAILURES`
-failed theses in a row, which point at the repository or the network rather than at the
-theses.
+a time may use a PDF directory. A run stops after :data:`MAX_CONSECUTIVE_FAILURES` failed
+theses in a row, which point at the repository or the network rather than at the theses,
+and after :data:`MAX_CONSECUTIVE_MISMATCHES` theses in a row that its downloads found
+``unverifiable``, which point at a server or a proxy that sends wrong files.
 
 Run it after the harvest::
 
     uv run python -m thematic_redundancy.corpus.download_pdfs [--project-root PATH]
-        [--snapshot-id ID] [--limit N] [--per-program N]
+        [--snapshot-id ID] [--limit N] [--per-program N] [--recheck-unverifiable]
 """
 
 import argparse
@@ -92,8 +104,14 @@ CONFIG_PATH = Path("config") / "default.yaml"
 MAX_CONSECUTIVE_FAILURES = 3
 """Failed theses in a row (``error`` or ``integrity_error``) that stop a run."""
 
+MAX_CONSECUTIVE_MISMATCHES = 3
+"""Theses in a row that the run's own downloads found ``unverifiable`` and that stop a run:
+so many stale listings in a row more likely mean that the server, or a proxy in front of
+it, sends wrong files."""
+
 FAILURE_STATUSES: frozenset[PdfStatus] = frozenset({"error", "integrity_error"})
-"""Statuses that a later run tries again; every other status stands."""
+"""Statuses that may pass another time: a later run tries them again, and they count toward
+:data:`MAX_CONSECUTIVE_FAILURES`. Every other status stands."""
 
 PDF_MAGIC = b"%PDF"
 """First bytes of every PDF file."""
@@ -142,6 +160,8 @@ class ItemOutcome:
     item_uuid: UUID
     program_key: str
     entry: PdfEntry
+    downloads: int = 0
+    """Downloads of the thesis in this run: 0, 1, or 2 when a failed check was repeated."""
 
 
 @dataclass(frozen=True)
@@ -174,6 +194,7 @@ def download_theses(
     snapshot_id: str | None = None,
     limit: int | None = None,
     per_program: int | None = None,
+    recheck_unverifiable: bool = False,
     clock: Callable[[], datetime] = _utc_now,
     on_start: Callable[[DownloadPlan], None] | None = None,
     on_item: Callable[[int, ItemOutcome], None] | None = None,
@@ -182,13 +203,17 @@ def download_theses(
 
     The snapshot is ``data/raw/<snapshot_id>`` under ``paths.data_dir``, and defaults to
     the one harvested last. ``per_program`` keeps the first theses of each program, and
-    ``limit`` the first theses overall, both in snapshot order. ``on_start`` hears the plan
-    once the run holds the PDF directory, and ``on_item`` each outcome with its position,
-    counted from 1, once the manifest holds it.
+    ``limit`` the first theses overall, both in snapshot order. ``recheck_unverifiable``
+    downloads again the theses recorded as ``unverifiable`` whose listing has not changed,
+    which a run otherwise leaves as they are. ``on_start`` hears the plan once the run holds
+    the PDF directory, and ``on_item`` each outcome with its position, counted from 1, once
+    the manifest holds it.
 
     Raises:
         DownloadInProgressError: if another run is using the PDF directory.
-        DownloadStoppedError: after :data:`MAX_CONSECUTIVE_FAILURES` failed theses in a row.
+        DownloadStoppedError: after :data:`MAX_CONSECUTIVE_FAILURES` failed theses in a row,
+            or :data:`MAX_CONSECUTIVE_MISMATCHES` theses in a row that the run's downloads
+            found ``unverifiable``.
         FileNotFoundError: if the snapshot does not exist.
         ValueError: if a limit is below 1, if the snapshot id is not one plain name, if the
             snapshot fails its digest check, or if the PDF manifest is damaged.
@@ -216,7 +241,7 @@ def download_theses(
     with exclusive_run(pdf_dir, in_progress):
         _remove_partial_files(pdf_dir)
         store = _ManifestStore(pdf_dir / PDF_MANIFEST_FILE_NAME, config, snapshot_id, records)
-        fetcher = _ThesisFetcher(repository, pdf_dir)
+        fetcher = _ThesisFetcher(repository, pdf_dir, recheck_unverifiable=recheck_unverifiable)
         if on_start is not None:
             plan = DownloadPlan(
                 snapshot_id=snapshot_id,
@@ -226,24 +251,22 @@ def download_theses(
             )
             on_start(plan)
         outcomes: list[ItemOutcome] = []
-        failures_in_a_row = 0
+        streaks = _Streaks()
         for position, record in enumerate(selected, start=1):
             now = _as_utc(clock())
+            downloads_before = fetcher.downloads
             entry = fetcher.fetch(record, store.entry(record.uuid), now)
             store.save(record.uuid, entry, now)
             outcome = ItemOutcome(
-                item_uuid=record.uuid, program_key=record.program_key, entry=entry
+                item_uuid=record.uuid,
+                program_key=record.program_key,
+                entry=entry,
+                downloads=fetcher.downloads - downloads_before,
             )
             outcomes.append(outcome)
             if on_item is not None:
                 on_item(position, outcome)
-            failures_in_a_row = failures_in_a_row + 1 if entry.status in FAILURE_STATUSES else 0
-            if failures_in_a_row == MAX_CONSECUTIVE_FAILURES:
-                raise DownloadStoppedError(
-                    f"{MAX_CONSECUTIVE_FAILURES} theses failed in a row, which points at the "
-                    "repository or the network; the run stopped, and the manifest keeps every "
-                    "outcome so far, so run the command again later to resume"
-                )
+            streaks.add(outcome)
         manifest = store.manifest(_as_utc(clock()))
     return DownloadReport(
         snapshot_id=snapshot_id,
@@ -252,6 +275,48 @@ def download_theses(
         outcomes=tuple(outcomes),
         manifest=manifest,
     )
+
+
+class _Streaks:
+    """Counts the outcomes in a row that point at the repository rather than at the theses,
+    and stops the run when there are too many."""
+
+    def __init__(self) -> None:
+        self._failures = 0
+        self._mismatches = 0
+
+    def add(self, outcome: ItemOutcome) -> None:
+        """Count ``outcome``.
+
+        Failures count toward one stop. ``unverifiable`` outcomes that this run's downloads
+        established count toward the other; one kept from an earlier run, or one decided
+        without a download, as for an unknown checksum algorithm, leaves that count as it
+        is. Any other outcome resets the count it does not add to.
+
+        Raises:
+            DownloadStoppedError: when either count reaches its limit.
+        """
+        status = outcome.entry.status
+        self._failures = self._failures + 1 if status in FAILURE_STATUSES else 0
+        if status != "unverifiable":
+            self._mismatches = 0
+        elif outcome.downloads > 0:
+            self._mismatches += 1
+        if self._failures == MAX_CONSECUTIVE_FAILURES:
+            raise DownloadStoppedError(
+                f"{MAX_CONSECUTIVE_FAILURES} theses failed in a row, which points at the "
+                "repository or the network; the run stopped, and the manifest keeps every "
+                "outcome so far, so run the command again later to resume"
+            )
+        if self._mismatches == MAX_CONSECUTIVE_MISMATCHES:
+            raise DownloadStoppedError(
+                f"{MAX_CONSECUTIVE_MISMATCHES} theses in a row came twice with the same bytes, "
+                "which differ from their listing; that points at the server or a proxy in "
+                "front of it sending wrong files rather than at stale listings. The run "
+                "stopped, and the manifest keeps every outcome so far; check what the server "
+                "sends before running the command again, with --recheck-unverifiable to fetch "
+                "those theses again"
+            )
 
 
 def _as_utc(moment: datetime) -> datetime:
@@ -330,21 +395,38 @@ class _ManifestStore:
         )
 
 
+@dataclass(frozen=True)
+class _Received:
+    """A whole PDF body that failed its checks, no longer than listed: equal values from two
+    downloads mean that the repository serves those bytes every time."""
+
+    size: int
+    sha256: str
+
+
 class _IntegrityFailure(Exception):
     """A download is not the file that the repository lists."""
 
-    def __init__(self, reason: str, detail: str) -> None:
+    def __init__(self, reason: str, detail: str, received: _Received | None = None) -> None:
         super().__init__(detail)
         self.reason = reason
         self.detail = detail
+        self.received = received
+        """The whole body of a PDF no longer than listed; ``None`` for a body that is not a
+        PDF or that is longer than listed."""
 
 
 class _ThesisFetcher:
     """Establishes the manifest entry of one thesis, asking the repository only when needed."""
 
-    def __init__(self, repository: BitstreamRepository, pdf_dir: Path) -> None:
+    def __init__(
+        self, repository: BitstreamRepository, pdf_dir: Path, *, recheck_unverifiable: bool
+    ) -> None:
         self._repository = repository
         self._pdf_dir = pdf_dir
+        self._recheck_unverifiable = recheck_unverifiable
+        self.downloads = 0
+        """Downloads started so far, those that failed included."""
 
     def fetch(self, record: SnapshotRecord, previous: PdfEntry | None, now: datetime) -> PdfEntry:
         found: dict[str, Any] = {"program_key": record.program_key, "checked_at": now}
@@ -381,7 +463,7 @@ class _ThesisFetcher:
         if algorithm is None:
             return PdfEntry(
                 **found,
-                status="integrity_error",
+                status="unverifiable",
                 reason="unsupported_checksum_algorithm",
                 detail=f"the repository lists a {thesis.checksum.algorithm} checksum, "
                 "which this downloader cannot verify",
@@ -399,22 +481,54 @@ class _ThesisFetcher:
                 if previous is not None and same_file
                 else None,
             )
+        if (
+            not self._recheck_unverifiable
+            and previous is not None
+            and previous.status == "unverifiable"
+            and _lists_the_same_file(previous, thesis)
+        ):
+            return previous.model_copy(update={"checked_at": now})
         try:
             digests = self._download(thesis, algorithm, target)
         except RepositoryError as error:
             return _failure(found, error)
         except _IntegrityFailure as failure:
+            return self._download_again(found, thesis, algorithm, target, failure, now)
+        return _downloaded(found, target, digests, now)
+
+    def _download_again(
+        self,
+        found: Mapping[str, Any],
+        thesis: Bitstream,
+        algorithm: str,
+        target: Path,
+        failure: _IntegrityFailure,
+        now: datetime,
+    ) -> PdfEntry:
+        """Tell a stale listing from a faulty transfer by downloading ``thesis`` once more.
+
+        A body that was not a PDF, or that was longer than listed, is not fetched again
+        within the run. Otherwise, a second download that sends the very same bytes shows
+        that the repository serves this file every time, and that its listing does not
+        describe it.
+        """
+        if failure.received is None:
+            return _integrity_error(found, failure)
+        try:
+            digests = self._download(thesis, algorithm, target)
+        except RepositoryError as error:
+            return _failure(found, error)
+        except _IntegrityFailure as second:
+            if second.received != failure.received:
+                return _integrity_error(found, second)
             return PdfEntry(
-                **found, status="integrity_error", reason=failure.reason, detail=failure.detail
+                **found,
+                status="unverifiable",
+                reason=failure.reason,
+                detail=f"{failure.detail}; a second download sent the same bytes, so the "
+                "repository's listing of this file looks stale",
             )
-        return PdfEntry(
-            **found,
-            status="downloaded",
-            file=target.name,
-            md5=digests["md5"],
-            sha256=digests["sha256"],
-            downloaded_at=now,
-        )
+        return _downloaded(found, target, digests, now)
 
     def _download(self, thesis: Bitstream, algorithm: str, target: Path) -> dict[str, str]:
         """Fetch ``thesis`` into ``target`` through a partial file, and return its digests.
@@ -422,6 +536,7 @@ class _ThesisFetcher:
         The partial file replaces ``target`` only once every check passed; on any failure,
         an interruption included, it is deleted and ``target`` stays as it was.
         """
+        self.downloads += 1
         partial = target.with_name(f"{target.name}{PART_SUFFIX}")
         try:
             with partial.open("wb") as file:
@@ -442,6 +557,33 @@ def _was_refused(entry: PdfEntry) -> bool:
     return entry.status == "not_found" or (
         entry.status == "restricted" and entry.reason in {"http_401", "http_403"}
     )
+
+
+def _lists_the_same_file(entry: PdfEntry, thesis: Bitstream) -> bool:
+    """Tell whether ``entry`` was established for ``thesis`` exactly as listed now."""
+    return (
+        entry.bitstream_uuid,
+        entry.size_bytes,
+        entry.checksum_algorithm,
+        entry.checksum,
+    ) == (thesis.uuid, thesis.size_bytes, thesis.checksum.algorithm, thesis.checksum.value)
+
+
+def _downloaded(
+    found: Mapping[str, Any], target: Path, digests: Mapping[str, str], now: datetime
+) -> PdfEntry:
+    return PdfEntry(
+        **found,
+        status="downloaded",
+        file=target.name,
+        md5=digests["md5"],
+        sha256=digests["sha256"],
+        downloaded_at=now,
+    )
+
+
+def _integrity_error(found: Mapping[str, Any], failure: _IntegrityFailure) -> PdfEntry:
+    return PdfEntry(**found, status="integrity_error", reason=failure.reason, detail=failure.detail)
 
 
 def _failure(found: Mapping[str, Any], error: RepositoryError) -> PdfEntry:
@@ -498,7 +640,9 @@ class _CheckingSink:
     """Byte sink that writes a download into a file, hashing and checking it on the way.
 
     It ends a download as soon as the body cannot be the listed PDF: when its first bytes
-    are not ``%PDF``, or when it grows past the listed size.
+    are not ``%PDF``, or when it grows past the listed size. Only a complete PDF body, of
+    the listed size or shorter, is described for a comparison with a second download: of a
+    longer body, only part could be compared.
     """
 
     def __init__(self, file: BinaryIO, size_bytes: int, algorithms: Iterable[str]) -> None:
@@ -537,14 +681,20 @@ class _CheckingSink:
             raise _IntegrityFailure(
                 "size_mismatch",
                 f"received {self._size:,} bytes, but the repository lists {self._listed_size:,}",
+                self._received(),
             )
         digests = self._hashes.hexdigests()
         if digests[algorithm] != checksum.value.strip().lower():
             raise _IntegrityFailure(
                 "checksum_mismatch",
                 f"the {checksum.algorithm} digest differs from the one the repository lists",
+                self._received(),
             )
         return digests
+
+    def _received(self) -> _Received:
+        """Describe the whole body, once it is known to be a PDF no longer than listed."""
+        return _Received(self._size, self._hashes.hexdigests()["sha256"])
 
 
 def _not_a_pdf() -> _IntegrityFailure:
@@ -696,6 +846,15 @@ def _parse_arguments(argv: Sequence[str] | None) -> argparse.Namespace:
         metavar="N",
         help="look at the first N theses of each program only (default: all)",
     )
+    parser.add_argument(
+        "--recheck-unverifiable",
+        action="store_true",
+        help=(
+            "download again the theses recorded as unverifiable, at most twice each, even "
+            "when the repository lists them as before (default: only once their listing "
+            "changes)"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -711,8 +870,9 @@ def main(
 ) -> int:
     """Run the command line and return its exit code; ``repository`` replaces HTTP in tests.
 
-    The exit code is 0 when every thesis looked at has a standing outcome, 1 after a fatal
-    error or when some thesis failed and needs another run, and 130 after an interruption.
+    The exit code is 0 when every thesis looked at has a standing outcome that needs no
+    one's attention, 1 after a fatal error, when some thesis failed and needs another run,
+    or when some thesis is ``unverifiable``, and 130 after an interruption.
     """
     arguments = _parse_arguments(argv)
     project_root = arguments.project_root.resolve()
@@ -738,6 +898,7 @@ def main(
                 snapshot_id=arguments.snapshot_id,
                 limit=arguments.limit,
                 per_program=arguments.per_program,
+                recheck_unverifiable=arguments.recheck_unverifiable,
                 clock=clock,
                 on_start=console.start,
                 on_item=console.item,
@@ -768,8 +929,20 @@ def main(
     failed = sum(outcome.entry.status in FAILURE_STATUSES for outcome in report.outcomes)
     if failed:
         print(f"{failed} theses failed; run the command again to retry them")
-        return 1
-    return 0
+    unverifiable = Counter(
+        outcome.entry.reason or "unknown"
+        for outcome in report.outcomes
+        if outcome.entry.status == "unverifiable"
+    )
+    if unverifiable:
+        reasons = ", ".join(f"{reason} {count}" for reason, count in sorted(unverifiable.items()))
+        print(
+            f"{unverifiable.total()} theses are unverifiable ({reasons}): their files differ "
+            "from the repository's listing the same way on every download, or it lists a "
+            "checksum that cannot be verified. Check them; once the repository is fixed, run "
+            "the command again with --recheck-unverifiable"
+        )
+    return 1 if failed or unverifiable else 0
 
 
 if __name__ == "__main__":

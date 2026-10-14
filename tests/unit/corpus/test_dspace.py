@@ -450,6 +450,27 @@ def test_a_listing_that_changes_while_paging_is_rejected(
     assert len(server.requests) == 2
 
 
+@pytest.mark.parametrize(("repeated_on", "pages"), [(1, "0 and 1"), (2, "0 and 2")])
+def test_an_item_listed_again_on_a_later_page_is_refused_as_unstable_paging(
+    connect: Connect, repeated_on: int, pages: str
+) -> None:
+    replies = [page(0), page(1), page(2)]
+    # The page lists the first item of page 0 again, in place of one of its own items.
+    objects = result_of(replies[repeated_on])["_embedded"]["objects"]
+    objects[0] = result_of(page(0))["_embedded"]["objects"][0]
+    repository, server = connect(replies)
+
+    with pytest.raises(RepositoryError) as caught:
+        repository.list_items(COLLECTION, YEARS)
+
+    message = str(caught.value)
+    assert f"item {first_item(page(0))['uuid']} appears twice" in message
+    assert f"scope {COLLECTION}, on pages {pages}" in message
+    assert "dc.date.issued" in message
+    assert message.endswith("run the harvest again")
+    assert len(server.requests) == repeated_on + 1  # Refused before any later page.
+
+
 def test_a_listing_that_needs_too_many_pages_is_refused(connect: Connect) -> None:
     payload = page(0)
     result_of(payload)["page"].update(
