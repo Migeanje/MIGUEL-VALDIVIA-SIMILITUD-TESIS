@@ -20,6 +20,7 @@ row here, in the same commit.
 | Manual verification of the objectives (T10) | about 2 h of the user's time for 60 theses (reported by the user, not timed): about 2 min per thesis (derived) |
 | Fichas build (T12) | 0.6 s for 766 records; the quality report with the spaCy stopword re-check, 8.5–9.2 s |
 | mpnet model download (U8) | 287.6 s, the first load included, for 1,126,358,977 B (1.13 GB) on disk |
+| Chunk build (T13) | 22.8–23.5 s for 744 theses and 5,217 chunks under both tokenizers, tokenizer loading included; 46.2–46.9 s in a slower machine state |
 
 ## 1. Purpose and conventions
 
@@ -138,6 +139,9 @@ across sessions with care.
 | 2026-10-12 | all | Test suite (`pytest -q`) | 1,431 tests, plus 3 skipped; 17 smoke tests deselected by the new collection hook | 35.0–37.9 s (2 runs); `pytest -q -m "not slow"` 35.7 s, the same counts | — | 0 | After T05a, T04a, T02a and their review fixes (unit 5); 1,422 tests in 35.4–42.8 s (3 runs) before the fixes. Before the unit: 1,376 tests in 35.2 s, one run, with 16 smoke tests deselected through `addopts` | plan T02a; time: run output |
 | 2026-10-13 | T07a | Metadata profile regeneration (`experiments/eda_metadata.py`), offline (`HF_HUB_OFFLINE=1`), 3 runs | 766 items (746 theses); 7,097 distinct texts counted by both tokenizers; 6 outputs, 318,974 B | 17.4 s and 16.5 s for the whole command (runs 2 and 3); run 1 not timed | — | 0 | Runs 1 and 3, each from a clean tree at `7c6a4e1`, wrote byte-identical outputs (same SHA-256). Run 2, with run 1's outputs still uncommitted in the tree, differed only by `git_uncommitted_changes` in `metadata_profile.json` and the matching line of `summary.md`. The 4 figures are byte-identical to the committed ones in every run. Privacy gate: 6 outputs, 11,215 strings, 0 hits in each run. The 6 outputs went from 318,424 B to 318,974 B: `metadata_profile.json` 20,499 → 20,841 B, `summary.md` 12,584 → 12,792 B | plan progress log (2026-10-13); `results/eda/20261002T224412Z/metadata_profile.json`; times: run output |
 | 2026-10-13 | all | Test suite (`pytest -q -p no:cacheprovider`) | 1,431 tests, plus 3 skipped; 17 smoke tests deselected | 35.4 s, one run | — | 0 | The closing unit of the stack: no source or test changed since `7c6a4e1`. The 15 privacy-gate test cases of `test_eda_metadata.py`, selected with `-k`, took 8.2 s alone | plan progress log (2026-10-13); time: run output |
+| 2026-10-15 | T13 | Chunk build (`build_chunks`), offline (`HF_HUB_OFFLINE=1`), 5 runs | 744 included theses: 2,216 sections, 5,217 chunks (744 title, 4,473 body), each counted by both tokenizers | 23.5 s, 23.2 s and 22.8 s for the build (runs 3 to 5); 26.4 s, 26.9 s and 25.7 s for the whole command, start-up included. Runs 1 and 2, in a slower machine state and before later edits that change no rule: 46.9 s and 46.2 s; 50.1 s and 49.3 s | about 32–33 theses/s and 222–229 chunks/s over the build (derived, runs 3 to 5) | 0 | Phases, one profiling run in each state: tokenizer loading, with the import of transformers and torch, 11.2 s (22.0 s in the slower state); chunking 8.6 s (19.3 s), 19,853 counts per tokenizer; checks 2.5 s (5.6 s). Runs 3 to 5 wrote byte-identical tables. 0 chunks above 128 under either tokenizer; all 2,216 sections recovered. The power plan was not recorded | `data/interim/20261002T224412Z/chunks_manifest.json` (`seconds`); plan T13; times: run output |
+| 2026-10-15 | T13 | Chunker smoke tests (`pytest -m smoke tests/smoke/test_chunker.py`), offline, 3 runs | 5 tests over the real fichas with both real tokenizers | 28.4 s and 25.0 s (30.9 s and 27.8 s for the whole command); the first run, in the slower state, 58.3 s (62.1 s) | — | 0 | 5 passed in every run | plan T13; times: run output |
+| 2026-10-15 | all | Test suite (`pytest -q -p no:cacheprovider`) | 1,702 tests, plus 3 skipped; 22 smoke tests deselected | 46.3 s and 43.4 s (49.4 s and 46.4 s for the whole command), 2 runs | — | 0 | After T13: 271 new tests, 266 in `tests/unit/representation` and 5 in the configuration tests | plan T13; time: run output |
 
 ### Notes on the ledger
 
@@ -199,6 +203,7 @@ Measured on 2026-10-05 with `os.stat` (no file was hashed) and, for the reposito
 | `data/labels/objectives_check/20261002T224412Z/` | verification workbook (30,042 B) and `sample.json` (11,817 B) (T10; measured 2026-10-07) | 41,859 | 0.04 MB |
 | `data/interim/20261002T224412Z/` fichas files | `fichas.parquet` (1,206,201 B), `exclusions.parquet` (3,868 B) and `fichas_manifest.json` (702 B) (T12; measured 2026-10-07) | 1,210,771 | 1.21 MB |
 | `data/interim/pseudonym.key` | the pseudonym key (T08), created by the first T12 run | 32 | 32 B |
+| `data/interim/20261002T224412Z/` chunk files | `chunks.parquet` (1,375,134 B) and `chunks_manifest.json` (1,336 B) (T13; measured 2026-10-15) | 1,376,470 | 1.38 MB |
 | `tessdata/*.traineddata` | `spa` and `eng`, tessdata_best | 28,970,788 | 29.0 MB |
 | Hugging Face cache | `paraphrase-multilingual-MiniLM-L12-v2` | 479,729,050 | 479.7 MB |
 | Hugging Face cache | `paraphrase-multilingual-mpnet-base-v2` (measured 2026-10-11) | 1,126,358,977 | 1.13 GB |

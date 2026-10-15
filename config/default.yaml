@@ -88,9 +88,17 @@ fichas:
     objectives_extracted: 728
     metadata_only: 16
 
-# Token budget per chunk, special tokens included, under both tokenizers.
+# Token budget per chunk, special tokens included, under both tokenizers. expected holds the
+# counts that the chunk build of snapshot_id must reach (T13, D27), or it stops; another
+# snapshot needs its own counts.
 chunking:
   max_tokens: 128
+  expected:
+    snapshot_id: "20261002T224412Z"
+    documents: 744
+    chunks: 5217
+    title_chunks: 744
+    body_chunks: 4473
 
 embedding:
   models:

@@ -91,6 +91,13 @@ def test_default_config_loads_with_the_declared_plan_values() -> None:
     assert (header_footer.edge_lines, header_footer.min_pages) == (3, 5)
     assert header_footer.min_share == pytest.approx(0.3)
     assert config.chunking.max_tokens == 128
+    assert config.chunking.expected.model_dump() == {
+        "snapshot_id": "20261002T224412Z",
+        "documents": 744,
+        "chunks": 5217,
+        "title_chunks": 744,
+        "body_chunks": 4473,
+    }
     assert config.embedding.models == (
         "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
         "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
@@ -772,6 +779,28 @@ def test_the_expected_fichas_counts_must_be_whole_and_add_up(
     raw_default: dict[str, Any], tmp_path: Path, dotted_key: str, value: Any, message: str
 ) -> None:
     # The build compares its counts with these, so a declaration that cannot hold is refused.
+    set_value(raw_default, dotted_key, value)
+
+    with pytest.raises(ValidationError, match=message):
+        load_variant(tmp_path, raw_default)
+
+
+@pytest.mark.parametrize(
+    ("dotted_key", "value", "message"),
+    [
+        ("chunking.expected.chunks", 5216, "chunks .* must equal title_chunks"),
+        ("chunking.expected.body_chunks", 4474, "chunks .* must equal title_chunks"),
+        ("chunking.expected.documents", 745, "title_chunks .* at least documents"),
+        ("chunking.expected.chunks", "5217", "valid integer"),
+        ("chunking.expected.snapshot_id", "../20261002T224412Z", "snapshot_id"),
+    ],
+    ids=["chunks", "body", "untitled-documents", "quoted", "path-like-id"],
+)
+def test_the_expected_chunk_counts_must_add_up(
+    raw_default: dict[str, Any], tmp_path: Path, dotted_key: str, value: Any, message: str
+) -> None:
+    # The chunk build compares its counts with these, so a declaration that cannot hold is
+    # refused; every included thesis has a title, its own section of at least one chunk.
     set_value(raw_default, dotted_key, value)
 
     with pytest.raises(ValidationError, match=message):

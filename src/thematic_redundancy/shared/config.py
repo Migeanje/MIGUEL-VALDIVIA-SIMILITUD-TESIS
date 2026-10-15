@@ -35,6 +35,8 @@ NonEmptyStr = Annotated[str, Field(min_length=1)]
 NonNegativeInt = Annotated[StrictInt, Field(ge=0)]
 PositiveInt = Annotated[StrictInt, Field(ge=1)]
 Seed = Annotated[StrictInt, Field(ge=0, lt=2**32)]
+SnapshotIdText = Annotated[str, Field(pattern=r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9])?$")]
+"""A snapshot id as the corpus writes it: one plain directory name."""
 
 
 def _require_unique(values: Sequence[Hashable], label: str) -> None:
@@ -284,7 +286,7 @@ class WrongPdfConfig(_FrozenModel):
 class FichasCountsConfig(_FrozenModel):
     """Counts that the fichas of one snapshot must reach, declared after inspecting it (T12)."""
 
-    snapshot_id: Annotated[str, Field(pattern=r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9])?$")]
+    snapshot_id: SnapshotIdText
     records: NonNegativeInt
     """Every harvested record: one ficha each."""
     included: NonNegativeInt
@@ -327,10 +329,38 @@ class FichasConfig(_FrozenModel):
         return value
 
 
+class ChunkCountsConfig(_FrozenModel):
+    """Counts that the chunk table of one snapshot must reach, measured on it first (T13, D27)."""
+
+    snapshot_id: SnapshotIdText
+    documents: NonNegativeInt
+    """Included theses: each has a title, so each has chunks."""
+    chunks: NonNegativeInt
+    title_chunks: NonNegativeInt
+    body_chunks: NonNegativeInt
+    """Chunks of the abstracts and the objectives."""
+
+    @model_validator(mode="after")
+    def _require_counts_that_add_up(self) -> Self:
+        if self.chunks != self.title_chunks + self.body_chunks:
+            raise ValueError(
+                f"chunks ({self.chunks}) must equal title_chunks + body_chunks "
+                f"({self.title_chunks + self.body_chunks})"
+            )
+        if self.title_chunks < self.documents:
+            raise ValueError(
+                f"title_chunks ({self.title_chunks}) must be at least documents "
+                f"({self.documents}), since every document has a title"
+            )
+        return self
+
+
 class ChunkingConfig(_FrozenModel):
-    """Sentence-aligned chunk budget, special tokens included, under both tokenizers."""
+    """Sentence-aligned chunk budget, special tokens included, under both tokenizers, and the
+    counts that the chunk build must reach."""
 
     max_tokens: Annotated[StrictInt, Field(ge=16, le=MODEL_MAX_SEQ_LENGTH)]
+    expected: ChunkCountsConfig
 
 
 class EmbeddingConfig(_FrozenModel):
