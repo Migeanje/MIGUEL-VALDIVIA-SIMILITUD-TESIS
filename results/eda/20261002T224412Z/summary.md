@@ -3,7 +3,7 @@
 Aggregates only: no title, abstract, author, advisor or juror name appears in this report, in `metadata_profile.json`, or in the figures.
 
 - **Source:** `data/raw/20261002T224412Z/metadata.jsonl`, harvested 2026-10-02T22:44:12Z (SHA-256 `d88839012df3…`).
-- **Code:** `experiments/eda_metadata.py` at git `54173b8` with uncommitted changes; configuration SHA-256 `e6de0c5a5ab8…`.
+- **Code:** `experiments/eda_metadata.py` at git `7c6a4e1`; configuration SHA-256 `dcbf811c98f4…`.
 - **Tokens:** the tokenizer of `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`, special tokens included (2 per sequence); the model reads at most 128 tokens.
 
 ## Observations
@@ -238,8 +238,8 @@ Counts only; no advisor is named.
 
 - **Texts.** Titles and abstracts are the first value of their field, with every run of whitespace, line breaks included, collapsed into one space. Characters are counted in NFC, and words are runs between spaces.
 - **Chunk estimate.** Sentences end at `.`, `!`, `?` or `…` (maybe closed by a quote or a bracket) when whitespace and a capital letter or a digit follow; a line break alone never ends one. Each sentence is tokenized alone, without special tokens, and the sentences are packed greedily into chunks of 126 tokens plus 2 special tokens. A sentence longer than a chunk starts its own and is cut into full pieces. The lower bound packs tokens perfectly. This is an approximation: an abbreviation before a capital (such as `S.A.C.`) splits a sentence, which can only lower the estimate, while a missed sentence end can raise it. In 0 abstracts the sentence token counts do not add up to the whole abstract.
-- **Second model.** The tokenizer of `paraphrase-multilingual-mpnet-base-v2` is not in the local cache, so D09's check under both tokenizers is still pending.
-- **Title suffixes.** `TRAILING_YEAR` and `TRAILING_PLACE` in `src/thematic_redundancy/corpus/profile.py` define the patterns. A year is 19xx or 20xx, or a range, after a comma, a dash, a parenthesis or a space, and never after a digit (so `ISO 9001:2015` does not count). Places come from a gazetteer of 56 names: Peru, its departments, the provinces of the Arequipa region, the districts of the province of Arequipa, and a few southern towns. Place words missing from it are not seen, and a place that ends an organization's name counts.
+- **Second model.** The tokenizer of `paraphrase-multilingual-mpnet-base-v2`, from the local cache, gives the same count as that of `paraphrase-multilingual-MiniLM-L12-v2` for each of the 7,097 distinct texts that this profile tokenized (titles, abstracts, their sentences, and the empty text that gives the special tokens), so every token count here holds for both models (D09).
+- **Title suffixes.** `TRAILING_YEAR` and `TRAILING_PLACE` in `src/thematic_redundancy/preprocessing/title_suffix.py` define the patterns. A year is 19xx or 20xx, or a range, after a comma, a dash, a parenthesis or a space, and never after a digit (so `ISO 9001:2015` does not count). Places come from a gazetteer of 56 names: Peru, its departments, the provinces of the Arequipa region, the districts of the province of Arequipa, and a few southern towns. Place words missing from it are not seen, and a place that ends an organization's name counts.
 - **Keywords.** In NFC, with whitespace collapsed, trailing periods dropped, and case folded; accents and ñ are kept. Each keyword counts once per thesis.
 - **Dates.** The first `dc.date.issued` value; a year or a month counts from its first day, as in the snapshot manifest, and is compared with the UTC snapshot date.
 - **Advisors.** Names are compared with case and spacing folded but accents kept. ORCIDs are compared only on theses with exactly one advisor and one ORCID.

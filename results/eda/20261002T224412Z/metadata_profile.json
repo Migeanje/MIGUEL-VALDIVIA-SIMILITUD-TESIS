@@ -4,15 +4,26 @@
     "snapshot_id": "20261002T224412Z",
     "harvested_at": "2026-10-02T22:44:12Z",
     "metadata_sha256": "d88839012df3e6f3bd7ee08f90c8e1f3b6588cf75386127dde52f429b4d9d932",
-    "config_sha256": "e6de0c5a5ab8d185c337fa37ab71bcfb3ac9e892a87e5f9b419649cde0045139",
-    "git_commit": "54173b8c57d3c2b25be71ff718b7cfb8aa17ebc4",
-    "git_uncommitted_changes": true,
+    "config_sha256": "dcbf811c98f457e8b12449d52b674a418b1227bbbe079190a25108c78cd8c6d4",
+    "git_commit": "7c6a4e13e52915cef90414c8ae999af0dfb36d62",
+    "git_uncommitted_changes": false,
     "tokenizer": {
       "model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
       "class": "TokenizersBackend",
       "vocabulary_size": 250002,
       "special_tokens_per_sequence": 2
-    }
+    },
+    "other_tokenizers": [
+      {
+        "model": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+        "class": "XLMRobertaTokenizer",
+        "vocabulary_size": 250002,
+        "special_tokens_per_sequence": 2,
+        "cached": true,
+        "texts_compared": 7097,
+        "texts_counted_differently": 0
+      }
+    ]
   },
   "profile": {
     "snapshot_id": "20261002T224412Z",

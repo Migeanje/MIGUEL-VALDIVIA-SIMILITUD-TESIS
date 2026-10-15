@@ -136,6 +136,8 @@ across sessions with care.
 | 2026-10-12 | T02a | Read-only check of the real tessdata files against the new pins and the layout check | `spa.traineddata` 13,570,187 B and `eng.traineddata` 15,400,601 B | 1.0 s for the whole command, start-up included; 0.02 s for `ensure_tessdata`, which hashed both files | about 1.4 GB/s hashed (derived from the rounded 0.02 s) | 0 | Both files equal their pins and pass the layout check (24 entries, 7 present). `ensure_tessdata` with a downloader that refuses every request downloaded nothing; the 3 files kept their SHA-256 | plan T02a; time: run output |
 | 2026-10-12 | T02a | Smoke suite through the new selection (`pytest -m smoke`) | 17 tests (16 + the D22 test), offline (`HF_HUB_OFFLINE=1`) | 32.8–39.0 s (32.75 s, then 38.97 s after the review fixes), 2 runs | — | 0 | 17 passed, 1,425 and then 1,434 deselected. The mutant run of the D22 test alone, with BERTopic's default language, took 65.1 s and failed as expected | plan T02a; time: run output |
 | 2026-10-12 | all | Test suite (`pytest -q`) | 1,431 tests, plus 3 skipped; 17 smoke tests deselected by the new collection hook | 35.0–37.9 s (2 runs); `pytest -q -m "not slow"` 35.7 s, the same counts | — | 0 | After T05a, T04a, T02a and their review fixes (unit 5); 1,422 tests in 35.4–42.8 s (3 runs) before the fixes. Before the unit: 1,376 tests in 35.2 s, one run, with 16 smoke tests deselected through `addopts` | plan T02a; time: run output |
+| 2026-10-13 | T07a | Metadata profile regeneration (`experiments/eda_metadata.py`), offline (`HF_HUB_OFFLINE=1`), 3 runs | 766 items (746 theses); 7,097 distinct texts counted by both tokenizers; 6 outputs, 318,974 B | 17.4 s and 16.5 s for the whole command (runs 2 and 3); run 1 not timed | — | 0 | Runs 1 and 3, each from a clean tree at `7c6a4e1`, wrote byte-identical outputs (same SHA-256). Run 2, with run 1's outputs still uncommitted in the tree, differed only by `git_uncommitted_changes` in `metadata_profile.json` and the matching line of `summary.md`. The 4 figures are byte-identical to the committed ones in every run. Privacy gate: 6 outputs, 11,215 strings, 0 hits in each run. The 6 outputs went from 318,424 B to 318,974 B: `metadata_profile.json` 20,499 → 20,841 B, `summary.md` 12,584 → 12,792 B | plan progress log (2026-10-13); `results/eda/20261002T224412Z/metadata_profile.json`; times: run output |
+| 2026-10-13 | all | Test suite (`pytest -q -p no:cacheprovider`) | 1,431 tests, plus 3 skipped; 17 smoke tests deselected | 35.4 s, one run | — | 0 | The closing unit of the stack: no source or test changed since `7c6a4e1`. The 15 privacy-gate test cases of `test_eda_metadata.py`, selected with `-k`, took 8.2 s alone | plan progress log (2026-10-13); time: run output |
 
 ### Notes on the ledger
 
@@ -239,4 +241,6 @@ leaves out the 40-byte `refs/main` file.
 - [ ] T21 labeling workload: annotator hours per pair and in total.
 - [ ] T28 app latency: start-up time and time per query.
 - [ ] T29 Docker build: build time and image size.
-- [ ] Optional: time the EDA (T07) and stopword-candidates (T11) scripts on their next run.
+- [x] Time the EDA script (T07): 17.4 s and 16.5 s for the whole command, offline, in the
+  regeneration after T07a (2026-10-13).
+- [ ] Optional: time the stopword-candidates (T11) script on its next run.
