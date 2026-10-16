@@ -4,7 +4,7 @@ import re
 from collections import Counter
 from collections.abc import Hashable, Sequence
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Annotated, Any, Self
+from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
 import yaml
@@ -363,10 +363,44 @@ class ChunkingConfig(_FrozenModel):
     expected: ChunkCountsConfig
 
 
+DocumentVariant = Literal["section_mean", "plain_mean"]
+"""Document vector of a thesis (T14): ``section_mean``, the equal-weight mean of its section
+vectors (D09), or ``plain_mean``, the mean of all its chunk vectors (the sensitivity variant)."""
+
+
+class EmbeddingCountsConfig(_FrozenModel):
+    """Counts that the embeddings of one snapshot must reach, per model (T14)."""
+
+    snapshot_id: SnapshotIdText
+    documents: NonNegativeInt
+    """Included theses: one document vector each."""
+    chunks: NonNegativeInt
+    """Chunk vectors, one per row of the chunk table."""
+
+    @model_validator(mode="after")
+    def _require_a_chunk_per_document(self) -> Self:
+        if self.chunks < self.documents:
+            raise ValueError(
+                f"chunks ({self.chunks}) must be at least documents ({self.documents}), since "
+                "every document has its title chunk"
+            )
+        return self
+
+
 class EmbeddingConfig(_FrozenModel):
-    """Sentence-transformers model ids compared in the experiment."""
+    """Sentence-transformers models compared in the experiment, how they encode the chunks, and
+    which document vector later steps read (T14)."""
 
     models: Annotated[tuple[NonEmptyStr, ...], Field(min_length=1)]
+    batch_size: Annotated[StrictInt, Field(ge=1, le=4096)]
+    """Chunks encoded together."""
+    device: Annotated[str, Field(pattern=r"^(cpu|cuda(:[0-9]+)?)$")]
+    threads: Annotated[StrictInt, Field(ge=1, le=256)]
+    """CPU threads of torch, pinned so that runs on one machine repeat."""
+    document_vector: DocumentVariant
+    sensitivity_cosine_threshold: Annotated[StrictFloat, Field(ge=0.0, le=1.0)]
+    """A thesis whose two document vectors have a lower cosine is counted in the summary."""
+    expected: EmbeddingCountsConfig
 
     @field_validator("models")
     @classmethod

@@ -100,10 +100,26 @@ chunking:
     title_chunks: 744
     body_chunks: 4473
 
+# Embedding models (T14), loaded from the local Hugging Face cache only. Each encodes
+# batch_size chunks at a time on device, with threads CPU threads; its raw chunk vectors are
+# cached under data/cache/chunk_vectors/. document_vector is the document vector that later
+# steps read: section_mean, the equal-weight mean of the section vectors (D09), or plain_mean,
+# the mean of all the chunk vectors (the sensitivity variant). The build counts the theses
+# whose two vectors have a cosine below sensitivity_cosine_threshold. expected holds the counts
+# that the embeddings of snapshot_id must reach, per model, or the build stops.
 embedding:
   models:
     - sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
     - sentence-transformers/paraphrase-multilingual-mpnet-base-v2
+  batch_size: 64
+  device: cpu
+  threads: 10
+  document_vector: section_mean
+  sensitivity_cosine_threshold: 0.95
+  expected:
+    snapshot_id: "20261002T224412Z"
+    documents: 744
+    chunks: 5217
 
 umap:
   n_neighbors: 15

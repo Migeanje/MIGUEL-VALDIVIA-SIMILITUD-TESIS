@@ -21,6 +21,7 @@ row here, in the same commit.
 | Fichas build (T12) | 0.6 s for 766 records; the quality report with the spaCy stopword re-check, 8.5–9.2 s |
 | mpnet model download (U8) | 287.6 s, the first load included, for 1,126,358,977 B (1.13 GB) on disk |
 | Chunk build (T13) | 22.8–23.5 s for 744 theses and 5,217 chunks under both tokenizers, tokenizer loading included; 46.2–46.9 s in a slower machine state |
+| Embeddings (T14) | 549.0 s from an empty cache for 5,211 distinct texts with both models (encoding: MiniLM 127.2 s, mpnet 306.3 s); 52.8 s on a rerun from the cache |
 
 ## 1. Purpose and conventions
 
@@ -144,7 +145,11 @@ across sessions with care.
 | 2026-10-15 | all | Test suite (`pytest -q -p no:cacheprovider`) | 1,702 tests, plus 3 skipped; 22 smoke tests deselected | 46.3 s and 43.4 s (49.4 s and 46.4 s for the whole command), 2 runs | — | 0 | After T13: 271 new tests, 266 in `tests/unit/representation` and 5 in the configuration tests | plan T13; time: run output |
 | 2026-10-15 | T13a | Chunk build (`build_chunks`) after the `no.` rule, offline (`HF_HUB_OFFLINE=1`), 3 runs | 744 included theses: 2,216 sections, 5,217 chunks (744 title, 4,473 body), each counted by both tokenizers | The final run 23.5 s for the build (26.4 s for the whole command); the first run, in a slower machine state, 45.6 s (49.0 s); a mutant run that recorded a wrong tokenizer SHA-256 for the smoke test's RED, 76.4 s (whole command not timed) | about 32 theses/s and 222 chunks/s over the final build (derived) | 0 | The same counts and chunk ends as T13 (sentence 4,985, clause 66, comma 162, window 4). The first and final runs wrote a `chunks.parquet` byte-identical to T13's (SHA-256 `2e579834…`, 1,375,134 B); the manifest (1,336 B) changes with `chunker_version` 2. The power plan was not recorded | `data/interim/20261002T224412Z/chunks_manifest.json` (`seconds`); plan T13a; times: run output |
 | 2026-10-15 | T13a | Chunker smoke tests (`pytest -m smoke tests/smoke/test_chunker.py`), offline, 1 run | 6 tests over the real fichas with both real tokenizers | 26.7 s (29.2 s for the whole command) | — | 0 | 6 passed: T13's 5, with the tokenizer comparison now always run, plus the manifest's tokenizer SHA-256 check | plan T13a; time: run output |
+| 2026-10-16 | T14 | Full embedding build (`build_embeddings`), offline (`HF_HUB_OFFLINE=1`), empty cache, run by the user in his terminal (PowerShell) | 744 theses: 2,216 sections, 5,217 chunks, 5,211 distinct texts per model; MiniLM and mpnet | `Seconds: 549.0` as printed; encoding 127.2 s (MiniLM) and 306.3 s (mpnet) | 41.0 and 17.0 texts/s (D) | 0 | The design note estimated about 102 s and 328 s of encoding (E). The other 115.5 s (D) is the imports, the model loads, the pooling, the checks and the writes. Cosine of the two document vectors per thesis: MiniLM min 0.8349, median 0.9765, 67 below 0.95; mpnet min 0.8795, median 0.9822, 30 below 0.95 | plan T14; run output |
+| 2026-10-16 | T14 | Embedding rerun from the cache (`build_embeddings`), offline | Same scope | `Seconds: 52.8`; 0.1 s of encoding per model | — | 0 | 5,211 texts from the cache and 0 embedded per model; all vector, section and cache files byte-identical to the first run (SHA-256 compared); only the manifest's run fields changed | plan T14; run output and SHA-256 comparison |
 | 2026-10-15 | all | Test suite (`pytest -q`) | 1,722 tests, plus 3 skipped; 23 smoke tests deselected | 52.2 s and 41.9 s (54.9 s and 45.2 s for the whole command), 2 runs | — | 0 | After T13a: 20 new tests in `tests/unit/representation` | plan T13a; time: run output |
+| 2026-10-16 | T14 | Embedding smoke tests (`pytest -m smoke tests/smoke/test_embeddings.py`), offline (`HF_HUB_OFFLINE=1`), 2 runs | 4 tests: 11 real chunks of 2 theses embedded by MiniLM and mpnet into a temporary cache, then read back from it | 58.1 s and 49.6 s (64.3 s and 54.8 s for the whole command); in the first run, 48.9 s was the first setup, the imports of torch, transformers and sentence-transformers and the loading of both models | — | 0 | 4 passed in each run. Not the full run: embedding the 5,217 chunks is left to the user's terminal (about 7.2 min, estimate, from the T13 design note). The power plan was not recorded | plan T14; time: run output |
+| 2026-10-16 | all | Test suite (`pytest -q`) | 1,810 tests, plus 3 skipped; 27 smoke tests deselected | 99.4 s and 87.7 s (103.0 s and 91.0 s for the whole command), 2 runs by the writer; 61.7 s (64.7 s for the whole command), 1 run by the parent after the full embedding build | — | 0 | After T14: 88 new tests, 74 in `tests/unit/representation` (2.6 s alone) and 14 in the configuration tests. The slowest tests were older ones (at most 1.7 s each); the cause of the longer runs was not isolated | plan T14; time: run output |
 
 ### Notes on the ledger
 
@@ -207,6 +212,8 @@ Measured on 2026-10-05 with `os.stat` (no file was hashed) and, for the reposito
 | `data/interim/20261002T224412Z/` fichas files | `fichas.parquet` (1,206,201 B), `exclusions.parquet` (3,868 B) and `fichas_manifest.json` (702 B) (T12; measured 2026-10-07) | 1,210,771 | 1.21 MB |
 | `data/interim/pseudonym.key` | the pseudonym key (T08), created by the first T12 run | 32 | 32 B |
 | `data/interim/20261002T224412Z/` chunk files | `chunks.parquet` (1,375,134 B) and `chunks_manifest.json` (1,336 B) (T13; measured 2026-10-15) | 1,376,470 | 1.38 MB |
+| `data/interim/20261002T224412Z/embeddings/` | Document vectors (both variants) and section vectors for both models, the sections table and the manifest (T14; measured 2026-10-16) | 17,089,753 | 17.1 MB |
+| `data/cache/chunk_vectors/` | Raw chunk vectors keyed by D27's cache key: MiniLM 8,337,728 B, mpnet 16,341,824 B (T14; measured 2026-10-16) | 24,679,552 | 24.7 MB |
 | `tessdata/*.traineddata` | `spa` and `eng`, tessdata_best | 28,970,788 | 29.0 MB |
 | Hugging Face cache | `paraphrase-multilingual-MiniLM-L12-v2` | 479,729,050 | 479.7 MB |
 | Hugging Face cache | `paraphrase-multilingual-mpnet-base-v2` (measured 2026-10-11) | 1,126,358,977 | 1.13 GB |
@@ -244,7 +251,9 @@ leaves out the 40-byte `refs/main` file.
   the user and not timed, against the estimate of 4 to 6 h (2026-10-07).
 - [x] mpnet model download size and time: 1,126,358,977 B and 287.6 s, the first load
   included (2026-10-07, under U8).
-- [ ] T14 embeddings for the 2 models: wall time, chunks per second, vector file sizes.
+- [x] T14 embeddings for the 2 models: 549.0 s from an empty cache (encoding 127.2 s with
+  MiniLM and 306.3 s with mpnet, 41.0 and 17.0 texts/s), 17.1 MB of vectors and a 24.7 MB
+  chunk-vector cache (2026-10-16, the user's run).
 - [ ] T19 experiment grid: time per configuration and in total.
 - [ ] T21 labeling workload: annotator hours per pair and in total.
 - [ ] T28 app latency: start-up time and time per query.

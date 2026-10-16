@@ -98,10 +98,19 @@ def test_default_config_loads_with_the_declared_plan_values() -> None:
         "title_chunks": 744,
         "body_chunks": 4473,
     }
-    assert config.embedding.models == (
+    embedding = config.embedding
+    assert embedding.models == (
         "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
         "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
     )
+    assert (embedding.batch_size, embedding.device, embedding.threads) == (64, "cpu", 10)
+    assert embedding.document_vector == "section_mean"
+    assert embedding.sensitivity_cosine_threshold == pytest.approx(0.95)
+    assert embedding.expected.model_dump() == {
+        "snapshot_id": "20261002T224412Z",
+        "documents": 744,
+        "chunks": 5217,
+    }
     assert (config.umap.n_neighbors, config.umap.n_components) == (15, 5)
     assert (config.umap.min_dist, config.umap.metric) == (0.0, "cosine")
     assert (config.kmeans.k_start, config.kmeans.k_stop, config.kmeans.k_step) == (8, 50, 2)
@@ -471,6 +480,12 @@ def test_harvest_settings_take_their_defaults_when_omitted(
         ("chunking.max_tokens", 15),
         ("embedding.models", []),
         ("embedding.models", ["org/model", "org/model"]),
+        ("embedding.batch_size", 0),
+        ("embedding.device", "gpu"),
+        ("embedding.threads", 0),
+        ("embedding.document_vector", "max_mean"),
+        ("embedding.sensitivity_cosine_threshold", 1.1),
+        ("embedding.expected.documents", -1),
         ("hdbscan.min_cluster_sizes", [1, 5]),
         ("hdbscan.min_cluster_sizes", [5, 5]),
         ("seeds", [7, 13, 21, 42]),
@@ -598,6 +613,11 @@ def test_the_global_safe_loader_still_reads_plain_exponents_as_text() -> None:
         ("extraction.header_footer.min_share", 1),
         ("extraction.header_footer.min_pages", 2),
         ("chunking.max_tokens", 16),
+        ("embedding.batch_size", 1),
+        ("embedding.device", "cuda:0"),
+        ("embedding.threads", 1),
+        ("embedding.document_vector", "plain_mean"),
+        ("embedding.sensitivity_cosine_threshold", 0),
         ("umap.min_dist", 0),
         ("hdbscan.min_cluster_sizes", [2]),
         ("redundancy.cv_folds", 2),
@@ -801,6 +821,25 @@ def test_the_expected_chunk_counts_must_add_up(
 ) -> None:
     # The chunk build compares its counts with these, so a declaration that cannot hold is
     # refused; every included thesis has a title, its own section of at least one chunk.
+    set_value(raw_default, dotted_key, value)
+
+    with pytest.raises(ValidationError, match=message):
+        load_variant(tmp_path, raw_default)
+
+
+@pytest.mark.parametrize(
+    ("dotted_key", "value", "message"),
+    [
+        ("embedding.expected.documents", 5218, "chunks .* at least documents"),
+        ("embedding.expected.chunks", "5217", "valid integer"),
+        ("embedding.expected.snapshot_id", "../20261002T224412Z", "snapshot_id"),
+    ],
+    ids=["documents-without-chunks", "quoted", "path-like-id"],
+)
+def test_the_expected_embedding_counts_must_hold(
+    raw_default: dict[str, Any], tmp_path: Path, dotted_key: str, value: Any, message: str
+) -> None:
+    # Every document has at least its title chunk, so it cannot outnumber the chunks.
     set_value(raw_default, dotted_key, value)
 
     with pytest.raises(ValidationError, match=message):
