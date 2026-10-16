@@ -99,6 +99,47 @@ def test_the_abbreviations_list_holds_the_usual_ones(abbreviation: str) -> None:
 
 
 @pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (
+            "Se decide si se aplica o no. Luego se mide el costo.",
+            ["Se decide si se aplica o no.", "Luego se mide el costo."],
+        ),
+        ("¿Se aplica? No. Luego se mide.", ["¿Se aplica?", "No.", "Luego se mide."]),
+        ("Se aplica o NO. Después se ajusta.", ["Se aplica o NO.", "Después se ajusta."]),
+    ],
+    ids=["o-no", "capitalized", "upper-case"],
+)
+def test_the_word_no_ends_a_sentence_before_a_capital(text: str, expected: list[str]) -> None:
+    assert sentences(text) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (
+            "Se aplica la Resolución No. 5. Luego se mide.",
+            ["Se aplica la Resolución No. 5.", "Luego se mide."],
+        ),
+        (
+            "Según el inciso no. 12) del reglamento, se mide.",
+            ["Según el inciso no. 12) del reglamento, se mide."],
+        ),
+        ("Rige la norma NO. 3. Luego se aplica.", ["Rige la norma NO. 3.", "Luego se aplica."]),
+    ],
+    ids=["No-5", "no-12", "NO-3"],
+)
+def test_no_as_the_abbreviation_of_a_number_does_not_end_a_sentence(
+    text: str, expected: list[str]
+) -> None:
+    assert sentences(text) == expected
+
+
+def test_no_is_not_an_abbreviation_whatever_follows() -> None:
+    assert "no" not in ABBREVIATIONS
+
+
+@pytest.mark.parametrize(
     "text",
     [
         "Lo propuso J. Ramírez en su estudio.",

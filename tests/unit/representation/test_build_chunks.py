@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 from uuid import UUID
 
 import pytest
@@ -27,6 +27,7 @@ from thematic_redundancy.corpus.build_fichas import (
 )
 from thematic_redundancy.corpus.ficha import Ficha, doc_code_for
 from thematic_redundancy.representation.build_chunks import (
+    BUILD_COMMAND,
     CHUNKS_FILE_NAME,
     CHUNKS_MANIFEST_FILE_NAME,
     ChunksCheckError,
@@ -34,6 +35,7 @@ from thematic_redundancy.representation.build_chunks import (
     build_chunk_table,
     check_chunks,
     chunk_fichas,
+    count_sections_used,
     load_chunks,
     main,
     section_texts,
@@ -263,6 +265,45 @@ def test_a_count_off_the_expectation_stops_the_build_before_anything_is_written(
     assert not (interim(tmp_path) / CHUNKS_MANIFEST_FILE_NAME).exists()
 
 
+# A thesis whose title is blank once light-cleaned: the cleaner drops a zero-width space.
+UNTITLED = FICHAS[0].model_copy(update={"title": "​"})
+# A title of 22 words, which the C2 fallback cuts into two title chunks of 14 and 8 words.
+LONG_TITLED = FICHAS[1].model_copy(
+    update={
+        "title": (
+            "Modelo de control de calidad para una red de datos de una planta textil en la "
+            "ciudad con un enfoque de mejora"
+        )
+    }
+)
+
+
+def test_the_sections_used_are_counted_once_per_thesis() -> None:
+    records = chunk_fichas((UNTITLED, LONG_TITLED), fake_tokenizer("org/first"), 16)
+
+    # The first thesis has no title row, and the second has two.
+    assert [(r.doc_code, r.section) for r in records] == [
+        *[(DOC1, "abstract")] * 2,
+        (DOC1, "objectives"),
+        *[(DOC2, "title")] * 2,
+        *[(DOC2, "abstract")] * 2,
+    ]
+    assert count_sections_used(records) == {"abstract+objectives": 1, "title+abstract": 1}
+
+
+def test_an_included_thesis_without_a_title_chunk_stops_the_build(tmp_path: Path) -> None:
+    # The split title makes up for the missing one, so every declared count still matches.
+    write_fichas_outputs(interim(tmp_path), (UNTITLED, LONG_TITLED))
+
+    with pytest.raises(
+        ChunksCheckError, match=r"fail 1 check: 1 included thesis has no title chunk$"
+    ):
+        build(tmp_path)
+
+    assert not (interim(tmp_path) / CHUNKS_FILE_NAME).exists()
+    assert not (interim(tmp_path) / CHUNKS_MANIFEST_FILE_NAME).exists()
+
+
 def test_an_expectation_of_another_snapshot_is_refused(tmp_path: Path) -> None:
     write_fichas_outputs(interim(tmp_path))
     expected = EXPECTED.model_copy(update={"snapshot_id": "20261002T224412Z"})
@@ -304,6 +345,49 @@ def test_a_chunk_table_that_differs_from_its_manifest_is_refused(tmp_path: Path)
 
     with pytest.raises(ValueError, match=f"{CHUNKS_FILE_NAME} differs from"):
         load_chunks(interim(tmp_path))
+
+
+MARKER = "MARKER 7f3a"
+"""A string that a message must never quote, standing for the content of a damaged file; with
+its space, it is no valid snapshot id."""
+
+
+@pytest.mark.parametrize(
+    "damage", ["truncated-manifest", "not-json-manifest", "refused-manifest-value", "no-table"]
+)
+def test_a_damaged_manifest_or_a_missing_table_is_refused_without_quoting_the_file(
+    tmp_path: Path, damage: str
+) -> None:
+    write_fichas_outputs(interim(tmp_path))
+    build(tmp_path)
+    directory = interim(tmp_path)
+    manifest = directory / CHUNKS_MANIFEST_FILE_NAME
+    content = manifest.read_bytes()
+    if damage == "truncated-manifest":
+        manifest.write_bytes(content[: len(content) // 2])
+    elif damage == "not-json-manifest":
+        manifest.write_bytes(f"{MARKER} ".encode() + content)
+    elif damage == "refused-manifest-value":
+        manifest.write_bytes(content.replace(f'"{SNAPSHOT}"'.encode(), f'"{MARKER}"'.encode(), 1))
+    else:
+        (directory / CHUNKS_FILE_NAME).unlink()
+
+    with pytest.raises((ValueError, FileNotFoundError)) as caught:
+        load_chunks(directory)
+
+    if damage == "no-table":
+        assert caught.type is FileNotFoundError
+        assert str(caught.value) == (
+            f"{CHUNKS_FILE_NAME} is missing from {directory}; run {BUILD_COMMAND}"
+        )
+    else:
+        assert caught.type is ValueError
+        assert str(caught.value) == (
+            f"{CHUNKS_MANIFEST_FILE_NAME} in {directory} is damaged; run {BUILD_COMMAND} again"
+        )
+        # Not chained, so that a traceback does not quote the file either.
+        assert caught.value.__cause__ is None and caught.value.__suppress_context__
+    assert MARKER not in str(caught.value)
 
 
 # Command line
@@ -356,3 +440,40 @@ def test_the_command_reports_a_missing_fichas_table_on_one_line(
     err = capsys.readouterr().err
     assert err.startswith("error: no fichas_manifest.json") and err.count("\n") == 1
     assert "build_fichas" in err
+
+
+def interrupt(*_: object) -> NoReturn:
+    raise KeyboardInterrupt
+
+
+@pytest.mark.parametrize(
+    "seam",
+    ["load_counter", "clock"],
+    ids=["while-loading-a-tokenizer", "between-the-table-and-its-manifest"],
+)
+def test_an_interrupted_command_exits_130_and_asks_for_a_rerun(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], seam: str
+) -> None:
+    write_project(tmp_path)
+    write_fichas_outputs(interim(tmp_path))
+    seams: dict[str, Any] = {
+        "clock": lambda: RUN_TIME,
+        "timer": lambda: 0.0,
+        "load_counter": fake_tokenizer,
+        seam: interrupt,
+    }
+
+    code = main(["--project-root", str(tmp_path), "--snapshot-id", SNAPSHOT], **seams)
+
+    assert code == 130
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == (
+        "interrupted: a chunk table that does not match its manifest is refused by readers; "
+        "run the command again\n"
+    )
+    # The clock stamps the manifest, so the table was already written there, and no reader
+    # accepts it without its manifest.
+    assert (interim(tmp_path) / CHUNKS_FILE_NAME).exists() == (seam == "clock")
+    with pytest.raises(FileNotFoundError, match=f"no {CHUNKS_MANIFEST_FILE_NAME}"):
+        load_chunks(interim(tmp_path))

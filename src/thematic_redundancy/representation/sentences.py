@@ -10,10 +10,12 @@ only at the end of a sentence or a paragraph:
   by a quote or a bracket, when whitespace follows and then an upper-case letter (maybe after an
   opening quote, bracket, ``¿`` or ``¡``) or an enumerator such as ``2.`` or ``b)``.
 - **Protected periods.** A period does not end a sentence after a known abbreviation
-  (:data:`ABBREVIATIONS`), such as ``S.A.C.``, ``Dr.`` or ``etc.``; after an initial or a dotted
-  abbreviation, such as ``J.`` or ``e.g.``; or after an enumerator that opens the sentence or
-  follows ``:`` or ``;``, such as ``1.``, so that a list item keeps its marker. A decimal such as
-  ``3.5`` never ends one, since no whitespace follows its period.
+  (:data:`ABBREVIATIONS`), such as ``S.A.C.``, ``Dr.`` or ``etc.``; after ``no`` only when a
+  number follows, as in ``No. 5``, since ``no`` is also a word that ends a sentence, as in
+  ``o no.``; after an initial or a dotted abbreviation, such as ``J.`` or ``e.g.``; or after an
+  enumerator that opens the sentence or follows ``:`` or ``;``, such as ``1.``, so that a list
+  item keeps its marker. A decimal such as ``3.5`` never ends one, since no whitespace follows
+  its period.
 
 Two limits are kept on purpose: a lone letter before a period, as in ``la fase a.``, reads as an
 initial, so the sentence goes on; and a period before a lower-case word never ends a sentence.
@@ -68,7 +70,6 @@ ABBREVIATIONS = frozenset(
         "msc",
         "máx",
         "mín",
-        "no",
         "nro",
         "num",
         "nº",
@@ -102,6 +103,12 @@ ABBREVIATIONS = frozenset(
 )
 """Abbreviations whose period never ends a sentence: lower case, without their last period."""
 
+_NUMBER_ABBREVIATIONS = frozenset({"no"})
+"""Abbreviations whose period ends no sentence when a number follows, as in ``No. 5``: ``no``
+is also the word that ends ``o no.``, so its period is protected only there."""
+
+_NUMBER_AHEAD = re.compile(r"\s+\d")
+
 _ENUMERATOR = r"(?:\d{1,3}|[a-zA-Z]|[ivxIVX]{1,4})"
 """A list marker before its ``.`` or ``)``: a number, a letter or a Roman numeral."""
 
@@ -124,7 +131,9 @@ def sentence_spans(text: str) -> list[tuple[int, int]]:
     for line in _LINE.finditer(text):
         cursor = line.start()
         for match in _SENTENCE_END.finditer(text, line.start(), line.end()):
-            if text[match.start()] == "." and _protected(text[cursor : match.start()]):
+            if text[match.start()] == "." and _protected(
+                text[cursor : match.start()], text[match.end() : line.end()]
+            ):
                 continue
             spans.extend(trimmed_span(text, cursor, match.end()))
             cursor = match.end()
@@ -132,13 +141,15 @@ def sentence_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-def _protected(before: str) -> bool:
-    """Tell whether the period after ``before``, the text since the last sentence end, is part
-    of an abbreviation, an initial or a list marker rather than a sentence end."""
+def _protected(before: str, after: str) -> bool:
+    """Tell whether the period between ``before``, the text since the last sentence end, and
+    ``after``, the rest of the line, is part of an abbreviation, an initial or a list marker
+    rather than a sentence end."""
     words = before.split()
     last = words[-1].lower() if words else ""
     return (
         last.rstrip(".") in ABBREVIATIONS
+        or (last.rstrip(".") in _NUMBER_ABBREVIATIONS and _NUMBER_AHEAD.match(after) is not None)
         or _ENUMERATOR_ALONE.fullmatch(before) is not None
         or _ENUMERATOR_AFTER_LIST.search(before) is not None
         or _INITIALS.fullmatch(f"{last}.") is not None

@@ -8,6 +8,7 @@ Run them with ``uv run pytest -m smoke tests/smoke/test_chunker.py``.
 
 from __future__ import annotations
 
+import hashlib
 from collections import defaultdict
 from pathlib import Path
 
@@ -20,12 +21,14 @@ from thematic_redundancy.representation.build_chunks import (
     CHUNKS_MANIFEST_FILE_NAME,
     ChunkRecord,
     chunk_fichas,
+    chunks_manifest,
     count_chunks,
     load_chunks,
     section_texts,
 )
 from thematic_redundancy.representation.chunker import MaxTokenCounter
 from thematic_redundancy.representation.hf_tokenizers import (
+    TOKENIZER_FILE_NAME,
     HuggingFaceTokenCounter,
     load_token_counter,
 )
@@ -118,14 +121,36 @@ def test_the_chunk_counts_are_those_declared_for_the_snapshot(
 
 
 def test_both_tokenizers_count_every_section_alike(
-    fichas: tuple[Ficha, ...], tokenizers: dict[str, HuggingFaceTokenCounter]
+    fichas: tuple[Ficha, ...], tokenizers: dict[str, HuggingFaceTokenCounter], config: AppConfig
 ) -> None:
-    # Byte-identical tokenizer files are one tokenizer; otherwise compare their counts.
-    if len({tokenizer.identity.tokenizer_sha256 for tokenizer in tokenizers.values()}) == 1:
-        return
-    for ficha in fichas:
-        for text in section_texts(ficha).values():
-            assert len({tokenizer.count(text) for tokenizer in tokenizers.values()}) == 1
+    # Compared even when both tokenizer.json files are byte-identical, as on this corpus, so
+    # that a tokenizer that counts differently for any other reason fails here.
+    texts = [text for ficha in fichas if ficha.include for text in section_texts(ficha).values()]
+    differing = sum(
+        len({tokenizer.count(text) for tokenizer in tokenizers.values()}) > 1 for text in texts
+    )
+
+    expected = config.fichas.expected
+    assert len(texts) == 2 * expected.included + expected.objectives_extracted
+    assert differing == 0
+
+
+def test_the_manifest_records_the_sha256_of_each_tokenizer_file_on_disk(
+    interim_dir: Path, config: AppConfig
+) -> None:
+    if not (interim_dir / CHUNKS_MANIFEST_FILE_NAME).is_file():
+        pytest.skip("the chunk table of the configured snapshot has not been built")
+    from transformers.utils import cached_file
+
+    tokenizers = chunks_manifest(interim_dir).tokenizers
+
+    assert [tokenizer.model_id for tokenizer in tokenizers] == list(config.embedding.models)
+    for tokenizer in tokenizers:
+        found = cached_file(tokenizer.model_id, TOKENIZER_FILE_NAME, local_files_only=True)
+        if found is None:
+            pytest.skip("a configured tokenizer is not in the local Hugging Face cache")
+        on_disk = hashlib.sha256(Path(found).read_bytes()).hexdigest()
+        assert tokenizer.tokenizer_sha256 == on_disk
 
 
 def test_a_saved_chunk_table_equals_a_fresh_chunking(

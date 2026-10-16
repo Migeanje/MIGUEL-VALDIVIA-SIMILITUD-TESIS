@@ -13,7 +13,8 @@ embeddings read (D09), as D27 fixes them:
   ``chunking.max_tokens`` under the tokenizer of every configured embedding model, loaded from
   the local Hugging Face cache only (C5).
 - **Checks** (:func:`check_chunks`). Each chunk is counted again by each tokenizer on its own,
-  each section is recovered from its chunks, and the counts must equal ``chunking.expected``.
+  each section is recovered from its chunks, each thesis has a title chunk, and the counts must
+  equal ``chunking.expected``.
   When a check fails, the build stops, names every failed check, and writes nothing.
 
 The outputs go to the gitignored ``data/interim/<snapshot_id>/``, never to ``results/``, since
@@ -89,8 +90,9 @@ BUILD_COMMAND = "uv run python -m thematic_redundancy.representation.build_chunk
 CHUNKS_FILE_NAME = "chunks.parquet"
 CHUNKS_MANIFEST_FILE_NAME = "chunks_manifest.json"
 
-CHUNKER_VERSION = 1
-"""Version of the chunking rules; it changes whenever the same fichas would give other chunks."""
+CHUNKER_VERSION = 2
+"""Version of the chunking rules; it changes whenever the same fichas would give other chunks.
+Version 2 (T13a) protects the period of ``no`` only before a number."""
 
 Section = Literal["title", "abstract", "objectives"]
 SECTIONS: tuple[Section, ...] = ("title", "abstract", "objectives")
@@ -250,6 +252,13 @@ def count_chunks(records: Sequence[ChunkRecord]) -> dict[str, int]:
     }
 
 
+def count_sections_used(records: Sequence[ChunkRecord]) -> dict[str, int]:
+    """Return the theses per combination of sections used, such as ``title+abstract``,
+    counting each thesis once, whatever its chunks are."""
+    used = {record.doc_code: record.sections_used for record in records}
+    return dict(Counter("+".join(sections) for sections in used.values()))
+
+
 def check_chunks(
     records: Sequence[ChunkRecord],
     fichas: Iterable[Ficha],
@@ -263,11 +272,14 @@ def check_chunks(
       ``max_tokens`` under every one.
     - Each section of each included thesis must be recovered: its chunks, in order, are spans
       of its text with only whitespace around and between them.
+    - Each included thesis must have a title chunk, which a title that is blank once cleaned
+      lacks.
     - The counts must equal ``expected``.
 
     Raises:
         ChunksCheckError: naming every check that fails.
     """
+    included = [ficha for ficha in fichas if ficha.include]
     problems = []
     largest = {}
     for name, counter in counters.items():
@@ -283,14 +295,18 @@ def check_chunks(
         by_section[(record.doc_code, record.section)].append(record)
     texts = {
         (ficha.doc_code, section): text
-        for ficha in fichas
-        if ficha.include
+        for ficha in included
         for section, text in section_texts(ficha).items()
     }
     lost = sum(not _recovers(text, by_section.get(key, [])) for key, text in texts.items())
     lost += len(by_section.keys() - texts.keys())  # Chunks of a section that has no text.
     if lost:
         problems.append(f"{lost} section{'s are' if lost > 1 else ' is'} not recovered")
+    untitled = sum((ficha.doc_code, "title") not in by_section for ficha in included)
+    if untitled:
+        problems.append(
+            f"{untitled} included thes{'es have' if untitled > 1 else 'is has'} no title chunk"
+        )
     counts = count_chunks(records)
     for name, value in counts.items():
         declared = getattr(expected, name)
@@ -388,11 +404,7 @@ def build_chunk_table(
         chunks_sha256=_sha256(chunks_path),
         counts=checks.counts,
         cut_kinds={kind: sum(r.cut_kind == kind for r in records) for kind in CUT_KINDS},
-        sections_used=dict(
-            Counter(
-                "+".join(record.sections_used) for record in records if record.section == "title"
-            )
-        ),
+        sections_used=count_sections_used(records),
         sections_recovered=checks.sections,
         seconds=round(max(timer() - started, 0.0), 3),
     )
