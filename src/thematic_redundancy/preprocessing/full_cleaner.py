@@ -27,6 +27,11 @@ if TYPE_CHECKING:
     from spacy.language import Language
     from spacy.tokens import Doc
 
+FULL_CLEANER_VERSION = 1
+"""Version of the cleaning rules above, raised by hand whenever the same text and model would
+give other tokens. The TF-IDF outputs record it (T15, D28), and their reader refuses outputs of
+another version. A change of the spaCy model or of a stopword list is recorded on its own."""
+
 SPACY_MODEL = "es_core_news_md"
 """Spanish spaCy pipeline, installed as a project dependency (version 3.8.0)."""
 

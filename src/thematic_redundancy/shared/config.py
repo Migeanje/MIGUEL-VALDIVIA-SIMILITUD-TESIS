@@ -13,6 +13,7 @@ from pydantic import (
     ConfigDict,
     Field,
     HttpUrl,
+    StrictBool,
     StrictFloat,
     StrictInt,
     field_validator,
@@ -409,6 +410,59 @@ class EmbeddingConfig(_FrozenModel):
         return value
 
 
+TfidfVariant = Literal["section_mean", "concatenated"]
+"""Document vector of the TF-IDF baseline (T15, D28): ``section_mean``, the equal-weight mean
+of the L2-normalized section vectors (as D09), or ``concatenated``, one vector over all the
+sections (the sensitivity variant)."""
+
+
+class TfidfCountsConfig(_FrozenModel):
+    """Counts that the TF-IDF baseline of one snapshot must reach, measured on it first (T15)."""
+
+    snapshot_id: SnapshotIdText
+    documents: NonNegativeInt
+    """Included theses: one row of each matrix."""
+    sections: NonNegativeInt
+    """Sections with at least one token once cleaned."""
+    terms: PositiveInt
+    """Columns of each matrix: the vocabulary."""
+    nonzeros: NonNegativeInt
+    """Stored values of each matrix; the two variants have the same."""
+
+    @model_validator(mode="after")
+    def _require_counts_that_can_hold(self) -> Self:
+        if self.sections < self.documents:
+            raise ValueError(
+                f"sections ({self.sections}) must be at least documents ({self.documents}), "
+                "since every document has its title"
+            )
+        if self.nonzeros < self.documents:
+            raise ValueError(
+                f"nonzeros ({self.nonzeros}) must be at least documents ({self.documents}), "
+                "since a document without a nonzero has no cosine"
+            )
+        return self
+
+
+class TfidfConfig(_FrozenModel):
+    """Vectorizer of the TF-IDF baseline, the document vector that later steps read, and the
+    counts that its build must reach (T15, D28). The norm (L2) and the smooth idf stay in code,
+    since cosine needs the one and nothing in the plan varies the other."""
+
+    max_ngram: Annotated[StrictInt, Field(ge=1, le=2)]
+    """1 for unigrams; 2 adds the bigrams inside each section."""
+    min_df: PositiveInt
+    """Fewest theses that a term must occur in."""
+    max_df: Annotated[StrictFloat, Field(gt=0.0, le=1.0)]
+    """Largest share of the theses that a term may occur in; 1.0 turns the cap off."""
+    sublinear_tf: StrictBool
+    """Whether a term's weight takes 1 + log of its count instead of the count."""
+    document_vector: TfidfVariant
+    sensitivity_cosine_threshold: Annotated[StrictFloat, Field(ge=0.0, le=1.0)]
+    """A thesis whose two document vectors have a lower cosine is counted in the summary."""
+    expected: TfidfCountsConfig
+
+
 class UmapConfig(_FrozenModel):
     """UMAP reduction applied before clustering."""
 
@@ -495,6 +549,7 @@ class AppConfig(_FrozenModel):
     fichas: FichasConfig
     chunking: ChunkingConfig
     embedding: EmbeddingConfig
+    tfidf: TfidfConfig
     umap: UmapConfig
     kmeans: KMeansConfig
     hdbscan: HdbscanConfig

@@ -22,6 +22,7 @@ row here, in the same commit.
 | mpnet model download (U8) | 287.6 s, the first load included, for 1,126,358,977 B (1.13 GB) on disk |
 | Chunk build (T13) | 22.8–23.5 s for 744 theses and 5,217 chunks under both tokenizers, tokenizer loading included; 46.2–46.9 s in a slower machine state |
 | Embeddings (T14) | 549.0 s from an empty cache for 5,211 distinct texts with both models (encoding: MiniLM 127.2 s, mpnet 306.3 s); 52.8 s on a rerun from the cache |
+| TF-IDF baseline (T15) | 25.9–29.1 s for the whole command over 744 theses and 2,216 sections (cleaning 16.1–16.7 s); 14,308 terms and 98,282 nonzeros per matrix |
 
 ## 1. Purpose and conventions
 
@@ -152,6 +153,9 @@ across sessions with care.
 | 2026-10-16 | all | Test suite (`pytest -q`) | 1,810 tests, plus 3 skipped; 27 smoke tests deselected | 99.4 s and 87.7 s (103.0 s and 91.0 s for the whole command), 2 runs by the writer; 61.7 s (64.7 s for the whole command), 1 run by the parent after the full embedding build | — | 0 | After T14: 88 new tests, 74 in `tests/unit/representation` (2.6 s alone) and 14 in the configuration tests. The slowest tests were older ones (at most 1.7 s each); the cause of the longer runs was not isolated | plan T14; time: run output |
 | 2026-10-16 | T14a | Embedding smoke tests (`pytest -m smoke tests/smoke/test_embeddings.py`), offline (`HF_HUB_OFFLINE=1`), 1 run | 4 tests: the chunks of the same 2 real theses as T14, embedded by MiniLM and mpnet into a temporary cache, then read back from it | 27.3 s (31.8 s for the whole command) | — | 0 | 4 passed. The `sample` fixture now skips when the chunk table has no three-section or no metadata-only thesis. The power plan was not recorded | plan T14a; time: run output |
 | 2026-10-16 | all | Test suite (`pytest -q`) | 1,817 tests, plus 3 skipped; 27 smoke tests deselected | 88.1 s and 47.2 s (50.5 s for the whole second command; the first not recorded), 2 runs | — | 0 | After T14a: 7 new tests in `tests/unit/representation`; `test_build_embeddings.py` alone, 29 tests, took 2.8 s. The cause of the slower first run was not isolated | plan T14a; time: run output |
+| 2026-10-19 | T15 | TF-IDF build (`build_tfidf`), offline (`HF_HUB_OFFLINE=1`), 2 runs | 744 included theses: 2,216 sections full-cleaned by spaCy (126,481 tokens); 14,308 terms and 98,282 nonzeros per matrix | 29.1 s and 25.9 s for the whole command; the manifest's `seconds` 23.6 and 21.0, of which cleaning 16.7 s and 16.1 s and vectorizing 0.26 s and 0.28 s | about 133–138 sections/s while cleaning (derived) | 0 | The design note estimated about 45 s (estimate). The second run wrote byte-identical data files; only the manifest's run fields changed. Cosine between the two document vectors per thesis: min 0.776063, median 0.908563, 719 of 744 below 0.95. The power plan was not recorded | `data/interim/20261002T224412Z/tfidf/tfidf_manifest.json` (`seconds`); plan T15; times: run output |
+| 2026-10-19 | T15 | TF-IDF smoke tests (`pytest -m smoke tests/smoke/test_tfidf.py`), offline (`HF_HUB_OFFLINE=1`), 2 runs | 5 tests: two real builds into temporary projects, the reader on both variants, and 150 sections cleaned again in a batch of their own | 51.6 s and 34.7 s (55.0 s and 37.8 s for the whole command) | — | 0 | 5 passed in each run. The power plan was not recorded | plan T15; time: run output |
+| 2026-10-19 | all | Test suite (`pytest -q`) | 1,916 tests, plus 3 skipped; 32 smoke tests deselected | 79.9 s (83.5 s for the whole command), 1 run | — | 0 | After T15: 99 new tests, 69 in `test_build_tfidf.py`, 29 in the configuration tests and 1 in the full cleaner tests; the targeted run of `tests/unit/representation`, `tests/unit/preprocessing` and the configuration tests, 808 tests, took 22.3 s and 25.4 s | plan T15; time: run output |
 
 ### Notes on the ledger
 
@@ -216,6 +220,7 @@ Measured on 2026-10-05 with `os.stat` (no file was hashed) and, for the reposito
 | `data/interim/20261002T224412Z/` chunk files | `chunks.parquet` (1,375,134 B) and `chunks_manifest.json` (1,336 B) (T13; measured 2026-10-15) | 1,376,470 | 1.38 MB |
 | `data/interim/20261002T224412Z/embeddings/` | Document vectors (both variants) and section vectors for both models, the sections table and the manifest (T14; measured 2026-10-16) | 17,089,753 | 17.1 MB |
 | `data/cache/chunk_vectors/` | Raw chunk vectors keyed by D27's cache key: MiniLM 8,337,728 B, mpnet 16,341,824 B (T14; measured 2026-10-16) | 24,679,552 | 24.7 MB |
+| `data/interim/20261002T224412Z/tfidf/` | Full-clean tokens per section (321,359 B), the terms (246,664 B), both document matrices (1,183,621 B each) and the manifest (2,454 B) (T15; measured 2026-10-19) | 2,937,719 | 2.94 MB |
 | `tessdata/*.traineddata` | `spa` and `eng`, tessdata_best | 28,970,788 | 29.0 MB |
 | Hugging Face cache | `paraphrase-multilingual-MiniLM-L12-v2` | 479,729,050 | 479.7 MB |
 | Hugging Face cache | `paraphrase-multilingual-mpnet-base-v2` (measured 2026-10-11) | 1,126,358,977 | 1.13 GB |

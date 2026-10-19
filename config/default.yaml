@@ -121,6 +121,28 @@ embedding:
     documents: 744
     chunks: 5217
 
+# TF-IDF baseline (T15, D28). The full-clean lemmas of each section (D10, D26) are vectorized
+# as unigrams and, when max_ngram is 2, the bigrams inside each section. A term must occur in
+# at least min_df theses and in at most a max_df share of them (1.0 turns the cap off), and
+# sublinear_tf takes 1 + log of its count. document_vector is the matrix that later steps
+# read: section_mean, the equal-weight mean of the section vectors (as D09), or concatenated,
+# one vector over all the sections. The build counts the theses whose two vectors have a cosine
+# below sensitivity_cosine_threshold, and reports their minimum and median. expected holds the
+# counts that the build of snapshot_id must reach, or it stops.
+tfidf:
+  max_ngram: 2
+  min_df: 2
+  max_df: 1.0
+  sublinear_tf: true
+  document_vector: section_mean
+  sensitivity_cosine_threshold: 0.95
+  expected:
+    snapshot_id: "20261002T224412Z"
+    documents: 744
+    sections: 2216
+    terms: 14308
+    nonzeros: 98282
+
 umap:
   n_neighbors: 15
   n_components: 5

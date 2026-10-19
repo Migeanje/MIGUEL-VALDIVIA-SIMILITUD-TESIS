@@ -11,6 +11,7 @@ import pytest
 
 from thematic_redundancy.preprocessing.full_cleaner import (
     EXCLUDED_COMPONENTS,
+    FULL_CLEANER_VERSION,
     LEGAL_ENTITY_SUFFIXES,
     clean_full,
     clean_full_batch,
@@ -182,3 +183,9 @@ def test_importing_the_cleaners_does_not_import_spacy() -> None:
     )
 
     assert run.stdout.strip() == "False"
+
+
+def test_the_cleaning_rules_have_a_version_that_their_outputs_record() -> None:
+    # The TF-IDF outputs (T15) record it, and their reader refuses those of another version.
+    assert type(FULL_CLEANER_VERSION) is int
+    assert FULL_CLEANER_VERSION >= 1
