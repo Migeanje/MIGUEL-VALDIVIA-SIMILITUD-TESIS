@@ -1,0 +1,41 @@
+# Career-affinity matrix (input U4), read by gap rule (c) of plan §3.6.6: topics present in
+# one program and absent from an affine program where they would be transferable.
+# Decided on 2026-10-19, before any topic result existed (T16 had not run).
+# Procedure: the researcher proposed a score per pair from shared-course evidence; three
+# anonymized advisors (Asesor 1 to 3) reviewed each pair, and the final score is the majority
+# among the advisors who judged. Their answers were provided by the user and collected in one
+# shared workbook, so they were not independent; the workbook and its evidence are held by the
+# user outside the repository. The full record is under U4 in
+# odd/tasks/thematic-redundancy-system.md, and a change needs a new decision there.
+# D29: Ingeniería Electrónica no longer admits students, so it can be the source of a
+# transferable topic but never the target of a gap; its theses stay in the corpus and in the
+# redundancy search.
+
+version: 1
+decided_on: 2026-10-19
+
+scale:
+  0: "no affinity: topics of one program are not transferable to the other"
+  1: partial affinity
+  2: high affinity
+
+# The program keys of config/default.yaml, in their declared order. mecanica is one repository
+# collection covering Mecánica, Mecánica-Eléctrica and Mecatrónica.
+programs: [sistemas, industrial, electronica, mecanica, minas]
+
+# Programs that are never the target of a gap under rule (c) (D29).
+gap_target_excluded: [electronica]
+
+# The matrix is symmetric: one key per unordered pair, "<a>-<b>" with a before b in the
+# program order.
+pairs:
+  sistemas-industrial: 1
+  sistemas-electronica: 1
+  sistemas-mecanica: 1
+  sistemas-minas: 0
+  industrial-electronica: 0
+  industrial-mecanica: 2
+  industrial-minas: 1
+  electronica-mecanica: 2
+  electronica-minas: 0
+  mecanica-minas: 1
