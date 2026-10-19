@@ -46,7 +46,7 @@ def pair_keys_as_written() -> list[str]:
 def test_the_programs_are_the_configured_programs_in_their_declared_order(
     affinity: dict[str, Any],
 ) -> None:
-    assert set(affinity["programs"]) == set(configured_program_keys())
+    assert affinity["programs"] == configured_program_keys()
     assert affinity["programs"] == DECLARED_PROGRAMS
 
 
