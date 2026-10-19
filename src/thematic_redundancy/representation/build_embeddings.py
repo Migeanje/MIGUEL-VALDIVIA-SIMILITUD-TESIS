@@ -30,7 +30,7 @@ The outputs go to the gitignored ``data/interim/<snapshot_id>/embeddings/``, nev
   counts and the seconds, without text.
 
 The manifest is written last, as the commit point: :func:`load_embeddings` accepts the outputs
-only while they match it::
+only while they match it, and it matches the current chunk manifest and :data:`EMBEDDER_VERSION`::
 
     uv run python -m thematic_redundancy.representation.build_embeddings [--project-root PATH]
         [--snapshot-id ID]
@@ -61,6 +61,7 @@ from thematic_redundancy.corpus.snapshot import (
 )
 from thematic_redundancy.extraction.text_manifest import INTERIM_DIR_NAME, Sha256
 from thematic_redundancy.representation.build_chunks import (
+    CHUNKS_MANIFEST_FILE_NAME,
     ChunkRecord,
     Section,
     chunks_manifest,
@@ -540,17 +541,21 @@ def load_embeddings(
     variant: DocumentVariant | None = None,
     store: TableStore | None = None,
 ) -> DocumentEmbeddings:
-    """Return the saved embeddings of ``model_id``, once they match their manifest.
+    """Return the saved embeddings of ``model_id``, once they match their manifest, and the
+    manifest matches the current chunk manifest and pooling rules.
 
     ``variant`` picks the document vectors; by default, the one that the manifest records from
     ``embedding.document_vector``. Each file is read once, then checked, then parsed.
 
     Raises:
-        FileNotFoundError: if the manifest or an output file is missing.
-        ValueError: if the manifest is damaged or has no embeddings of ``model_id``, or a file
-            differs from it.
+        FileNotFoundError: if the manifest, the chunk manifest or an output file is missing.
+        ValueError: if the manifest or the chunk manifest is damaged; if the embeddings are
+            stale, built from another snapshot, chunker version or chunk table than the chunk
+            manifest records, or by another :data:`EMBEDDER_VERSION`; if the manifest has no
+            embeddings of ``model_id``; or if a file differs from it.
     """
     manifest = embeddings_manifest(interim_dir)
+    _check_current(manifest, interim_dir)
     directory = interim_dir / EMBEDDINGS_DIR_NAME
     manifest_name = EMBEDDINGS_MANIFEST_FILE_NAME
     record = next((model for model in manifest.models if model.model_id == model_id), None)
@@ -581,6 +586,37 @@ def load_embeddings(
         sections=tuple((section.doc_code, section.section) for section in sections),
         section_vectors=_read_vectors(model_dir / SECTION_VECTORS_FILE_NAME, record, len(sections)),
     )
+
+
+def _check_current(manifest: EmbeddingsManifest, interim_dir: Path) -> None:
+    """Refuse embeddings that the current chunks or pooling rules would not give.
+
+    ``manifest`` must record the snapshot, the chunker version and the chunk table's SHA-256 of
+    the chunk manifest in ``interim_dir``, and the code's :data:`EMBEDDER_VERSION`. The two
+    manifests are compared, not the table: :func:`load_chunks` checks the table against its own.
+
+    Raises:
+        FileNotFoundError: if the chunk manifest is missing.
+        ValueError: if it is damaged, or naming each field that differs with both its values.
+    """
+    chunks = chunks_manifest(interim_dir)
+    current = (
+        ("snapshot_id", chunks.snapshot_id, CHUNKS_MANIFEST_FILE_NAME),
+        ("chunker_version", chunks.chunker_version, CHUNKS_MANIFEST_FILE_NAME),
+        ("chunks_sha256", chunks.chunks_sha256, CHUNKS_MANIFEST_FILE_NAME),
+        ("embedder_version", EMBEDDER_VERSION, "the code"),
+    )
+    stale = [
+        f"{name} is {getattr(manifest, name)} in {EMBEDDINGS_MANIFEST_FILE_NAME} but {value} "
+        f"in {source}"
+        for name, value, source in current
+        if getattr(manifest, name) != value
+    ]
+    if stale:
+        raise ValueError(
+            f"the embeddings in {interim_dir / EMBEDDINGS_DIR_NAME} are stale: "
+            f"{'; '.join(stale)}; run {BUILD_COMMAND} again"
+        )
 
 
 def _read_vectors(path: Path, record: ModelEmbeddingsRecord, rows: int) -> np.ndarray:

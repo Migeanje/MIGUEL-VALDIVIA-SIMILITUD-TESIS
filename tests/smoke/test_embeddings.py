@@ -3,8 +3,9 @@
 They read the saved chunk table of the configured snapshot through ``load_chunks`` and both
 models from the local Hugging Face cache only; they are skipped when either is missing. They
 embed only the chunks of two theses, the first that uses its three sections and the first
-metadata-only one, into caches under a temporary directory, never the project's cache. They
-assert shapes, values and counts only and print no text. Run them with
+metadata-only one, into caches under a temporary directory, never the project's cache; they are
+skipped when the table has no thesis of either kind. They assert shapes, values and counts only
+and print no text. Run them with
 ``HF_HUB_OFFLINE=1 uv run pytest -m smoke tests/smoke/test_embeddings.py``.
 """
 
@@ -74,8 +75,14 @@ def sample(interim_dir: Path) -> tuple[ChunkRecord, ...]:
         records = load_chunks(interim_dir)
     except FileNotFoundError:
         pytest.skip("the chunk table of the configured snapshot has not been built")
-    full = next(record.doc_code for record in records if len(record.sections_used) == 3)
-    metadata_only = next(record.doc_code for record in records if len(record.sections_used) == 2)
+    full = next((record.doc_code for record in records if len(record.sections_used) == 3), None)
+    if full is None:
+        pytest.skip("the chunk table has no thesis that uses its three sections")
+    metadata_only = next(
+        (record.doc_code for record in records if len(record.sections_used) == 2), None
+    )
+    if metadata_only is None:
+        pytest.skip("the chunk table has no metadata-only thesis")
     return tuple(record for record in records if record.doc_code in (full, metadata_only))
 
 

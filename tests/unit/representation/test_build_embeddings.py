@@ -18,16 +18,20 @@ import numpy as np
 import pytest
 import yaml
 
+import thematic_redundancy.representation.build_embeddings as embeddings_module
+from thematic_redundancy.representation.build_chunks import BUILD_COMMAND as CHUNKS_BUILD_COMMAND
 from thematic_redundancy.representation.build_chunks import (
     CHUNKER_VERSION,
     CHUNKS_FILE_NAME,
     CHUNKS_MANIFEST_FILE_NAME,
     ChunkRecord,
     ChunksManifest,
+    chunks_manifest,
 )
 from thematic_redundancy.representation.build_embeddings import (
     BUILD_COMMAND,
     DOCUMENT_FILE_NAMES,
+    EMBEDDER_VERSION,
     EMBEDDINGS_DIR_NAME,
     EMBEDDINGS_MANIFEST_FILE_NAME,
     SECTION_VECTORS_FILE_NAME,
@@ -149,8 +153,9 @@ def cache_file(project_root: Path, model_id: str) -> Path:
 
 
 def write_chunk_outputs(interim_dir: Path, records: Sequence[ChunkRecord] = RECORDS) -> str:
-    """Save ``records`` as the chunk build does, and return the table's SHA-256."""
-    interim_dir.mkdir(parents=True)
+    """Save ``records`` as the chunk build does, over any earlier chunk outputs, and return the
+    table's SHA-256."""
+    interim_dir.mkdir(parents=True, exist_ok=True)
     ParquetTableStore().write(list(records), interim_dir / CHUNKS_FILE_NAME, model_cls=ChunkRecord)
     manifest = ChunksManifest(
         snapshot_id=SNAPSHOT,
@@ -488,6 +493,110 @@ def test_damaged_or_missing_outputs_are_refused_without_quoting_the_files(
         assert message == f"{manifest} is damaged; run {BUILD_COMMAND} again"
         assert caught.value.__cause__ is None and caught.value.__suppress_context__
     assert MARKER not in message
+
+
+# Embeddings of the current chunks only
+
+STALE_FIELDS = ("snapshot_id", "chunker_version", "chunks_sha256", "embedder_version")
+"""The fields of the embeddings manifest that must still match the chunks and the code."""
+
+OTHER_SNAPSHOT = "20261003T120000Z"
+
+
+def rewrite_chunks_manifest(interim_dir: Path, **changes: Any) -> None:
+    """Write the chunk manifest again with ``changes``, as a later chunk build would."""
+    path = interim_dir / CHUNKS_MANIFEST_FILE_NAME
+    manifest = ChunksManifest.model_validate_json(path.read_bytes())
+    path.write_text(manifest.model_copy(update=changes).model_dump_json(), "utf-8")
+
+
+class UnreadStore:
+    """A table store that fails the test if the reader reads any table through it."""
+
+    def read_verified(self, *_: object, **__: object) -> NoReturn:
+        pytest.fail("the reader read the outputs before it checked them against the chunks")
+
+
+@pytest.mark.parametrize(
+    ("drift", "fields"),
+    [
+        ("rebuilt-chunk-table", ("chunks_sha256",)),
+        ("new-chunker-version", ("chunker_version",)),
+        ("new-chunker-version-and-table", ("chunker_version", "chunks_sha256")),
+        ("other-snapshot", ("snapshot_id",)),
+        ("new-embedder-version", ("embedder_version",)),
+    ],
+)
+def test_embeddings_that_the_current_chunks_or_code_would_not_give_are_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, drift: str, fields: tuple[str, ...]
+) -> None:
+    write_chunk_outputs(interim(tmp_path))
+    saved = build(tmp_path, FakeLoader()).manifest
+    if drift.endswith("table"):
+        # The chunk build ran again and wrote another table, which matches its new manifest.
+        changed = chunk("DOC-c", "objectives", 0, "Reducir las paradas.", FULL)
+        write_chunk_outputs(interim(tmp_path), (*RECORDS[:-1], changed))
+    if drift.startswith("new-chunker-version"):
+        # As in T13a, a new chunker version may write the same table.
+        rewrite_chunks_manifest(interim(tmp_path), chunker_version=CHUNKER_VERSION + 1)
+    if drift == "other-snapshot":
+        rewrite_chunks_manifest(interim(tmp_path), snapshot_id=OTHER_SNAPSHOT)
+    if drift == "new-embedder-version":
+        # Code whose pooling rules differ from those of the code that wrote the vectors.
+        monkeypatch.setattr(embeddings_module, "EMBEDDER_VERSION", EMBEDDER_VERSION + 1)
+    current = chunks_manifest(interim(tmp_path)).model_dump()
+    current["embedder_version"] = embeddings_module.EMBEDDER_VERSION
+    loaded = None
+
+    with pytest.raises(ValueError) as caught:
+        loaded = load_embeddings(interim(tmp_path), "org/small", store=UnreadStore())
+
+    assert caught.type is ValueError and loaded is None
+    message = str(caught.value)
+    assert message.startswith(f"the embeddings in {outputs(tmp_path)} are stale: ")
+    assert message.endswith(f"; run {BUILD_COMMAND} again")
+    for name in STALE_FIELDS:
+        if name in fields:
+            source = "the code" if name == "embedder_version" else CHUNKS_MANIFEST_FILE_NAME
+            old, new = getattr(saved, name), current[name]
+            assert old != new
+            assert (
+                f"{name} is {old} in {EMBEDDINGS_MANIFEST_FILE_NAME} but {new} in {source}"
+                in message
+            )
+        else:
+            assert name not in message
+    assert not any(record.text in message for record in RECORDS)
+
+
+def test_embeddings_without_their_chunk_manifest_are_refused(tmp_path: Path) -> None:
+    write_chunk_outputs(interim(tmp_path))
+    build(tmp_path, FakeLoader())
+    (interim(tmp_path) / CHUNKS_MANIFEST_FILE_NAME).unlink()
+    loaded = None
+
+    with pytest.raises(FileNotFoundError) as caught:
+        loaded = load_embeddings(interim(tmp_path), "org/small", store=UnreadStore())
+
+    assert loaded is None
+    assert str(caught.value) == (
+        f"no {CHUNKS_MANIFEST_FILE_NAME} in {interim(tmp_path)}; run {CHUNKS_BUILD_COMMAND} first"
+    )
+
+
+def test_embeddings_stay_valid_when_the_chunk_build_writes_the_same_table_again(
+    tmp_path: Path,
+) -> None:
+    write_chunk_outputs(interim(tmp_path))
+    build(tmp_path, FakeLoader())
+    # Only the fields of the run change: its time and its seconds.
+    rewrite_chunks_manifest(
+        interim(tmp_path), created_at=datetime(2026, 10, 17, 8, 0, 0, tzinfo=UTC), seconds=2.5
+    )
+
+    loaded = load_embeddings(interim(tmp_path), "org/small")
+
+    np.testing.assert_allclose(loaded.vectors, pooled("org/small").section_mean, rtol=0, atol=1e-6)
 
 
 # Command line
