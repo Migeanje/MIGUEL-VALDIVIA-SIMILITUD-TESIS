@@ -225,6 +225,20 @@ experiment:
   acceptance:
     stability_max_cv: 0.10
 
+# Topic map (T16): the 2-D projection of the original document vectors, for the visualization
+# map only; no metric, choice or selection reads it, so it is outside the experiment
+# declaration and its pin. method umap is a UMAP fit of its own, with n_components 2 and the
+# run's seed as random_state ("a separate 2D map for visualization" in the plan's initial
+# configuration); pca is the alternative that thesis plan section 3.6.3 names for
+# visualization, and it ignores the other three keys. The method and the three UMAP values
+# wait for the user's confirmation (plan T16).
+topic_map:
+  projection:
+    method: umap
+    n_neighbors: 15
+    min_dist: 0.0
+    metric: cosine
+
 redundancy:
   cv_folds: 5
 

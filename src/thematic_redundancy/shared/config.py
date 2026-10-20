@@ -708,6 +708,27 @@ class ExperimentConfig(_FrozenModel):
     acceptance: AcceptanceConfig
 
 
+class ProjectionConfig(_FrozenModel):
+    """The 2-D projection of the original document vectors for the visualization map (T16).
+
+    No metric, choice or selection reads it, so it lies outside the experiment declaration.
+    ``umap`` fits a UMAP of its own with two components and the run's seed; ``pca`` (thesis
+    plan section 3.6.3) uses scikit-learn's PCA with the run's seed and ignores the other keys.
+    """
+
+    method: Literal["umap", "pca"]
+    n_neighbors: Annotated[StrictInt, Field(ge=2)]
+    min_dist: Annotated[StrictFloat, Field(ge=0.0, le=1.0)]
+    """Bounded by UMAP's default ``spread`` of 1.0."""
+    metric: NonEmptyStr
+
+
+class TopicMapConfig(_FrozenModel):
+    """Settings of the topic map that the experiment declaration does not hold (T16)."""
+
+    projection: ProjectionConfig
+
+
 class RedundancyConfig(_FrozenModel):
     """Calibration of the direct-redundancy threshold."""
 
@@ -754,6 +775,7 @@ class AppConfig(_FrozenModel):
     hdbscan: HdbscanConfig
     seeds: Annotated[tuple[Seed, ...], Field(min_length=SEED_COUNT, max_length=SEED_COUNT)]
     experiment: ExperimentConfig
+    topic_map: TopicMapConfig
     redundancy: RedundancyConfig
     recommender: RecommenderConfig
     gaps: GapsConfig

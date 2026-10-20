@@ -131,6 +131,12 @@ def test_default_config_loads_with_the_declared_plan_values() -> None:
     }
     assert (config.umap.n_neighbors, config.umap.n_components) == (15, 5)
     assert (config.umap.min_dist, config.umap.metric) == (0.0, "cosine")
+    assert config.topic_map.projection.model_dump() == {
+        "method": "umap",
+        "n_neighbors": 15,
+        "min_dist": 0.0,
+        "metric": "cosine",
+    }
     assert (config.kmeans.k_start, config.kmeans.k_stop, config.kmeans.k_step) == (8, 50, 2)
     assert config.hdbscan.min_cluster_sizes == (5, 10, 15, 20)
     assert config.seeds == (7, 13, 21, 42, 73)
@@ -312,6 +318,8 @@ def test_kmeans_sweep_with_bounds_outside_the_contract_is_rejected(
         "experiment.npmi.sensitivity.unexpected_key",
         "experiment.selection.gates.unexpected_key",
         "experiment.acceptance.unexpected_key",
+        "topic_map.unexpected_key",
+        "topic_map.projection.unexpected_key",
     ],
 )
 def test_unknown_keys_are_rejected(
@@ -327,7 +335,7 @@ def test_unknown_keys_are_rejected(
     ("written_line", "repeated_line", "key"),
     [
         ("seeds: [7, 13, 21, 42, 73]\n", "seeds: [1, 2, 3, 4, 5]\n", "seeds"),
-        ("  n_neighbors: 15\n", "  n_neighbors: 30\n", "n_neighbors"),
+        ("umap:\n  n_neighbors: 15\n", "  n_neighbors: 30\n", "n_neighbors"),
         ("    min_share: 0.3\n", "    min_share: 0.9\n", "min_share"),
     ],
     ids=["seeds", "umap.n_neighbors", "extraction.header_footer.min_share"],
@@ -598,6 +606,11 @@ def test_harvest_settings_take_their_defaults_when_omitted(
         ("experiment.npmi.sensitivity.unit", "paragraph"),
         ("experiment.ari.noise_handling", "drop_noise"),
         ("experiment.ari.sensitivity", "exclude_both"),
+        ("topic_map.projection.method", "tsne"),
+        ("topic_map.projection.n_neighbors", 1),
+        ("topic_map.projection.min_dist", -0.1),
+        ("topic_map.projection.min_dist", 1.1),
+        ("topic_map.projection.metric", ""),
         ("experiment.selection.gates.min_mean_ari", 0.0),
         ("experiment.selection.gates.min_mean_ari", 1.1),
         ("experiment.selection.gates.max_mean_noise_fraction", -0.1),
@@ -678,6 +691,8 @@ def test_values_outside_the_contract_are_rejected(
         ("experiment.selection.f1.bootstrap_seed", True, "int_type"),
         ("experiment.selection.f1.interval", "0.95", "float_type"),
         ("experiment.acceptance.stability_max_cv", "0.10", "float_type"),
+        ("topic_map.projection.n_neighbors", 15.0, "int_type"),
+        ("topic_map.projection.min_dist", "0.0", "float_type"),
     ],
 )
 def test_numeric_fields_refuse_values_of_another_type(
@@ -804,6 +819,9 @@ def test_the_global_safe_loader_still_reads_plain_exponents_as_text() -> None:
         ("objectives.verification_sample.seed", 0),
         ("objectives.verification_sample.seed", 2**32 - 1),
         ("objectives.verification_sample.workbook_dir", "data"),
+        ("topic_map.projection.method", "pca"),
+        ("topic_map.projection.n_neighbors", 2),
+        ("topic_map.projection.min_dist", 1.0),
     ],
 )
 def test_boundary_values_are_accepted(
@@ -812,6 +830,16 @@ def test_boundary_values_are_accepted(
     set_value(raw_default, dotted_key, value)
 
     assert isinstance(load_variant(tmp_path, raw_default), AppConfig)
+
+
+def test_the_projection_of_the_map_is_outside_the_experiment_declaration(
+    raw_default: dict[str, Any], tmp_path: Path
+) -> None:
+    declared = load_config(DEFAULT_CONFIG_PATH).experiment_declaration_sha256()
+    set_value(raw_default, "topic_map.projection.method", "pca")
+    set_value(raw_default, "topic_map.projection.n_neighbors", 30)
+
+    assert load_variant(tmp_path, raw_default).experiment_declaration_sha256() == declared
 
 
 @pytest.mark.parametrize("min_chars", [1200, 1500])
