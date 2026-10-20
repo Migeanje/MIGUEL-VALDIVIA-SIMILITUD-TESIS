@@ -169,6 +169,7 @@ across sessions with care.
 | 2026-10-20 | all | Test suite (`pytest -q`), in the main tree after T22 | 2,482 tests, plus 3 skipped; 36 smoke tests deselected | 95.78 s (99.7 s for the whole command), 1 run | — | 0 | After T22: 130 new tests (122 in `tests/unit/redundancy`, 8 in `test_config.py`); `tests/unit/redundancy`, `test_config.py` and the declaration pin 446 passed, 1 skipped in 19.47 s | plan T22 |
 | 2026-10-20 | all | Test suite (`pytest -q`), in the main tree after T23 | 2,573 tests, plus 3 skipped; 36 smoke tests deselected | 111.94 s (116.4 s for the whole command), 1 run | — | 0 | After T23: 91 new tests (56 in `test_proposal_assignment.py`, 35 in `test_topic_saturation.py`); with `tests/unit/redundancy` 213 passed in 1.11 s | plan T23 |
 | 2026-10-20 | all | Test suite (`pytest -q`), in the main tree after T24 | 2,654 tests, plus 3 skipped; 36 smoke tests deselected | 103.18 s (108.3 s for the whole command), 1 run | — | 0 | After T24: 81 new tests in `tests/unit/gaps`; with the U4 pin 87 passed in 4.75 s | plan T24 |
+| 2026-10-20 | all | Test suite (`pytest -q`), in the main tree after T26 | 2,710 tests, plus 3 skipped; 36 smoke tests deselected | 114.52 s (118 s for the whole command), 1 run | — | 0 | After T26: 56 new tests in `tests/unit/recommendation`, which pass alone in 13.16 s (19.1 s for the whole command) | plan T26 |
 
 ### Notes on the ledger
 

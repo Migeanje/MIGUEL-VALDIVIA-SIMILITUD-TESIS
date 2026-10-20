@@ -1577,8 +1577,75 @@ Owner is the developer unless noted. Route: D = delegated, I = inline. Risk: P =
   - embed and assign topics, then rank untouched topics adjacent to existing ones.
   - Also build the official-lines coverage view (U1).
   - Route D. Risk M.
-- [ ] **T26** Recommender: antecedents (top-k with MMR) and alternative lines (neighbor topics plus nearby gaps).
+- [x] **T26** Recommender: antecedents (top-k with MMR) and alternative lines (neighbor topics plus nearby gaps).
   - Route D. Risk M.
+  - Route declaration: 2026-10-19 overnight: delegated direct, one writer in an isolated worktree; trigger: parallel units. The writer's run was cut by an API rate limit after the antecedents were GREEN and resumed on 2026-10-20 in the same worktree, with no file lost.
+  - Depends on T22 (`redundancy/search.py`), T23 (`topic_map/assignment.py`) and T24 (`gaps/rules.py`, `gaps/stability.py`), which were copied into the worktree as untracked files and not modified. T26 merges after those three units.
+  - Design (plan §3.6.7: suggest the most relevant antecedents by semantic similarity and propose related but distinctive thematic lines; `recommender`: top-k 5, MMR λ 0.7, 3 neighbor topics, 3 nearby gaps):
+    - Antecedents (`recommendation/antecedents.py`): Maximal Marginal Relevance (Carbonell and Goldstein, 1998), `argmax_d [λ·sim(q,d) − (1−λ)·max_{s∈S} sim(d,s)]`, picked one at a time. `sim` is T22's cosine in the original space (`cosine_top_k` for the proposal, `cosine_scores` between theses). The empty set's redundancy term is 0, so the first pick is always the thesis most similar to the proposal. The term is the true maximum, never floored at 0, since cosines can be negative. Exact ties go to the higher similarity to the proposal, then to the lower row. λ = 1 equals T22's plain top-k exactly, and λ = 0 takes the least redundant thesis at each step. Dense SBERT vectors and scipy sparse TF-IDF matrices are both supported through T22's cosine. Each result has its rank, its row, its similarity to the proposal, its redundancy (`None` for the first pick) and its MMR score at the step that picked it.
+    - Alternative lines (`recommendation/alternatives.py`): the assigned topic is T23's `assign_proposal` on `TopicCentroids.from_topic_map`. The neighbor topics are the `neighbor_topics` topics with the highest centroid cosine to a reference, which is either the proposal or the assigned topic's centroid. The assigned topic is left out, and an exact tie goes to the lower label. Noise has no centroid on a `TopicMap`, so it is never a candidate. The nearby gaps are T24's stable gaps, ranked by the cosine distance `1 − cos` between the proposal and the gap's anchor. A one-topic gap is anchored at its topic's centroid. A rule (b) pair is anchored at the midpoint of its two unit centroids or at the nearer of the two. A gap must be within `max_distance` when one is given, inclusive, and an exact tie keeps the given order. Each neighbor carries its similarity, size, c-TF-IDF terms and a `reason`. Each gap carries its rule, topics, anchor topic, similarity, distance, its `GapSupport` and a `reason` built on T24's own reason. No result holds a thesis text.
+  - Public API:
+    - `rank_antecedents(documents, proposal, *, k, mmr_lambda, pool_size, exclude) -> AntecedentRanking`, returning `Antecedent(rank, index, similarity, redundancy, mmr_score)`. `AntecedentRanking` holds `antecedents`, `k`, `mmr_lambda`, `pool_size`, `candidates` and `exclude`. Invalid arguments raise `RecommendationError(ValueError)`.
+    - `alternative_lines(proposal, topic_map, gaps, *, neighbor_topics, nearby_gaps, neighbor_reference, pair_anchor, max_distance) -> AlternativeLines`.
+      - `AlternativeLines` holds `assignment`, `assigned_size`, `assigned_terms`, `neighbors`, `gaps`, `neighbor_reference`, `pair_anchor` and `max_distance`.
+      - `NeighborTopic(rank, topic, similarity, size, terms, assigned_topic, reference)` has a `.reason`.
+      - `NearbyGap(rank, rule, topics, anchor_topic, similarity, distance, support)` has a `.reason`.
+      - The literals are `NeighborReference` (`"proposal"`, `"assigned_topic"`) and `PairAnchor` (`"midpoint"`, `"nearer_topic"`).
+    - The configured values come from `config.recommender` (`top_k`, `mmr_lambda`, `neighbor_topics`, `nearby_gaps`); a test pins 5, 0.7, 3 and 3. No new settings class was added.
+  - Implementation notes for the user to confirm (each is an explicit argument with no default unless stated):
+    1. Candidate pool, `pool_size`. `None` makes the whole corpus the candidates; an integer N makes the N theses most similar to the proposal the candidates. Recommended: `None`. The cost is trivial at 744 theses: k = 5 passes over at most 744 rows. A top-N pool (N about 50) would stop a low λ from reaching far-off theses.
+    2. Proposal row, `exclude`. The caller names the proposal's own row when the proposal is a thesis of the corpus. An identical copy in another row is still a candidate, as in T22's search.
+    3. Results are corpus rows, as in T22's `Neighbor`, not doc codes. The app maps the rows to fichas.
+    4. Sparse support. Antecedents accept dense or sparse vectors. Alternative lines take a dense proposal vector only, since T23's `assign_proposal` and the `TopicMap` centroids are dense.
+    5. Neighbor reference, `neighbor_reference`. With `"proposal"`, neighbor 1 is T23's runner-up, and relatedness is measured to the proposal itself. With `"assigned_topic"`, nearness is rule (b)'s notion between topics, and every proposal of a topic gets the same neighbors. Recommended: `"proposal"`.
+    6. Gap anchor for a rule (b) pair, `pair_anchor`. `"midpoint"` uses the normalized sum of the two unit centroids, the direction rule (b) measures its bridges against. `"nearer_topic"` uses the nearer centroid; when the two are exactly as near, it uses the first, lower topic. Recommended: `"midpoint"`, since a rule (b) gap is the region between the two topics. A pair with opposite centroids has no midpoint and raises.
+    7. "Nearby" means the `nearby_gaps` stable gaps of smallest cosine distance, filtered by `max_distance` (inclusive; `None` means no limit). Recommended: `None`, because only stable gaps (D16) are candidates and only 3 are shown.
+    8. Only stable `GapSupport` objects are accepted (D16). An unstable gap, or a gap naming a topic the map lacks, raises `RecommendationError` instead of being dropped silently. The caller passes `stable_gaps(...)` of the reference (medoid) run whose map is shown.
+    9. Gaps that share a topic count separately: rule (c) gives one gap per program pair, and rules (a) and (d) can mark the same topic. The 3 nearby gaps can therefore name one topic. An alternative is grouping gaps by anchor. Rule (c) gaps are not filtered by the proposal's program; filtering for a proposal from the target program would be a refinement.
+    10. `RecommendationError` is defined in `antecedents.py`, because `recommendation/__init__.py` was outside the edit surface. It can move to `__init__.py` at merge.
+  - RED/GREEN:
+    - RED, against stubs: `uv run --offline pytest tests/unit/recommendation -q`: 56 failed in 6.97 s, all `NotImplementedError` (M).
+    - GREEN, antecedents, first run: 1 failed and 27 passed. This was a real defect: the redundancy running max started at 0 and floored negative cosines. It was caught by the λ = 0 property test and fixed by starting the max from the first pick's cosines. Then 28 passed (M).
+    - GREEN, alternatives, first run: 1 failed and 55 passed. This was a fixture defect: maps built from trigonometric angles give no exact float tie (cos 90° came out as 6e-17). The tie test now uses axis-aligned vectors. Then 56 passed (M).
+    - Final: 56 passed in 4.72–6.09 s over the runs (M). Of these, 28 are in `test_mmr_antecedents.py` and 28 in `test_alternative_lines.py` (M).
+  - Mutants: 20 throwaway mutants, run with `-p no:cacheprovider` and `PYTHONDONTWRITEBYTECODE=1`. All 20 were killed, and each file was restored byte-identical (SHA-256 checked after every mutant) (M). Pytest time per mutant run was 4.01–6.59 s, 98.66 s in all (D, sum of the run outputs):
+    - M01: λ and 1−λ swapped.
+    - M02: max replaced by mean in the redundancy term.
+    - M03: proposal not excluded.
+    - M04 and M05: k off by one, +1 and −1.
+    - M06: running max floored at 0.
+    - M07: MMR tie goes to the last candidate.
+    - M08: pool size ignored.
+    - M09: the first pick records redundancy 0.
+    - M10: λ above 1 accepted.
+    - M11: neighbors include the assigned topic.
+    - M12: noise as a neighbor. Noise is structurally absent, so the mutant injects the noise class as a candidate.
+    - M13: neighbor tie goes to the higher label.
+    - M14: neighbor reference swapped.
+    - M15: gap distance sign flipped.
+    - M16: `nearer_topic` takes the farther topic.
+    - M17: `max_distance` made exclusive.
+    - M18: unstable gaps accepted.
+    - M19: gap ties in reverse order.
+    - M20: midpoint replaced by the first topic.
+  - Checks (in the worktree, detached at `a5930ca` plus the copied T22/T23/T24 modules):
+    - `uv run --offline pytest -q`: 2,301 passed, 3 skipped, 35 deselected in 182.23 s (M). The baseline in the same worktree before T26 was 2,245 passed, 3 skipped, 35 deselected in 218.90 s (M), so T26 adds 56 tests (D). Both runs are slower than the 67–91 s recorded on `main`; other sibling units may have been running at the same time.
+    - `uv run --offline ruff check .`: All checks passed! `uv run --offline ruff format --check .`: 131 files already formatted (M).
+    - Attribution scan on the 4 new files: 0 hits (M).
+    - Whitespace:
+      - `git diff --check` exits 0 (M); it covers tracked files only.
+      - `git diff --no-index --check /dev/null <file>` reports 0 problem lines for each new file (M).
+      - Each new file has 0 CR bytes, 0 trailing-whitespace lines and 0 tabs, and ends with LF (M).
+    - `git status --porcelain` shows the 9 copied sibling modules, `recommendation/alternatives.py`, `recommendation/antecedents.py` and `tests/unit/recommendation/`, nothing else (M).
+    - Test basenames are unique across `tests/` (M).
+    - The last edit, a docstring-only change to `antecedents.py`, came after the full suite. After it, the focused suite gave 56 passed in 5.31 s, and ruff was clean (M).
+  - Size (M):
+    - `antecedents.py`: 166 lines, 7,316 B.
+    - `alternatives.py`: 337 lines, 13,676 B.
+    - `test_mmr_antecedents.py`: 260 lines, 9,418 B.
+    - `test_alternative_lines.py`: 408 lines, 13,520 B.
+    - In all, 1,171 authored lines and 43,930 B (D): 503 lines of source and 668 of tests, so tests are 57% (D).
+  - SHA-256 (M, first 12 hex characters): `antecedents.py` `604083f0e5e7`, `alternatives.py` `655926b88327`, `test_mmr_antecedents.py` `13d022bbfa31`, `test_alternative_lines.py` `5cb38814bb2b`.
 - [ ] **T27** Temporal-split evaluation: build the map on 2021–2024, assign the 2025–2026 theses, compute consistency metrics, and prepare an expert sample (O04).
   - Route D. Risk M.
 
@@ -1913,13 +1980,15 @@ If a criterion is not met, that is reported as a finding. It is never hidden.
 
 - 2026-10-20: The user committed T23 as `25f32e1`; its tree `b37fc6d…` is identical to the one the parent verified. The user confirmed T23's implementation notes as recommended: the atypical threshold is the global P5 over every clustered thesis, with numpy's `linear` percentile method; saturation quartiles use the `linear` method with the `lower` boundary. T24, the gap rules a–d and the stability filter, built overnight in an isolated worktree on synthetic data, was moved into the main tree by the parent and checked there: `pytest` 2,654 passed, 3 skipped, 36 deselected; `ruff check` and `ruff format --check` clean. Its undeclared thresholds (the NPMI floor of rule a, the affinity and share thresholds of rule c, the minimum decline of rule d, the stability overlap) wait for the user's decision before any run on real data.
 
+- 2026-10-20: The user committed T24 as `12c3d02`; its tree `7196df1…` is identical to the one the parent verified. T26, the recommender (MMR antecedents and alternative lines), built overnight in an isolated worktree on synthetic data, was moved into the main tree by the parent: only its four new files, since the T22, T23 and T24 modules it had copied are byte-identical to `main`. Checked there: `pytest tests/unit/recommendation` 56 passed; `pytest` 2,710 passed, 3 skipped, 36 deselected; `ruff check` and `ruff format --check` clean. `RecommendationError` stays in `antecedents.py`. Its ten implementation notes wait for the user's confirmation.
+
 ## Next step
 
 Resume checklist, in order:
 
 1. **Re-sync.**
    - Read this document fully.
-   - Run `git status`, `git log -5`, `uv run pytest -q`, `uv run ruff check .` and `uv run ruff format --check .`. Expected: 2,654 passed, 3 skipped, 36 deselected, of which 313 in `tests/unit/test_config.py`, 4 in `tests/unit/test_experiment_declaration.py`, 121 in `tests/unit/evaluation` and 205 in `tests/unit/topic_map`.
+   - Run `git status`, `git log -5`, `uv run pytest -q`, `uv run ruff check .` and `uv run ruff format --check .`. Expected: 2,710 passed, 3 skipped, 36 deselected, of which 313 in `tests/unit/test_config.py`, 4 in `tests/unit/test_experiment_declaration.py`, 121 in `tests/unit/evaluation` and 205 in `tests/unit/topic_map`.
    - Confirm that HEAD is `e4b12ca`, T19's first slice, or the user's commit of T19's second slice on top of it. The last reviewed boundary recorded here is `a6701e0`.
 2. **T15 is committed** as `ddc8161`, **U4** as `286f004`, **T17** as `a6701e0`, **T18** as `89b2a3e`, the pre-registration of the experiment, and **T16** as `a5930ca`. The TF-IDF outputs are under `data/interim/20261002T224412Z/tfidf/`, read through `load_tfidf` and `load_full_clean_sections`, which refuse them once the fichas, the domain stopword list, `TFIDF_VERSION` or `FULL_CLEANER_VERSION` change, until `build_tfidf` runs again (about 26 s). The SBERT vectors are read through `load_embeddings`. The metrics are `internal_metrics`, `npmi_coherence` and `seed_stability` under `src/thematic_redundancy/evaluation/`; the topic map is `fit_reduction`, `cluster`, `kmeans_labels`, `hdbscan_labels`, `ctfidf_topics`, `build_topic_map` and `project` under `src/thematic_redundancy/topic_map/`. **T19's first slice is committed** as `e4b12ca` (`topic_map/selection.py`, the D30 E2 and E3 rules), and **its second slice, the runner, is implemented and verified** (`run_experiment` with `--dry-run`); it waits for the user's commit with this plan and the ledger. The three first-slice and eight second-slice implementation notes wait for the user's confirmation (under T19).
 3. **T19 is run** (2026-10-20, provisional): the records are under `results/experiments/20261002T224412Z/t19/`; the winner C4 waits for T22's labeled-set F1 to be confirmed, and criterion 1's NPMI part is not met (a finding to discuss in the thesis).
