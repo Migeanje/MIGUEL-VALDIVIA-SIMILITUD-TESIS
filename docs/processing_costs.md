@@ -160,6 +160,7 @@ across sessions with care.
 | 2026-10-19 | all | Test suite (`pytest -q`) | 2,134 tests, plus 3 skipped; 32 smoke tests deselected | 91.4 s and 61.2 s (94.9 s and 65.2 s for the whole command), 2 runs | — | 0 | After T18: 94 new tests, 87 in the configuration tests, 4 in `test_experiment_declaration.py` and 3 in `test_npmi_coherence.py`; the targeted run of the configuration, declaration and evaluation tests, 425 tests, took 9.5 s (11.6 s whole). An earlier full run, before the fallback-model rule left the loader, gave 4 failed and 2,130 passed in 103.7 s (107.9 s whole). The 14 mutant runs took 208.7 s in all (210.9 s for a first round). The cause of the slower first run was not isolated | plan T18; time: run output |
 | 2026-10-19 | T16 | Topic-map smoke tests (`pytest -m smoke tests/smoke/test_topic_map_build.py`), offline (`HF_HUB_OFFLINE=1`), 2 runs | 3 tests on 63 synthetic theses (no thesis read): the real UMAP, K-means, HDBSCAN and BERTopic in its manual mode | 49.7 s (53.8 s for the whole command), then 43.3 s (47.7 s) | — | 0 | The first run failed 1 test, whose synthetic outliers UMAP had placed inside clusters; the second passed all 3 after that test was changed. Imports, each in a fresh process: BERTopic 52.1 s (cold), UMAP 12.6 s cold and 11.2 s with scikit-learn already loaded. The power plan was not recorded | plan T16; times: run output |
 | 2026-10-19 | all | Test suite (`pytest -q`) | 2,245 tests, plus 3 skipped; 35 smoke tests deselected | 90.6 s, 76.6 s and 67.4 s (95.1 s, 80.7 s and 71.2 s for the whole command), 3 runs, the last on the final files | — | 0 | After T16: 111 new tests, 98 in `tests/unit/topic_map` (4.7–6.0 s alone) and 13 in the configuration tests. The 18 mutant runs of `tests/unit/topic_map` took 161.2 s in all, and 141.5 s in a second round on the final tests | plan T16; time: run output |
+| 2026-10-19 | all | Test suite (`pytest -q`) | 2,300 tests, plus 3 skipped; 35 smoke tests deselected | 112.05 s and 145.71 s (117.3 s and 154.9 s for the whole command), 2 runs | — | 0 | After T19's first slice, the selection rules: 55 new tests in `tests/unit/topic_map/test_experiment_selection.py` (0.14–0.17 s alone); `tests/unit/topic_map`, 153 tests, took 8.09 s (17.2 s whole). The 23 mutant runs of `tests/unit/topic_map` took 310.5 s in all. No smoke test and no experiment run in this slice. The cause of the slower second run was not isolated | plan T19; time: run output |
 
 ### Notes on the ledger
 
@@ -265,7 +266,7 @@ leaves out the 40-byte `refs/main` file.
 - [x] T14 embeddings for the 2 models: 549.0 s from an empty cache (encoding 127.2 s with
   MiniLM and 306.3 s with mpnet, 41.0 and 17.0 texts/s), 17.1 MB of vectors and a 24.7 MB
   chunk-vector cache (2026-10-16, the user's run).
-- [ ] T19 experiment grid: time per configuration and in total.
+- [ ] T19 experiment grid, the user's run once the runner's second unit is built: time per configuration and in total, against the forecast of about 4 min, or 4 to 12 min allowing for real-data convergence (estimate, D30 E6).
 - [ ] T21 labeling workload: annotator hours per pair and in total.
 - [ ] T28 app latency: start-up time and time per query.
 - [ ] T29 Docker build: build time and image size.
