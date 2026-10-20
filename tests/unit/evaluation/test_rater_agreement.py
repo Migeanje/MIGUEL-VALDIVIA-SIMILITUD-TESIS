@@ -1,10 +1,14 @@
-"""Agreement between two annotators: Cohen's kappa, weighted kappa and the consensus (T21, D15).
+"""Agreement between annotators: Cohen's kappa, weighted kappa, Fleiss' kappa and the consensus
+(T21, D15, D31).
 
 Oracles: hand computations in exact fractions; a published worked example, the SAS PROC FREQ
 printout for a 3 × 3 table that statsmodels 0.15.0 reproduces in
 ``statsmodels/stats/tests/test_inter_rater.py`` (``table10``: simple kappa 0.4842, weighted
 kappa 0.4701); the example of scikit-learn 1.9.1's ``cohen_kappa_score`` docstring (0.6875); and
-``cohen_kappa_score`` itself, with ``weights`` None, linear and quadratic.
+``cohen_kappa_score`` itself, with ``weights`` None, linear and quadratic. For Fleiss' kappa: the
+two examples of the same statsmodels test file, the Wikipedia worked example (``table1``, kappa
+0.210) and the diagnoses of Fleiss (1971) with the value of R's ``irr::kappam.fleiss``
+(0.4302445); statsmodels' ``fleiss_kappa`` itself; and Scott's pi by hand for two ratings per item.
 """
 
 import inspect
@@ -13,18 +17,69 @@ from fractions import Fraction
 import numpy as np
 import pytest
 from sklearn.metrics import cohen_kappa_score
+from statsmodels.stats.inter_rater import fleiss_kappa as statsmodels_fleiss_kappa
 
 from thematic_redundancy.evaluation.agreement import (
     AgreedLabel,
     Disagreement,
     cohen_kappa,
     consensus_labels,
+    fleiss_kappa,
 )
 
 SEED = 20261019
 LEVELS = ("low", "mid", "high")
 SAS_TABLE = ((0, 4, 1), (0, 8, 0), (0, 1, 5))
 """Margins: rows (5, 8, 6), columns (0, 13, 6); 13 of the 19 items on the diagonal."""
+WIKIPEDIA_COUNTS = (
+    (0, 0, 0, 0, 14),
+    (0, 2, 6, 4, 2),
+    (0, 0, 3, 5, 6),
+    (0, 3, 9, 2, 0),
+    (2, 2, 8, 1, 1),
+    (7, 7, 0, 0, 0),
+    (3, 2, 6, 3, 0),
+    (2, 5, 3, 2, 2),
+    (6, 5, 2, 1, 0),
+    (0, 2, 2, 3, 7),
+)
+"""Ten items, 14 ratings each, over five categories: the Wikipedia worked example of Fleiss'
+kappa, as statsmodels 0.15.0's ``test_inter_rater.py`` reproduces it (``table1``, 0.210)."""
+FLEISS_1971 = (
+    (4, 4, 4, 4, 4, 4),
+    (2, 2, 2, 5, 5, 5),
+    (2, 3, 3, 3, 3, 5),
+    (5, 5, 5, 5, 5, 5),
+    (2, 2, 2, 4, 4, 4),
+    (1, 1, 3, 3, 3, 3),
+    (3, 3, 3, 3, 5, 5),
+    (1, 1, 3, 3, 3, 4),
+    (1, 1, 4, 4, 4, 4),
+    (5, 5, 5, 5, 5, 5),
+    (1, 4, 4, 4, 4, 4),
+    (1, 2, 4, 4, 4, 4),
+    (2, 2, 2, 3, 3, 3),
+    (1, 4, 4, 4, 4, 4),
+    (2, 2, 4, 4, 4, 5),
+    (3, 3, 3, 3, 3, 5),
+    (1, 1, 1, 4, 5, 5),
+    (1, 1, 1, 1, 1, 2),
+    (2, 2, 4, 4, 4, 4),
+    (1, 3, 3, 5, 5, 5),
+    (5, 5, 5, 5, 5, 5),
+    (2, 4, 4, 4, 4, 4),
+    (2, 2, 4, 5, 5, 5),
+    (1, 1, 4, 4, 4, 4),
+    (1, 4, 4, 4, 4, 5),
+    (2, 2, 2, 2, 2, 4),
+    (1, 1, 1, 1, 5, 5),
+    (2, 2, 4, 4, 4, 4),
+    (1, 3, 3, 3, 3, 3),
+    (5, 5, 5, 5, 5, 5),
+)
+"""Thirty patients, six psychiatrists' diagnoses each, over five categories (Fleiss, 1971), as
+statsmodels 0.15.0's ``test_inter_rater.py`` holds them; R's ``irr::kappam.fleiss`` gives
+0.4302445 (``test_fleiss_kappa_irr``)."""
 
 
 def from_table(table, categories=LEVELS) -> tuple[list[str], list[str]]:
@@ -229,6 +284,141 @@ def test_every_pair_is_either_agreed_or_left_for_adjudication() -> None:
     )
 
 
+# --- Fleiss' kappa -----------------------------------------------------------------------
+
+
+def from_counts(counts, categories) -> list[list]:
+    """The ratings behind an ``items × categories`` table of counts."""
+    return [
+        [category for category, count in zip(categories, row, strict=True) for _ in range(count)]
+        for row in counts
+    ]
+
+
+def fleiss_by_hand(counts) -> tuple[Fraction, Fraction, Fraction]:
+    """Fleiss' (1971) observed agreement, chance agreement and kappa, in exact fractions."""
+    raters, items = sum(counts[0]), len(counts)
+    observed = sum(
+        Fraction(sum(count * (count - 1) for count in row), raters * (raters - 1)) for row in counts
+    ) / len(counts)
+    shares = [Fraction(sum(column), items * raters) for column in zip(*counts, strict=True)]
+    expected = sum(share * share for share in shares)
+    return observed, expected, (observed - expected) / (1 - expected)
+
+
+FIVE = ("c1", "c2", "c3", "c4", "c5")
+
+
+def test_the_wikipedia_example_gives_the_published_fleiss_kappa() -> None:
+    result = fleiss_kappa(from_counts(WIKIPEDIA_COUNTS, FIVE), categories=FIVE)
+
+    observed, expected, value = fleiss_by_hand(WIKIPEDIA_COUNTS)
+    assert result.items == 10
+    assert result.raters_per_item == 14
+    assert result.counts == WIKIPEDIA_COUNTS
+    assert result.category_shares == tuple(
+        exactly(Fraction(total, 140)) for total in (20, 28, 39, 21, 32)
+    )
+    assert result.observed_agreement == exactly(observed)
+    assert result.expected_agreement == exactly(expected)
+    assert result.kappa == exactly(value)
+    assert round(result.kappa, 3) == 0.210
+    assert result.undefined_reason is None
+
+
+def test_the_fleiss_1971_diagnoses_give_the_value_of_r_irr() -> None:
+    result = fleiss_kappa(FLEISS_1971, categories=(1, 2, 3, 4, 5))
+
+    assert result.items == 30
+    assert result.raters_per_item == 6
+    assert result.kappa == pytest.approx(0.4302445, abs=5e-8)
+
+
+@pytest.mark.parametrize("raters", [2, 3, 5])
+def test_fleiss_kappa_equals_statsmodels_on_correlated_random_ratings(raters: int) -> None:
+    rng = np.random.default_rng(SEED + raters)
+    truth = rng.choice(LEVELS, 120)
+    ratings = [
+        [label if rng.random() < 0.6 else rng.choice(LEVELS) for _ in range(raters)]
+        for label in truth
+    ]
+
+    result = fleiss_kappa(ratings, categories=LEVELS)
+
+    table = np.array([[row.count(level) for level in LEVELS] for row in ratings])
+    assert result.counts == tuple(map(tuple, table.tolist()))
+    assert result.kappa == pytest.approx(
+        statsmodels_fleiss_kappa(table, method="fleiss"), rel=1e-12
+    )
+
+
+def test_with_two_ratings_per_item_fleiss_kappa_is_scotts_pi() -> None:
+    first, second = from_table(SAS_TABLE)
+
+    result = fleiss_kappa(list(zip(first, second, strict=True)), categories=LEVELS)
+
+    # Scott's pi pools both annotators' margins, (5 + 0, 8 + 13, 6 + 6) of 38 ratings, so it
+    # differs from Cohen's kappa (107/221), which keeps each annotator's own margins.
+    expected = Fraction(5**2 + 21**2 + 12**2, 38**2)
+    pi = (Fraction(13, 19) - expected) / (1 - expected)
+    assert result.observed_agreement == exactly(Fraction(13, 19))
+    assert result.expected_agreement == exactly(expected)
+    assert result.kappa == exactly(pi)
+    assert result.kappa != pytest.approx(float(Fraction(107, 221)))
+
+
+def test_fleiss_kappa_ignores_the_order_of_the_ratings_and_of_the_categories() -> None:
+    ratings = from_counts(WIKIPEDIA_COUNTS, FIVE)
+    rng = np.random.default_rng(SEED)
+    shuffled = [list(rng.permutation(item)) for item in ratings]
+
+    result = fleiss_kappa(shuffled, categories=tuple(reversed(FIVE)))
+
+    assert result.counts == tuple(tuple(reversed(row)) for row in WIKIPEDIA_COUNTS)
+    assert result.kappa == exactly(fleiss_by_hand(WIKIPEDIA_COUNTS)[2])
+
+
+def test_an_unused_category_is_an_empty_column_for_fleiss_kappa() -> None:
+    first, second = from_table(SAS_TABLE)
+    ratings = list(zip(first, second, strict=True))
+
+    result = fleiss_kappa(ratings, categories=(*LEVELS, "other"))
+
+    assert all(row[-1] == 0 for row in result.counts)
+    assert result.category_shares[-1] == 0.0
+    assert result.kappa == pytest.approx(fleiss_kappa(ratings, categories=LEVELS).kappa)
+
+
+def test_fleiss_kappa_is_one_under_full_agreement() -> None:
+    result = fleiss_kappa([["low"] * 3, ["high"] * 3, ["mid"] * 3], categories=LEVELS)
+
+    assert result.observed_agreement == 1.0
+    assert result.kappa == 1.0
+
+
+def test_fleiss_kappa_is_undefined_when_every_rating_is_one_same_category() -> None:
+    result = fleiss_kappa([["mid", "mid"]] * 4, categories=LEVELS)
+
+    assert result.kappa is None
+    assert result.undefined_reason == "expected_agreement_is_one"
+    assert result.observed_agreement == 1.0
+    assert result.expected_agreement == 1.0
+    assert result.category_shares == (0.0, 1.0, 0.0)
+
+
+def test_no_items_give_no_fleiss_kappa() -> None:
+    result = fleiss_kappa([], categories=LEVELS)
+
+    assert result.items == 0
+    assert result.raters_per_item is None
+    assert result.counts == ()
+    assert result.category_shares is None
+    assert result.observed_agreement is None
+    assert result.expected_agreement is None
+    assert result.kappa is None
+    assert result.undefined_reason == "no_items"
+
+
 # --- Arguments ---------------------------------------------------------------------------
 
 
@@ -236,6 +426,7 @@ def test_the_categories_and_the_weights_are_required_keywords() -> None:
     for function, names in (
         (cohen_kappa, ("categories", "weights")),
         (consensus_labels, ("categories",)),
+        (fleiss_kappa, ("categories",)),
     ):
         parameters = inspect.signature(function).parameters
         for name in names:
@@ -275,3 +466,20 @@ def test_invalid_kappa_arguments_raise(first, second, categories, weights, messa
 def test_invalid_consensus_arguments_raise(pair_ids, first, second, message) -> None:
     with pytest.raises(ValueError, match=message):
         consensus_labels(pair_ids, first, second, categories=LEVELS)
+
+
+@pytest.mark.parametrize(
+    ("ratings", "categories", "message"),
+    [
+        ([["low", "mid"], ["low", "mid", "high"]], LEVELS, "item 1 has 3 ratings but item 0 has 2"),
+        ([["low"], ["mid"]], LEVELS, "item 0 has 1 ratings; each item needs at least two"),
+        ([["low", "top"]], LEVELS, "'top' is not one of the categories"),
+        ([["low", True]], ("low", 1), "True is not one of the categories"),
+        (["lowmid"], LEVELS, "item 0 must be a sequence of labels, not the string 'lowmid'"),
+        ([["low", "low"]], ("low", "low"), "repeat"),
+        ([["low", "low"]], ("low",), "at least two categories"),
+    ],
+)
+def test_invalid_fleiss_arguments_raise(ratings, categories, message) -> None:
+    with pytest.raises(ValueError, match=message):
+        fleiss_kappa(ratings, categories=categories)

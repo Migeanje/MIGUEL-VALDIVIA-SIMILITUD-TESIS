@@ -171,6 +171,7 @@ across sessions with care.
 | 2026-10-20 | all | Test suite (`pytest -q`), in the main tree after T24 | 2,654 tests, plus 3 skipped; 36 smoke tests deselected | 103.18 s (108.3 s for the whole command), 1 run | — | 0 | After T24: 81 new tests in `tests/unit/gaps`; with the U4 pin 87 passed in 4.75 s | plan T24 |
 | 2026-10-20 | all | Test suite (`pytest -q`), in the main tree after T26 | 2,710 tests, plus 3 skipped; 36 smoke tests deselected | 114.52 s (118 s for the whole command), 1 run | — | 0 | After T26: 56 new tests in `tests/unit/recommendation`, which pass alone in 13.16 s (19.1 s for the whole command) | plan T26 |
 | 2026-10-20 | all | Test suite (`pytest -q`), in the main tree after the statistics for T21, T30 and T32 | 2,840 tests, plus 3 skipped; 36 smoke tests deselected | 94.50 s (99 s for the whole command), 1 run | — | 0 | After the statistics: 130 new tests in `tests/unit/evaluation`, where all 251 pass in 6.49 s (19.2 s for the whole command) | plan T21 |
+| 2026-10-20 | all | Test suite (`pytest -q`), in the main tree after D31 (Fleiss' κ) | 2,858 tests, plus 3 skipped; 36 smoke tests deselected | 159.87 s (164 s for the whole command), 1 run | — | 0 | After D31: 18 new tests in `tests/unit/evaluation/test_rater_agreement.py`; all 269 evaluation tests pass in 4.67 s (13.4 s for the whole command); the 6 mutant runs took 2.89–3.27 s each | plan T21 |
 
 ### Notes on the ledger
 

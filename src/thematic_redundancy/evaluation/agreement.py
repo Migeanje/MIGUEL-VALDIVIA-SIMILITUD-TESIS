@@ -1,4 +1,4 @@
-"""Agreement between the two annotators of each labeled pair, and their consensus (T21, D15).
+"""Agreement between the annotators of the labeled pairs, and their consensus (T21, D15, D31).
 
 - **Cohen's kappa** (Cohen, 1960) over nominal labels: ``(p_o - p_e) / (1 - p_e)``, where
   ``p_o`` is the observed share of agreement and ``p_e`` the agreement expected by chance from
@@ -9,15 +9,21 @@
   ``p_o`` and ``p_e`` are one minus the observed and the expected mean disagreement weight, and
   ``kappa = 1 - D_o / D_e``, which is scikit-learn's ``cohen_kappa_score`` with the same
   ``weights``. With ``"none"`` every disagreement weighs 1, which is the unweighted kappa.
+- **Fleiss' kappa** (Fleiss, 1971) for items that each received the same number ``m`` of
+  ratings, from raters who may change from item to item: ``(P - P_e) / (1 - P_e)``, where ``P``
+  is the mean over the items of the share of agreeing pairs among an item's ratings and ``P_e``
+  the sum of the squared shares of each category over all the ratings. It is statsmodels'
+  ``fleiss_kappa`` with ``method="fleiss"``; with two ratings per item it is Scott's pi.
 
-The categories are an explicit, ordered argument, so the contingency table always has the same
-shape and an unused category is an empty row and column. Cohen's kappa compares the same two
-annotators over every item; when the annotators rotate across the pairs, the caller decides how
-to apply it (for example per pair of annotators).
+The categories are an explicit argument, so every table has the same shape and an unused
+category is an empty row or column; their order matters only to the weighted kappa. Cohen's
+kappa compares the same two annotators over every item. Since the annotators rotate across the
+pairs (U3), D31 checks Fleiss' kappa against D15's target and reports Cohen's kappa per pair of
+annotators, over the pairs they share, as a diagnostic.
 
 Undefined values follow the package's convention, ``None`` with a reason: ``"no_items"`` for no
-labeled item, and ``"expected_agreement_is_one"`` when both annotators gave every item one same
-category, so that no disagreement could be expected by chance (``p_e = 1``, kappa is 0 / 0).
+labeled item, and ``"expected_agreement_is_one"`` when every label falls in one same category,
+so that no disagreement could be expected by chance (``p_e = 1``, kappa is 0 / 0).
 
 The **consensus** keeps the label of each pair on which both annotators agree and lists every
 other pair for adjudication, with both labels. It never breaks a tie on its own, since the plan
@@ -54,6 +60,27 @@ class CohenKappa:
     expected_agreement: float | None
     """``p_e``, the chance agreement from the two marginal distributions; ``None`` when there is
     no item."""
+    kappa: float | None
+    undefined_reason: KappaUndefined | None
+
+
+@dataclass(frozen=True)
+class FleissKappa:
+    """Fleiss' kappa of items that each received the same number of ratings, with its parts."""
+
+    categories: tuple[Label, ...]
+    items: int
+    raters_per_item: int | None
+    """``m``, the number of ratings of every item; ``None`` when there is no item."""
+    counts: tuple[tuple[int, ...], ...]
+    """Ratings of each item per category, ``items × categories``, in the input order."""
+    category_shares: tuple[float, ...] | None
+    """Each category's share of all the ratings; ``None`` when there is no item."""
+    observed_agreement: float | None
+    """``P``, the mean over the items of the share of agreeing pairs of ratings; ``None`` when
+    there is no item."""
+    expected_agreement: float | None
+    """``P_e``, the chance agreement from the category shares; ``None`` when there is no item."""
     kappa: float | None
     undefined_reason: KappaUndefined | None
 
@@ -145,6 +172,75 @@ def cohen_kappa(
         expected_agreement=1.0 - expected,
         kappa=None if no_chance_disagreement else 1.0 - observed / expected,
         undefined_reason="expected_agreement_is_one" if no_chance_disagreement else None,
+    )
+
+
+def fleiss_kappa(
+    ratings: Sequence[Sequence[Label]],
+    *,
+    categories: Sequence[Label],
+) -> FleissKappa:
+    """Return Fleiss' kappa of items that each received the same number of ratings.
+
+    Args:
+        ratings: the labels each item received, one sequence per item, every one of the same
+            length and at least two long; the raters may differ from item to item.
+        categories: every category of the scale, at least two, without repeats.
+
+    Raises:
+        ValueError: if the categories are invalid, an item is a string, has fewer than two
+            ratings or another number of ratings than the first item, or a label is not one of
+            the categories.
+    """
+    scale = _check_categories(categories)
+    size = len(scale)
+    rows: list[np.ndarray] = []
+    raters: int | None = None
+    for index, item in enumerate(ratings):
+        if isinstance(item, str):
+            raise ValueError(f"item {index} must be a sequence of labels, not the string {item!r}")
+        positions = _positions(item, scale)
+        if raters is None and len(positions) < 2:
+            raise ValueError(
+                f"item {index} has {len(positions)} ratings; each item needs at least two"
+            )
+        if raters is not None and len(positions) != raters:
+            raise ValueError(
+                f"item {index} has {len(positions)} ratings but item 0 has {raters}; every "
+                f"item must have the same number of ratings"
+            )
+        raters = len(positions)
+        rows.append(np.bincount(positions, minlength=size))
+    counts = np.array(rows, dtype=np.int64).reshape(len(rows), size)
+    result = FleissKappa(
+        categories=tuple(scale),
+        items=len(rows),
+        raters_per_item=raters,
+        counts=tuple(tuple(int(count) for count in row) for row in counts),
+        category_shares=None,
+        observed_agreement=None,
+        expected_agreement=None,
+        kappa=None,
+        undefined_reason="no_items",
+    )
+    if raters is None:
+        return result
+
+    totals = counts.sum(axis=0)
+    shares = totals / totals.sum()
+    # Each item's ordered pairs of agreeing ratings, sum of n (n - 1) over its categories, out
+    # of the m (m - 1) pairs it has.
+    observed = float((counts * (counts - 1)).sum(axis=1).mean() / (raters * (raters - 1)))
+    expected = float((shares**2).sum())
+    # P_e is 1 exactly when every rating fell in one category; checked on integer counts.
+    one_category = np.count_nonzero(totals) == 1
+    return replace(
+        result,
+        category_shares=tuple(float(share) for share in shares),
+        observed_agreement=observed,
+        expected_agreement=expected,
+        kappa=None if one_category else (observed - expected) / (1.0 - expected),
+        undefined_reason="expected_agreement_is_one" if one_category else None,
     )
 
 
