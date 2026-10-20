@@ -401,3 +401,14 @@ def test_token_lists_passed_as_documents_raise(reference) -> None:
     token into a segment of characters."""
     with pytest.raises(TypeError, match="segment"):
         by_document([["a", "b"]], reference)
+
+
+@pytest.mark.parametrize(
+    "topics",
+    [["ab"], [["a", "b"], "ab"], "ab"],
+    ids=["one-string-topic", "a-string-among-lists", "topics-as-one-string"],
+)
+def test_a_topic_passed_as_a_string_raises(topics) -> None:
+    """Each topic is a sequence of terms, so a string would turn each character into a term."""
+    with pytest.raises(TypeError, match="topic"):
+        by_document(topics, docs("a b"))

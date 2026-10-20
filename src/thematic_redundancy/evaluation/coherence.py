@@ -125,7 +125,7 @@ def npmi_coherence(
     Raises:
         ValueError: if an argument is invalid, a topic has fewer than ``top_n`` terms, repeats
             one, or holds a malformed term.
-        TypeError: if a document or a segment is a string rather than a sequence.
+        TypeError: if a topic, a document or a segment is a string rather than a sequence.
     """
     scored = _check_topics(topics, top_n)
     words = {term: _term_words(term) for topic in scored for term in topic}
@@ -180,6 +180,8 @@ def _check_topics(topics: Sequence[Sequence[str]], top_n: int) -> list[tuple[str
         raise ValueError(f"top_n must be an integer of at least 2, not {top_n!r}")
     scored = []
     for index, topic in enumerate(topics):
+        if isinstance(topic, str):
+            raise TypeError("each topic must be a sequence of terms, not a string")
         first = tuple(topic[:top_n])
         if len(first) < top_n:
             raise ValueError(f"topic {index} has fewer than {top_n} terms")

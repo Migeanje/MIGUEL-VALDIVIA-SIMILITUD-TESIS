@@ -2,13 +2,16 @@
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 from uuid import UUID
 
 import pytest
 import yaml
 from pydantic import ValidationError
 
+from thematic_redundancy.evaluation.coherence import UNITS
+from thematic_redundancy.evaluation.stability import NOISE_HANDLINGS
+from thematic_redundancy.shared import config as config_module
 from thematic_redundancy.shared.config import (
     AppConfig,
     KMeansConfig,
@@ -21,6 +24,9 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "default.
 
 SISTEMAS_COLLECTION = "695b14ab-e5b2-49b5-9edf-f709e883b73b"
 """Collection of the first declared program, ``sistemas``."""
+
+MINILM = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+MPNET = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
 
 
 @pytest.fixture
@@ -158,6 +164,57 @@ def test_default_config_loads_with_the_declared_plan_values() -> None:
     }
 
 
+def test_the_experiment_declaration_loads_with_the_d30_values() -> None:
+    # The grid itself (UMAP, the K sweep, the HDBSCAN sizes, the seeds) stays in its own blocks,
+    # checked above; the experiment block holds what D30 adds to them.
+    experiment = load_config(DEFAULT_CONFIG_PATH).experiment
+
+    assert experiment.model_dump() == {
+        "clustering_space": "umap",
+        "kmeans": {"n_init": 10, "init": "k-means++"},
+        "hdbscan": {"min_samples": None, "metric": "euclidean", "cluster_selection_method": "eom"},
+        "baseline": {
+            "representation": "tfidf",
+            "algorithm": "kmeans",
+            "space": "sparse_l2",
+            "matched_k": True,
+        },
+        "k_choice": "max_seed_mean_silhouette",
+        "mcs_choice": "max_seed_mean_silhouette_under_noise_cap",
+        "ctfidf": {
+            "vocabulary": "tfidf_terms",
+            "counts": "raw_within_section",
+            "weighting": "bertopic_0.17.4_defaults",
+            "include_noise_class": True,
+            "tie_order": "term_ascending",
+        },
+        "npmi": {
+            "top_n": 10,
+            "unit": "document",
+            "window_size": None,
+            "reference": "thesis_sections",
+            "sensitivity": {"unit": "window", "window_size": 10},
+            "absent_terms": "error",
+        },
+        "ari": {"noise_handling": "own_label", "sensitivity": "exclude_either"},
+        "selection": {
+            "gates": {"min_mean_ari": 0.65, "max_mean_noise_fraction": 0.3},
+            "seeded_tie_tolerance": "max_seed_sd",
+            "f1": {"bootstrap_resamples": 2000, "bootstrap_seed": 7, "interval": 0.95},
+            "fallbacks": {"algorithm": "kmeans", "model": MINILM},
+            "representative_run": "max_mean_ari_to_others",
+        },
+        "acceptance": {"stability_max_cv": 0.1},
+    }
+
+
+def test_the_npmi_units_and_ari_noise_handlings_are_those_of_the_metrics() -> None:
+    # The shared configuration does not import the evaluation package, so it names the options
+    # itself; they must stay the ones that the metrics accept.
+    assert get_args(config_module.NpmiUnit) == UNITS
+    assert get_args(config_module.AriNoiseHandling) == NOISE_HANDLINGS
+
+
 def test_max_tokens_above_the_model_sequence_limit_is_rejected(
     raw_default: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -250,6 +307,11 @@ def test_kmeans_sweep_with_bounds_outside_the_contract_is_rejected(
         "objectives.verification_sample.unexpected_key",
         "tfidf.unexpected_key",
         "tfidf.expected.unexpected_key",
+        "experiment.unexpected_key",
+        "experiment.kmeans.unexpected_key",
+        "experiment.npmi.sensitivity.unexpected_key",
+        "experiment.selection.gates.unexpected_key",
+        "experiment.acceptance.unexpected_key",
     ],
 )
 def test_unknown_keys_are_rejected(
@@ -512,6 +574,45 @@ def test_harvest_settings_take_their_defaults_when_omitted(
         ("tfidf.expected.terms", 0),
         ("hdbscan.min_cluster_sizes", [1, 5]),
         ("hdbscan.min_cluster_sizes", [5, 5]),
+        ("hdbscan.min_cluster_sizes", [10, 5]),
+        ("experiment.clustering_space", "pca"),
+        ("experiment.kmeans.n_init", 0),
+        ("experiment.kmeans.n_init", "auto"),
+        ("experiment.kmeans.init", "k-means"),
+        ("experiment.hdbscan.min_samples", 0),
+        ("experiment.hdbscan.metric", "cosine"),
+        ("experiment.hdbscan.cluster_selection_method", "max"),
+        ("experiment.baseline.representation", "minilm"),
+        ("experiment.baseline.algorithm", "hdbscan"),
+        ("experiment.baseline.space", "umap"),
+        ("experiment.k_choice", "one_standard_error"),
+        ("experiment.mcs_choice", "max_seed_mean_silhouette"),
+        ("experiment.ctfidf.vocabulary", "class_terms"),
+        ("experiment.ctfidf.counts", "joined_documents"),
+        ("experiment.ctfidf.weighting", "bm25"),
+        ("experiment.ctfidf.tie_order", "unstable"),
+        ("experiment.npmi.top_n", 1),
+        ("experiment.npmi.unit", "sentence"),
+        ("experiment.npmi.reference", "wikipedia"),
+        ("experiment.npmi.absent_terms", "skip"),
+        ("experiment.npmi.sensitivity.unit", "paragraph"),
+        ("experiment.ari.noise_handling", "drop_noise"),
+        ("experiment.ari.sensitivity", "exclude_both"),
+        ("experiment.selection.gates.min_mean_ari", 0.0),
+        ("experiment.selection.gates.min_mean_ari", 1.1),
+        ("experiment.selection.gates.max_mean_noise_fraction", -0.1),
+        ("experiment.selection.gates.max_mean_noise_fraction", 1.0),
+        ("experiment.selection.seeded_tie_tolerance", "none"),
+        ("experiment.selection.f1.bootstrap_resamples", 0),
+        ("experiment.selection.f1.bootstrap_seed", -1),
+        ("experiment.selection.f1.bootstrap_seed", 2**32),
+        ("experiment.selection.f1.interval", 0.0),
+        ("experiment.selection.f1.interval", 1.0),
+        ("experiment.selection.fallbacks.algorithm", "dbscan"),
+        ("experiment.selection.fallbacks.model", ""),
+        ("experiment.selection.representative_run", "first_seed"),
+        ("experiment.acceptance.stability_max_cv", 0.0),
+        ("experiment.acceptance.stability_max_cv", 1.1),
         ("seeds", [7, 13, 21, 42]),
         ("seeds", [7, 13, 21, 42, 73, 99]),
         ("redundancy.cv_folds", 1),
@@ -564,6 +665,19 @@ def test_values_outside_the_contract_are_rejected(
         ("tfidf.max_df", "1.0", "float_type"),
         ("tfidf.sublinear_tf", "true", "bool_type"),
         ("tfidf.sublinear_tf", 1, "bool_type"),
+        ("experiment.kmeans.n_init", "10", "int_type"),
+        ("experiment.kmeans.n_init", 10.0, "int_type"),
+        ("experiment.hdbscan.min_samples", "5", "int_type"),
+        ("experiment.baseline.matched_k", "true", "bool_type"),
+        ("experiment.ctfidf.include_noise_class", 1, "bool_type"),
+        ("experiment.npmi.top_n", True, "int_type"),
+        ("experiment.npmi.sensitivity.window_size", 10.0, "int_type"),
+        ("experiment.selection.gates.min_mean_ari", "0.65", "float_type"),
+        ("experiment.selection.gates.max_mean_noise_fraction", "0.30", "float_type"),
+        ("experiment.selection.f1.bootstrap_resamples", 2000.0, "int_type"),
+        ("experiment.selection.f1.bootstrap_seed", True, "int_type"),
+        ("experiment.selection.f1.interval", "0.95", "float_type"),
+        ("experiment.acceptance.stability_max_cv", "0.10", "float_type"),
     ],
 )
 def test_numeric_fields_refuse_values_of_another_type(
@@ -657,6 +771,25 @@ def test_the_global_safe_loader_still_reads_plain_exponents_as_text() -> None:
         ("tfidf.sensitivity_cosine_threshold", 1.0),
         ("umap.min_dist", 0),
         ("hdbscan.min_cluster_sizes", [2]),
+        ("experiment.kmeans.n_init", 1),
+        ("experiment.kmeans.init", "random"),
+        ("experiment.hdbscan.min_samples", 1),
+        ("experiment.hdbscan.cluster_selection_method", "leaf"),
+        ("experiment.baseline.matched_k", False),
+        ("experiment.ctfidf.include_noise_class", False),
+        ("experiment.npmi.top_n", 2),
+        ("experiment.npmi.sensitivity.window_size", 2),
+        ("experiment.selection.gates.min_mean_ari", 1.0),
+        ("experiment.selection.gates.min_mean_ari", 1),
+        ("experiment.selection.gates.max_mean_noise_fraction", 0.0),
+        ("experiment.selection.gates.max_mean_noise_fraction", 0),
+        ("experiment.selection.f1.bootstrap_resamples", 1),
+        ("experiment.selection.f1.bootstrap_seed", 0),
+        ("experiment.selection.f1.bootstrap_seed", 2**32 - 1),
+        ("experiment.selection.f1.interval", 0.5),
+        ("experiment.selection.fallbacks.algorithm", "hdbscan"),
+        ("experiment.selection.fallbacks.model", MPNET),
+        ("experiment.acceptance.stability_max_cv", 1.0),
         ("redundancy.cv_folds", 2),
         ("recommender.top_k", 1),
         ("recommender.mmr_lambda", 0.0),
@@ -922,3 +1055,74 @@ def test_no_wrong_pdf_at_all_is_accepted(raw_default: dict[str, Any], tmp_path: 
     raw_default["fichas"]["wrong_pdfs"] = []
 
     assert load_variant(tmp_path, raw_default).fichas.wrong_pdfs == ()
+
+
+# Each case breaks one rule that ties two values of the declaration together (D30).
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"experiment.npmi.window_size": 10}, "window_size must be null for document units"),
+        (
+            {"experiment.npmi.sensitivity.window_size": None},
+            "window_size is required for window units",
+        ),
+        (
+            {
+                "experiment.npmi.sensitivity.unit": "document",
+                "experiment.npmi.sensitivity.window_size": None,
+            },
+            "npmi.sensitivity must differ",
+        ),
+        (
+            {
+                "experiment.npmi.unit": "window",
+                "experiment.npmi.window_size": 10,
+            },
+            "npmi.sensitivity must differ",
+        ),
+        ({"experiment.ari.sensitivity": "own_label"}, "ari.sensitivity must differ"),
+        ({"hdbscan.min_cluster_sizes": [5, 15, 10, 20]}, "ascending"),
+    ],
+    ids=[
+        "document-unit-with-a-window",
+        "window-unit-without-a-window",
+        "sensitivity-equal-to-the-documents",
+        "sensitivity-equal-to-the-windows",
+        "ari-sensitivity-equal",
+        "sizes-out-of-order",
+    ],
+)
+def test_the_experiment_declaration_must_hold_together(
+    raw_default: dict[str, Any], tmp_path: Path, changes: dict[str, Any], message: str
+) -> None:
+    for dotted_key, value in changes.items():
+        set_value(raw_default, dotted_key, value)
+
+    with pytest.raises(ValidationError, match=message):
+        load_variant(tmp_path, raw_default)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {
+            "experiment.npmi.unit": "window",
+            "experiment.npmi.window_size": 10,
+            "experiment.npmi.sensitivity.unit": "document",
+            "experiment.npmi.sensitivity.window_size": None,
+        },
+        {"experiment.npmi.unit": "window", "experiment.npmi.window_size": 50},
+        {
+            "experiment.ari.noise_handling": "exclude_either",
+            "experiment.ari.sensitivity": "own_label",
+        },
+    ],
+    ids=["windows-first", "two-window-sizes", "ari-swapped"],
+)
+def test_other_coherent_declarations_load(
+    raw_default: dict[str, Any], tmp_path: Path, changes: dict[str, Any]
+) -> None:
+    for dotted_key, value in changes.items():
+        set_value(raw_default, dotted_key, value)
+
+    assert isinstance(load_variant(tmp_path, raw_default), AppConfig)

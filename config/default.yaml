@@ -161,6 +161,70 @@ hdbscan:
 
 seeds: [7, 13, 21, 42, 73]
 
+# Experiment declaration (T18, D30), fixed on 2026-10-19 before any run. It reuses, without
+# repeating them, the umap, kmeans (the K sweep), hdbscan (the size grid) and seeds blocks,
+# embedding.models and the document_vector of embedding and tfidf (section_mean for both);
+# tests/unit/test_experiment_declaration.py pins all of them together, and a change needs a new
+# decision in the plan. The semantic runs cluster the UMAP output (clustering_space), one fit per
+# (model, seed) with random_state = seed, shared by K-means and HDBSCAN. kmeans and hdbscan hold
+# the arguments that the sweep and the grid do not: min_samples null keeps hdbscan's default,
+# min_cluster_size. The TF-IDF baseline is K-means on its sparse L2 matrix, with a matched-K run
+# for the NPMI comparison. K and min_cluster_size are chosen on seed means; the noise cap of the
+# min_cluster_size choice is selection.gates.max_mean_noise_fraction. NPMI scores the top_n
+# c-TF-IDF terms with each thesis as one document whose segments are its sections, and windows
+# as the sensitivity setting; an absent term stops the run. The ARI noise handling feeds the
+# stability gate, and its sensitivity is only reported. "A beats B" when the difference of the
+# seed means exceeds the larger seed SD; the labeled-set F1 is compared by a paired bootstrap.
+experiment:
+  clustering_space: umap
+  kmeans:
+    n_init: 10
+    init: k-means++
+  hdbscan:
+    min_samples: null
+    metric: euclidean
+    cluster_selection_method: eom
+  baseline:
+    representation: tfidf
+    algorithm: kmeans
+    space: sparse_l2
+    matched_k: true
+  k_choice: max_seed_mean_silhouette
+  mcs_choice: max_seed_mean_silhouette_under_noise_cap
+  ctfidf:
+    vocabulary: tfidf_terms
+    counts: raw_within_section
+    weighting: bertopic_0.17.4_defaults
+    include_noise_class: true
+    tie_order: term_ascending
+  npmi:
+    top_n: 10
+    unit: document
+    window_size: null
+    reference: thesis_sections
+    sensitivity:
+      unit: window
+      window_size: 10
+    absent_terms: error
+  ari:
+    noise_handling: own_label
+    sensitivity: exclude_either
+  selection:
+    gates:
+      min_mean_ari: 0.65
+      max_mean_noise_fraction: 0.30
+    seeded_tie_tolerance: max_seed_sd
+    f1:
+      bootstrap_resamples: 2000
+      bootstrap_seed: 7
+      interval: 0.95
+    fallbacks:
+      algorithm: kmeans
+      model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+    representative_run: max_mean_ari_to_others
+  acceptance:
+    stability_max_cv: 0.10
+
 redundancy:
   cv_folds: 5
 

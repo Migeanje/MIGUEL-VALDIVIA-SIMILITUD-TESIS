@@ -1,5 +1,7 @@
 """Typed, immutable run configuration loaded from YAML."""
 
+import hashlib
+import json
 import re
 from collections import Counter
 from collections.abc import Hashable, Sequence
@@ -498,15 +500,212 @@ class KMeansConfig(_FrozenModel):
 
 
 class HdbscanConfig(_FrozenModel):
-    """Grid of ``min_cluster_size`` values; ``min_samples`` keeps the HDBSCAN default."""
+    """Grid of ``min_cluster_size`` values, unique and ascending; ``min_samples`` keeps the
+    HDBSCAN default."""
 
     min_cluster_sizes: Annotated[tuple[Annotated[StrictInt, Field(ge=2)], ...], Field(min_length=1)]
 
     @field_validator("min_cluster_sizes")
     @classmethod
-    def _require_unique_sizes(cls, value: tuple[int, ...]) -> tuple[int, ...]:
+    def _require_unique_ascending_sizes(cls, value: tuple[int, ...]) -> tuple[int, ...]:
         _require_unique(value, "min_cluster_sizes")
+        if list(value) != sorted(value):
+            raise ValueError(f"min_cluster_sizes must be ascending, got {list(value)}")
         return value
+
+
+NpmiUnit = Literal["document", "window"]
+"""NPMI co-occurrence unit, as :func:`thematic_redundancy.evaluation.coherence.npmi_coherence`
+names it."""
+
+AriNoiseHandling = Literal["own_label", "exclude_either"]
+"""How the pairwise ARI treats HDBSCAN noise, as
+:func:`thematic_redundancy.evaluation.stability.seed_stability` names it."""
+
+
+class ExperimentKMeansConfig(_FrozenModel):
+    """K-means arguments of the experiment (D30); the K sweep is :class:`KMeansConfig`, and each
+    run's ``random_state`` is its seed. The other arguments keep scikit-learn 1.9.1's defaults."""
+
+    n_init: PositiveInt
+    """Initializations per run, explicit instead of scikit-learn's ``"auto"`` (one, under
+    k-means++), so that the spread across seeds reflects UMAP and not one initialization."""
+    init: Literal["k-means++", "random"]
+
+
+class ExperimentHdbscanConfig(_FrozenModel):
+    """HDBSCAN arguments of the experiment (D30); the ``min_cluster_size`` grid is
+    :class:`HdbscanConfig`. HDBSCAN is deterministic, so it takes no seed."""
+
+    min_samples: PositiveInt | None
+    """``None`` keeps hdbscan's default, which is the run's ``min_cluster_size``."""
+    metric: Literal["euclidean"]
+    """On the UMAP output, as BERTopic's default model."""
+    cluster_selection_method: Literal["eom", "leaf"]
+
+
+class BaselineConfig(_FrozenModel):
+    """The lexical baseline of plan §3.7: K-means on the sparse TF-IDF matrix (D28 C4), with no
+    UMAP. It is never a candidate; it enters acceptance criterion 1 only."""
+
+    representation: Literal["tfidf"]
+    algorithm: Literal["kmeans"]
+    space: Literal["sparse_l2"]
+    """The L2-normalized ``tfidf.document_vector`` matrix itself."""
+    matched_k: StrictBool
+    """Whether the baseline also runs at the winner's number of topics, so that the NPMI
+    comparison holds the number of topics constant."""
+
+
+class CtfidfConfig(_FrozenModel):
+    """How the topic terms are computed, the same way for every configuration (D30 E4)."""
+
+    vocabulary: Literal["tfidf_terms"]
+    """T15's vocabulary, fixed for every configuration, with no class-level ``min_df`` or
+    ``max_df``."""
+    counts: Literal["raw_within_section"]
+    """Raw counts of each term per class; bigrams only within one section (D28 C3)."""
+    weighting: Literal["bertopic_0.17.4_defaults"]
+    """``ClassTfidfTransformer()`` as BERTopic 0.17.4 ships it: no BM25, no frequent-word
+    reduction."""
+    include_noise_class: StrictBool
+    """Whether the noise label is a class of the c-TF-IDF fit; its topic is never scored."""
+    tie_order: Literal["term_ascending"]
+    """Terms by score descending, then by term ascending (code-point order)."""
+
+
+def _check_npmi_setting(unit: NpmiUnit, window_size: int | None) -> None:
+    if unit == "document" and window_size is not None:
+        raise ValueError(f"window_size must be null for document units, not {window_size}")
+    if unit == "window" and window_size is None:
+        raise ValueError("window_size is required for window units")
+
+
+class NpmiSettingConfig(_FrozenModel):
+    """One NPMI co-occurrence setting: the unit and, for windows, the window size."""
+
+    unit: NpmiUnit
+    window_size: Annotated[StrictInt, Field(ge=2)] | None
+
+    @model_validator(mode="after")
+    def _require_a_window_size_for_windows_only(self) -> Self:
+        _check_npmi_setting(self.unit, self.window_size)
+        return self
+
+
+class NpmiConfig(_FrozenModel):
+    """NPMI coherence of the topics (D12, D30 E4): the primary setting, which the selection rule
+    uses, and a sensitivity setting, which is only reported."""
+
+    top_n: Annotated[StrictInt, Field(ge=2)]
+    """Each topic's first terms that are scored."""
+    unit: NpmiUnit
+    window_size: Annotated[StrictInt, Field(ge=2)] | None
+    reference: Literal["thesis_sections"]
+    """All the included theses, each one document whose segments are its full-clean sections."""
+    sensitivity: NpmiSettingConfig
+    absent_terms: Literal["error"]
+    """A term in no unit is a pipeline mismatch, so the run stops."""
+
+    @model_validator(mode="after")
+    def _require_two_distinct_settings(self) -> Self:
+        _check_npmi_setting(self.unit, self.window_size)
+        if (self.sensitivity.unit, self.sensitivity.window_size) == (self.unit, self.window_size):
+            raise ValueError("npmi.sensitivity must differ from the primary setting")
+        return self
+
+
+class AriConfig(_FrozenModel):
+    """Noise handling of the pairwise ARI across seeds: one for the stability gate and
+    acceptance criterion 4, and another reported as sensitivity."""
+
+    noise_handling: AriNoiseHandling
+    sensitivity: AriNoiseHandling
+
+    @model_validator(mode="after")
+    def _require_two_distinct_handlings(self) -> Self:
+        if self.sensitivity == self.noise_handling:
+            raise ValueError("ari.sensitivity must differ from ari.noise_handling")
+        return self
+
+
+class GatesConfig(_FrozenModel):
+    """Eligibility gates of a configuration, over its seed runs (D30 E3)."""
+
+    min_mean_ari: Annotated[StrictFloat, Field(gt=0.0, le=1.0)]
+    """Lowest mean pairwise ARI over the seed pairs; a gate at or below 0 would admit
+    chance-level agreement."""
+    max_mean_noise_fraction: Annotated[StrictFloat, Field(ge=0.0, lt=1.0)]
+    """Highest mean share of theses left as noise; also the noise cap of the
+    ``min_cluster_size`` choice. A cap of 1 would gate nothing."""
+
+
+class F1ComparisonConfig(_FrozenModel):
+    """Paired bootstrap over the labeled pairs that compares two F1 values (D30 E3)."""
+
+    bootstrap_resamples: PositiveInt
+    bootstrap_seed: Seed
+    interval: Annotated[StrictFloat, Field(gt=0.0, lt=1.0)]
+    """Coverage of the percentile interval of the difference; a difference whose interval
+    excludes 0 decides."""
+
+
+class FallbacksConfig(_FrozenModel):
+    """What an exact tie at the end of each stage of the selection rule picks."""
+
+    algorithm: Literal["kmeans", "hdbscan"]
+    model: NonEmptyStr
+    """One of ``embedding.models``. The loader does not require it, since a configuration may
+    replace the models with others (the unit tests do), so the experiment checks it before any
+    run."""
+
+
+class SelectionConfig(_FrozenModel):
+    """The winner-selection rule (O03, D30 E3): gates, then the algorithm within each model's
+    space, then the model."""
+
+    gates: GatesConfig
+    seeded_tie_tolerance: Literal["max_seed_sd"]
+    """A beats B on a seeded metric when the difference of their seed means exceeds the larger
+    of their seed SDs; otherwise the comparison is a tie."""
+    f1: F1ComparisonConfig
+    fallbacks: FallbacksConfig
+    representative_run: Literal["max_mean_ari_to_others"]
+    """The winner's seed run that the map uses: the one with the highest mean ARI to the
+    others; a tie goes to the seed listed first."""
+
+
+class AcceptanceConfig(_FrozenModel):
+    """Thresholds of the feature's acceptance criteria that D30 declares."""
+
+    stability_max_cv: Annotated[StrictFloat, Field(gt=0.0, le=1.0)]
+    """Highest coefficient of variation (SD / |mean|) over the seeds, for silhouette and for NPMI,
+    in criterion 4."""
+
+
+class ExperimentConfig(_FrozenModel):
+    """The experiment declaration (T18, D30), fixed before any run. The values that it reuses
+    from other blocks (UMAP, the K sweep, the ``min_cluster_size`` grid, the seeds, the embedding
+    models and the document vectors) are not repeated here;
+    :meth:`AppConfig.experiment_declaration` gathers them all."""
+
+    clustering_space: Literal["umap"]
+    """The semantic runs cluster the UMAP output: one fit per (model, seed), with the seed as
+    ``random_state``, shared by K-means and HDBSCAN."""
+    kmeans: ExperimentKMeansConfig
+    hdbscan: ExperimentHdbscanConfig
+    baseline: BaselineConfig
+    k_choice: Literal["max_seed_mean_silhouette"]
+    """K is the sweep value with the highest mean silhouette over the seeds; an exact tie goes
+    to the smaller K, and the sweep is never extended after results."""
+    mcs_choice: Literal["max_seed_mean_silhouette_under_noise_cap"]
+    """Among the sizes under the noise cap whose metrics are defined in every seed, the highest
+    mean silhouette; ties go to the lower mean noise share, then the smaller size."""
+    ctfidf: CtfidfConfig
+    npmi: NpmiConfig
+    ari: AriConfig
+    selection: SelectionConfig
+    acceptance: AcceptanceConfig
 
 
 class RedundancyConfig(_FrozenModel):
@@ -554,6 +753,7 @@ class AppConfig(_FrozenModel):
     kmeans: KMeansConfig
     hdbscan: HdbscanConfig
     seeds: Annotated[tuple[Seed, ...], Field(min_length=SEED_COUNT, max_length=SEED_COUNT)]
+    experiment: ExperimentConfig
     redundancy: RedundancyConfig
     recommender: RecommenderConfig
     gaps: GapsConfig
@@ -586,6 +786,34 @@ class AppConfig(_FrozenModel):
                 "workbook holds thesis text"
             )
         return self
+
+    def experiment_declaration(self) -> dict[str, Any]:
+        """Return the experiment declaration (D30) as plain JSON data: the whole ``experiment``
+        block, and the values it reuses from the other blocks, namely ``umap``, ``kmeans`` (the
+        K sweep), ``hdbscan`` (the size grid), ``seeds``, ``embedding.models`` and the
+        ``document_vector`` of ``embedding`` and ``tfidf``."""
+        return {
+            "embedding": self.embedding.model_dump(
+                mode="json", include={"models", "document_vector"}
+            ),
+            "experiment": self.experiment.model_dump(mode="json"),
+            "hdbscan": self.hdbscan.model_dump(mode="json"),
+            "kmeans": self.kmeans.model_dump(mode="json"),
+            "seeds": list(self.seeds),
+            "tfidf": self.tfidf.model_dump(mode="json", include={"document_vector"}),
+            "umap": self.umap.model_dump(mode="json"),
+        }
+
+    def experiment_declaration_sha256(self) -> str:
+        """Return the SHA-256 of :meth:`experiment_declaration` as canonical JSON (keys sorted,
+        no whitespace, UTF-8). A unit test pins it, and the experiment's records carry it."""
+        text = json.dumps(
+            self.experiment_declaration(),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 _YAML_MERGE_TAG = "tag:yaml.org,2002:merge"
