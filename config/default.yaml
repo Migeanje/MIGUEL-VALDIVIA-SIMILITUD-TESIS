@@ -239,8 +239,14 @@ topic_map:
     min_dist: 0.0
     metric: cosine
 
+# Direct redundancy (T22, D13, D15). cv_folds is the k of the cross-validation that chooses
+# tau. known_duplicates lists pairs of included theses known to be one thesis deposited twice
+# (O09, user decision 2026-10-19): they stay in the labeled pairs and the search, and the
+# results flag them, in either order.
 redundancy:
   cv_folds: 5
+  known_duplicates:
+    - [DOC-1b29cde4, DOC-b2303c69]
 
 recommender:
   top_k: 5

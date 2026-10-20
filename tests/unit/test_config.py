@@ -141,6 +141,7 @@ def test_default_config_loads_with_the_declared_plan_values() -> None:
     assert config.hdbscan.min_cluster_sizes == (5, 10, 15, 20)
     assert config.seeds == (7, 13, 21, 42, 73)
     assert config.redundancy.cv_folds == 5
+    assert config.redundancy.known_duplicates == (("DOC-1b29cde4", "DOC-b2303c69"),)
     assert config.recommender.top_k == 5
     assert config.recommender.mmr_lambda == pytest.approx(0.7)
     assert (config.recommender.neighbor_topics, config.recommender.nearby_gaps) == (3, 3)
@@ -629,6 +630,15 @@ def test_harvest_settings_take_their_defaults_when_omitted(
         ("seeds", [7, 13, 21, 42]),
         ("seeds", [7, 13, 21, 42, 73, 99]),
         ("redundancy.cv_folds", 1),
+        ("redundancy.known_duplicates", [["DOC-1b29cde4", "DOC-1b29cde4"]]),
+        ("redundancy.known_duplicates", [["DOC-1b29cde4"]]),
+        ("redundancy.known_duplicates", [["DOC-1b29cde4", "DOC-b2303c69", "DOC-00000000"]]),
+        ("redundancy.known_duplicates", [["doc-1b29cde4", "DOC-b2303c69"]]),
+        ("redundancy.known_duplicates", [["DOC-1b29cde", "DOC-b2303c69"]]),
+        (
+            "redundancy.known_duplicates",
+            [["DOC-1b29cde4", "DOC-b2303c69"], ["DOC-b2303c69", "DOC-1b29cde4"]],
+        ),
         ("recommender.top_k", 0),
         ("recommender.mmr_lambda", -0.1),
         ("recommender.mmr_lambda", 1.1),
@@ -806,6 +816,7 @@ def test_the_global_safe_loader_still_reads_plain_exponents_as_text() -> None:
         ("experiment.selection.fallbacks.model", MPNET),
         ("experiment.acceptance.stability_max_cv", 1.0),
         ("redundancy.cv_folds", 2),
+        ("redundancy.known_duplicates", []),
         ("recommender.top_k", 1),
         ("recommender.mmr_lambda", 0.0),
         ("recommender.mmr_lambda", 1.0),
@@ -830,6 +841,15 @@ def test_boundary_values_are_accepted(
     set_value(raw_default, dotted_key, value)
 
     assert isinstance(load_variant(tmp_path, raw_default), AppConfig)
+
+
+def test_the_known_duplicates_are_outside_the_experiment_declaration(
+    raw_default: dict[str, Any], tmp_path: Path
+) -> None:
+    declared = load_config(DEFAULT_CONFIG_PATH).experiment_declaration_sha256()
+    set_value(raw_default, "redundancy.known_duplicates", [])
+
+    assert load_variant(tmp_path, raw_default).experiment_declaration_sha256() == declared
 
 
 def test_the_projection_of_the_map_is_outside_the_experiment_declaration(

@@ -729,10 +729,27 @@ class TopicMapConfig(_FrozenModel):
     projection: ProjectionConfig
 
 
+DocCode = Annotated[str, Field(pattern=r"^DOC-[0-9a-f]{8}$")]
+"""A thesis's short report code, ``DOC-`` and 8 lowercase hex digits."""
+
+
 class RedundancyConfig(_FrozenModel):
-    """Calibration of the direct-redundancy threshold."""
+    """Calibration of the direct-redundancy threshold, and the pairs known to be duplicates."""
 
     cv_folds: Annotated[StrictInt, Field(ge=2)]
+    known_duplicates: tuple[tuple[DocCode, DocCode], ...]
+    """Pairs of included theses known to be one thesis deposited twice (O09). They stay in the
+    labeled pairs and the search, and the results flag them; the order within a pair does not
+    matter."""
+
+    @field_validator("known_duplicates")
+    @classmethod
+    def _distinct_pairs(cls, pairs: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
+        for first, second in pairs:
+            if first == second:
+                raise ValueError(f"a known duplicate must join two different theses: {first}")
+        _require_unique([frozenset(pair) for pair in pairs], "known_duplicates")
+        return pairs
 
 
 class RecommenderConfig(_FrozenModel):
