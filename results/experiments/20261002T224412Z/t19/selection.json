@@ -1,0 +1,661 @@
+{
+  "choices": {
+    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2": {
+      "hdbscan": {
+        "at_bound": false,
+        "eligible": true,
+        "parameter": 20,
+        "reason": "min_cluster_size 20 has the highest seed-mean silhouette, 0.118704, of the 4 of 4 sizes whose metrics are defined in every seed and whose mean noise share is at most 0.3; exact ties go to the lower mean noise share, then to the smaller size",
+        "rule": "max_seed_mean_silhouette_under_noise_cap"
+      },
+      "kmeans": {
+        "at_bound": false,
+        "eligible": true,
+        "parameter": 14,
+        "reason": "K 14 has the highest seed-mean silhouette, 0.085886, of the 22 values of K defined in every seed; an exact tie goes to the smaller K",
+        "rule": "max_seed_mean_silhouette"
+      }
+    },
+    "sentence-transformers/paraphrase-multilingual-mpnet-base-v2": {
+      "hdbscan": {
+        "at_bound": false,
+        "eligible": true,
+        "parameter": 10,
+        "reason": "min_cluster_size 10 has the highest seed-mean silhouette, 0.143382, of the 2 of 4 sizes whose metrics are defined in every seed and whose mean noise share is at most 0.3; exact ties go to the lower mean noise share, then to the smaller size",
+        "rule": "max_seed_mean_silhouette_under_noise_cap"
+      },
+      "kmeans": {
+        "at_bound": false,
+        "eligible": true,
+        "parameter": 12,
+        "reason": "K 12 has the highest seed-mean silhouette, 0.088261, of the 22 values of K defined in every seed; an exact tie goes to the smaller K",
+        "rule": "max_seed_mean_silhouette"
+      }
+    },
+    "tfidf": {
+      "kmeans": {
+        "at_bound": false,
+        "eligible": true,
+        "parameter": 48,
+        "reason": "K 48 has the highest seed-mean silhouette, 0.031881, of the 22 values of K defined in every seed; an exact tie goes to the smaller K",
+        "rule": "max_seed_mean_silhouette"
+      }
+    }
+  },
+  "configurations": {
+    "B0": {
+      "algorithm": "kmeans",
+      "ari_mean": 0.2819298965161367,
+      "ari_mean_sensitivity": 0.2819298965161367,
+      "clusters": {
+        "mean": 48.0,
+        "sd": 0.0,
+        "values": [
+          48.0,
+          48.0,
+          48.0,
+          48.0,
+          48.0
+        ]
+      },
+      "configuration": "B0",
+      "eligible": true,
+      "gates_failed": [
+        "G3"
+      ],
+      "metrics_defined": true,
+      "noise_fraction": {
+        "mean": 0.0,
+        "sd": 0.0,
+        "values": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "npmi": {
+        "mean": 0.20541595456804645,
+        "sd": 0.012567207441129002,
+        "values": [
+          0.20506622670986688,
+          0.21171402220535995,
+          0.20853993413387836,
+          0.18443233143674634,
+          0.21732725835438074
+        ]
+      },
+      "npmi_sensitivity": {
+        "mean": 0.11879208503948775,
+        "sd": 0.012911562174774625,
+        "values": [
+          0.11976237740702467,
+          0.11556773635059552,
+          0.11572114936893829,
+          0.10367977521826388,
+          0.13922938685261635
+        ]
+      },
+      "parameter": 48,
+      "representation": "tfidf",
+      "silhouette": {
+        "mean": 0.03188051891997359,
+        "sd": 0.0018165060091893746,
+        "values": [
+          0.03323272423556444,
+          0.034237583836910494,
+          0.030497992335274494,
+          0.03149055330522823,
+          0.029943740886890287
+        ]
+      },
+      "silhouette_noise_reassigned": null
+    },
+    "C1": {
+      "algorithm": "kmeans",
+      "ari_mean": 0.8897208351754363,
+      "ari_mean_sensitivity": 0.8897208351754363,
+      "clusters": {
+        "mean": 14.0,
+        "sd": 0.0,
+        "values": [
+          14.0,
+          14.0,
+          14.0,
+          14.0,
+          14.0
+        ]
+      },
+      "configuration": "C1",
+      "eligible": true,
+      "gates_failed": [],
+      "metrics_defined": true,
+      "noise_fraction": {
+        "mean": 0.0,
+        "sd": 0.0,
+        "values": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "npmi": {
+        "mean": 0.17065933090836266,
+        "sd": 0.0070422761848169535,
+        "values": [
+          0.16908096387493163,
+          0.1748687231282025,
+          0.170647842832352,
+          0.17869657446367304,
+          0.16000255024265403
+        ]
+      },
+      "npmi_sensitivity": {
+        "mean": 0.09660148891699762,
+        "sd": 0.0039378544776182845,
+        "values": [
+          0.09707609315914618,
+          0.09378074468329632,
+          0.09530193705294181,
+          0.10319458508606663,
+          0.09365408460353712
+        ]
+      },
+      "parameter": 14,
+      "representation": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+      "silhouette": {
+        "mean": 0.08588587146102908,
+        "sd": 0.0006153291279653015,
+        "values": [
+          0.08660488433339986,
+          0.08565634901014471,
+          0.08644542875301144,
+          0.0855632197930895,
+          0.08515947541549986
+        ]
+      },
+      "silhouette_noise_reassigned": null
+    },
+    "C2": {
+      "algorithm": "hdbscan",
+      "ari_mean": 0.41058986959443045,
+      "ari_mean_sensitivity": 0.6115083352117041,
+      "clusters": {
+        "mean": 6.0,
+        "sd": 1.5811388300841898,
+        "values": [
+          7.0,
+          6.0,
+          8.0,
+          5.0,
+          4.0
+        ]
+      },
+      "configuration": "C2",
+      "eligible": true,
+      "gates_failed": [
+        "G3"
+      ],
+      "metrics_defined": true,
+      "noise_fraction": {
+        "mean": 0.2131720430107527,
+        "sd": 0.12297689327405638,
+        "values": [
+          0.30510752688172044,
+          0.19489247311827956,
+          0.3709677419354839,
+          0.10080645161290322,
+          0.09408602150537634
+        ]
+      },
+      "npmi": {
+        "mean": 0.18456594565243778,
+        "sd": 0.020500601887449905,
+        "values": [
+          0.20472792536576076,
+          0.1926264811501238,
+          0.20024488211686442,
+          0.1623669515524288,
+          0.16286348807701112
+        ]
+      },
+      "npmi_sensitivity": {
+        "mean": 0.08346584663306214,
+        "sd": 0.028064331123059293,
+        "values": [
+          0.11816470255090471,
+          0.09527040102483747,
+          0.09416920349139972,
+          0.06016339061895466,
+          0.049561535479214144
+        ]
+      },
+      "parameter": 20,
+      "representation": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+      "silhouette": {
+        "mean": 0.11870395994595437,
+        "sd": 0.019956013970666785,
+        "values": [
+          0.11906287888985281,
+          0.10133230409307911,
+          0.1405823883319606,
+          0.09626407020920814,
+          0.13627815820567124
+        ]
+      },
+      "silhouette_noise_reassigned": {
+        "mean": 0.09885687325063516,
+        "sd": 0.01465862654394933,
+        "values": [
+          0.09162890437538848,
+          0.0869704527777817,
+          0.1019099469787211,
+          0.09064458468400059,
+          0.12313047743728395
+        ]
+      }
+    },
+    "C3": {
+      "algorithm": "kmeans",
+      "ari_mean": 0.8702135418936091,
+      "ari_mean_sensitivity": 0.8702135418936091,
+      "clusters": {
+        "mean": 12.0,
+        "sd": 0.0,
+        "values": [
+          12.0,
+          12.0,
+          12.0,
+          12.0,
+          12.0
+        ]
+      },
+      "configuration": "C3",
+      "eligible": true,
+      "gates_failed": [],
+      "metrics_defined": true,
+      "noise_fraction": {
+        "mean": 0.0,
+        "sd": 0.0,
+        "values": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "npmi": {
+        "mean": 0.18633856928997777,
+        "sd": 0.0034879097648429086,
+        "values": [
+          0.18470707375887255,
+          0.1899668455725343,
+          0.18669923628586235,
+          0.18902811576864673,
+          0.1812915750639729
+        ]
+      },
+      "npmi_sensitivity": {
+        "mean": 0.10630022990565628,
+        "sd": 0.009895050798234134,
+        "values": [
+          0.09759363374083407,
+          0.10039254526794884,
+          0.103312000617943,
+          0.12275291852979205,
+          0.10745005137176343
+        ]
+      },
+      "parameter": 12,
+      "representation": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+      "silhouette": {
+        "mean": 0.0882605154803274,
+        "sd": 0.0021431801120295074,
+        "values": [
+          0.09072897458092663,
+          0.08700814119375884,
+          0.09030387258535563,
+          0.08584853394564496,
+          0.08741305509595092
+        ]
+      },
+      "silhouette_noise_reassigned": null
+    },
+    "C4": {
+      "algorithm": "hdbscan",
+      "ari_mean": 0.6916121508976442,
+      "ari_mean_sensitivity": 0.9555302806503271,
+      "clusters": {
+        "mean": 18.4,
+        "sd": 1.51657508881031,
+        "values": [
+          17.0,
+          20.0,
+          18.0,
+          17.0,
+          20.0
+        ]
+      },
+      "configuration": "C4",
+      "eligible": true,
+      "gates_failed": [],
+      "metrics_defined": true,
+      "noise_fraction": {
+        "mean": 0.2618279569892473,
+        "sd": 0.008679507683313402,
+        "values": [
+          0.26344086021505375,
+          0.2701612903225806,
+          0.24731182795698925,
+          0.2620967741935484,
+          0.2661290322580645
+        ]
+      },
+      "npmi": {
+        "mean": 0.21297847652040414,
+        "sd": 0.005319443067151305,
+        "values": [
+          0.2077794161645894,
+          0.20839017652968145,
+          0.21155323036942805,
+          0.21890925932589095,
+          0.21826030021243095
+        ]
+      },
+      "npmi_sensitivity": {
+        "mean": 0.13023326641400604,
+        "sd": 0.004253658685841928,
+        "values": [
+          0.13502779261826942,
+          0.12856237025839096,
+          0.12661052844922197,
+          0.13456609654806753,
+          0.12639954419608032
+        ]
+      },
+      "parameter": 10,
+      "representation": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+      "silhouette": {
+        "mean": 0.14338205031422185,
+        "sd": 0.007413340189000033,
+        "values": [
+          0.13200442405032775,
+          0.1486413800464363,
+          0.1415166295440753,
+          0.1510732235483335,
+          0.14367459438193644
+        ]
+      },
+      "silhouette_noise_reassigned": {
+        "mean": 0.10091995762308201,
+        "sd": 0.010035738705911032,
+        "values": [
+          0.08297959158813326,
+          0.10575523060005577,
+          0.10483199526686765,
+          0.10533286232928449,
+          0.10570010833106892
+        ]
+      }
+    }
+  },
+  "criterion_four": {
+    "ari_mean": 0.6916121508976442,
+    "cv_npmi": 0.0249764349621577,
+    "cv_silhouette": 0.05170340480383488,
+    "max_cv": 0.1,
+    "met": true,
+    "reason": "G3 passes; the coefficient of variation is at most 0.1 for the silhouette and at most 0.1 for NPMI",
+    "stable": true
+  },
+  "criterion_one": {
+    "f1": "pending: the labeled-set F1 comparison waits for T22",
+    "matched_k": {
+      "criterion": "npmi_at_matched_k",
+      "first": {
+        "mean": 0.21297847652040414,
+        "sd": 0.005319443067151305
+      },
+      "outcome": "tie",
+      "reason": "a tie: the difference of the seed means, 0.006435, does not exceed the larger seed SD, 0.006555",
+      "second": {
+        "mean": 0.21941392754686734,
+        "sd": 0.006555065428133626
+      },
+      "step": 2
+    },
+    "met": false,
+    "npmi_met": false,
+    "own_k": {
+      "criterion": "npmi_at_baseline_k",
+      "first": {
+        "mean": 0.21297847652040414,
+        "sd": 0.005319443067151305
+      },
+      "outcome": "tie",
+      "reason": "a tie: the difference of the seed means, 0.007563, does not exceed the larger seed SD, 0.012567",
+      "second": {
+        "mean": 0.20541595456804645,
+        "sd": 0.012567207441129002
+      },
+      "step": 1
+    },
+    "reason": "the winner does not beat the baseline on NPMI at both K, so criterion 1 is not met, a finding"
+  },
+  "findings": [
+    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2, stage 1: C2 fails G3",
+    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2, stage 1: Step 2 with the HDBSCAN silhouette over every thesis, each noise thesis sent to its nearest centroid by cosine (D30 E5), gives tie instead of second: a flip, reported; the rule is not changed",
+    "stage 2: provisional: stage 2 ran without the labeled-set F1 (step 2), which waits for the labeled set (U3, T21); T22 closes stage 2 by the full rule (UD3)",
+    "criterion 1: the winner does not beat the baseline on NPMI at both K, so criterion 1 is not met, a finding"
+  ],
+  "map": {
+    "inspection": "pca",
+    "method": "umap",
+    "run_id": "sentence-transformers--paraphrase-multilingual-mpnet-base-v2__hdbscan_mcs10__seed42",
+    "seed": 42
+  },
+  "matched_k": {
+    "k": 18,
+    "source": "sweep"
+  },
+  "provisional": true,
+  "representative": {
+    "mean_ari_to_others": [
+      0.7070341015555669,
+      0.6862227401491205,
+      0.6688694996340736,
+      0.7115736720027372,
+      0.6843607411467227
+    ],
+    "reason": "seed 42 has the highest mean ARI to the other runs, 0.711574; a tie goes to the seed listed first",
+    "run_id": "sentence-transformers--paraphrase-multilingual-mpnet-base-v2__hdbscan_mcs10__seed42",
+    "seed": 42
+  },
+  "snapshot_id": "20261002T224412Z",
+  "stage_one": {
+    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2": {
+      "decision": {
+        "deciding_criterion": "gates",
+        "deciding_step": 1,
+        "findings": [
+          "C2 fails G3"
+        ],
+        "first": "C1",
+        "second": "C2",
+        "steps": [
+          {
+            "criterion": "eligibility",
+            "first": true,
+            "outcome": "tie",
+            "reason": "both configurations have a hyperparameter chosen by D30 E2",
+            "second": true,
+            "step": 0
+          },
+          {
+            "criterion": "gates",
+            "first": [],
+            "outcome": "first",
+            "reason": "C1 fails fewer gates (0)",
+            "second": [
+              "G3"
+            ],
+            "step": 1
+          }
+        ],
+        "winner": "C1"
+      },
+      "sensitivities": [
+        {
+          "flipped": false,
+          "name": "npmi_sensitivity",
+          "primary": "C1",
+          "reason": "Stage 1 with NPMI at its sensitivity gives the same outcome, C1",
+          "value": "C1"
+        },
+        {
+          "flipped": false,
+          "name": "ari_sensitivity",
+          "primary": "C1",
+          "reason": "Stage 1 with the sensitivity ARI handling gives the same outcome, C1",
+          "value": "C1"
+        },
+        {
+          "flipped": true,
+          "name": "silhouette_noise_reassigned",
+          "primary": "second",
+          "reason": "Step 2 with the HDBSCAN silhouette over every thesis, each noise thesis sent to its nearest centroid by cosine (D30 E5), gives tie instead of second: a flip, reported; the rule is not changed",
+          "value": "tie"
+        }
+      ]
+    },
+    "sentence-transformers/paraphrase-multilingual-mpnet-base-v2": {
+      "decision": {
+        "deciding_criterion": "silhouette",
+        "deciding_step": 2,
+        "findings": [],
+        "first": "C3",
+        "second": "C4",
+        "steps": [
+          {
+            "criterion": "eligibility",
+            "first": true,
+            "outcome": "tie",
+            "reason": "both configurations have a hyperparameter chosen by D30 E2",
+            "second": true,
+            "step": 0
+          },
+          {
+            "criterion": "gates",
+            "first": [],
+            "outcome": "tie",
+            "reason": "a tie: both pass every gate",
+            "second": [],
+            "step": 1
+          },
+          {
+            "criterion": "silhouette",
+            "first": {
+              "mean": 0.0882605154803274,
+              "sd": 0.0021431801120295074
+            },
+            "outcome": "second",
+            "reason": "C4 beats C3: the difference of the seed means, 0.055122, exceeds the larger seed SD, 0.007413",
+            "second": {
+              "mean": 0.14338205031422185,
+              "sd": 0.007413340189000033
+            },
+            "step": 2
+          }
+        ],
+        "winner": "C4"
+      },
+      "sensitivities": [
+        {
+          "flipped": false,
+          "name": "npmi_sensitivity",
+          "primary": "C4",
+          "reason": "Stage 1 with NPMI at its sensitivity gives the same outcome, C4",
+          "value": "C4"
+        },
+        {
+          "flipped": false,
+          "name": "ari_sensitivity",
+          "primary": "C4",
+          "reason": "Stage 1 with the sensitivity ARI handling gives the same outcome, C4",
+          "value": "C4"
+        },
+        {
+          "flipped": false,
+          "name": "silhouette_noise_reassigned",
+          "primary": "second",
+          "reason": "Step 2 with the HDBSCAN silhouette over every thesis, each noise thesis sent to its nearest centroid by cosine (D30 E5), gives the same outcome, second",
+          "value": "second"
+        }
+      ]
+    }
+  },
+  "stage_two": {
+    "decision": {
+      "deciding_criterion": "npmi",
+      "deciding_step": 3,
+      "findings": [
+        "provisional: stage 2 ran without the labeled-set F1 (step 2), which waits for the labeled set (U3, T21); T22 closes stage 2 by the full rule (UD3)"
+      ],
+      "first": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+      "second": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+      "steps": [
+        {
+          "criterion": "gates",
+          "first": [],
+          "outcome": "tie",
+          "reason": "a tie: both pass every gate",
+          "second": [],
+          "step": 1
+        },
+        {
+          "criterion": "f1",
+          "first": null,
+          "outcome": "skipped",
+          "reason": "skipped: there is no labeled set yet; T22 compares the F1 by a paired bootstrap",
+          "second": null,
+          "step": 2
+        },
+        {
+          "criterion": "npmi",
+          "first": {
+            "mean": 0.17065933090836266,
+            "sd": 0.0070422761848169535
+          },
+          "outcome": "second",
+          "reason": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2 beats sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2: the difference of the seed means, 0.042319, exceeds the larger seed SD, 0.007042",
+          "second": {
+            "mean": 0.21297847652040414,
+            "sd": 0.005319443067151305
+          },
+          "step": 3
+        }
+      ],
+      "winner": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+    },
+    "sensitivities": [
+      {
+        "flipped": false,
+        "name": "npmi_sensitivity",
+        "primary": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+        "reason": "Stage 2 with NPMI at its sensitivity gives the same outcome, sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+        "value": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+      }
+    ]
+  },
+  "winner": {
+    "algorithm": "hdbscan",
+    "configuration": "C4",
+    "parameter": 10,
+    "provisional": true,
+    "representation": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+  }
+}

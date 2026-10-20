@@ -165,6 +165,7 @@ across sessions with care.
 | 2026-10-20 | T19 | Experiment-runner smoke test (`pytest -m smoke tests/smoke/test_experiment_runner.py`), offline, 2 runs | 1 test: the full declared grid twice through the command, on 108 synthetic theses (no thesis read), with the real UMAP, K-means, HDBSCAN and BERTopic; the second run reuses the 10 cached reductions | 166.97 s (171 s for the whole command), then 115.12 s (117.8 s) on the final files | — | 0 | A profiling probe of one run of the same project outside pytest took 83.4 s: UMAP's first fit 15.5 s (its JIT compilation), the sweeps and their metrics done at 45.7 s, the first final configuration's c-TF-IDF 35.1 s (BERTopic's import with it), the rest 2.6 s; 376 clusterings, 30 c-TF-IDF fits | plan T19, second slice; times: run output |
 | 2026-10-20 | T19 | Mutation check of the runner (23 throwaway mutants against `tests/unit/topic_map`), 2 full batches and 2 partial reruns | `experiment.py`, `results_store.py`, `run_experiment.py`; each source restored byte-identical after each mutant | 335.4 s (22 mutants), 57.4 s (4), 15.8 s (1), 328.3 s (23, the final batch) | about 14 s per mutant (D) | 0 | First batch 19 of 22 killed; after two test scenarios were added, the final batch killed all 23 | plan T19, second slice |
 | 2026-10-20 | all | Test suite (`pytest -q`), in the main tree | 2,352 tests, plus 3 skipped; 36 smoke tests deselected | 135.24 s (138.9 s for the whole command), 1 run | — | 0 | After T19's second slice: 52 new unit tests (44 in `test_experiment_runner_unit.py`, 8 in `test_results_store.py`; `tests/unit/topic_map` 205 tests in 16.49 s) | plan T19, second slice |
+| 2026-10-20 | T19 | Experiment, real run (`run_experiment`), offline (`HF_HUB_OFFLINE=1`), at commit `bf0ca62` | 744 theses: MiniLM and mpnet section-mean vectors and the TF-IDF matrix; 5 seeds; 22 K, 4 min_cluster_size | 417.0 s for the whole command; 389.2 s in the manifest | — | 0 | 12 UMAP fits, 1 PCA fit, 371 clusterings, 30 c-TF-IDF fits, 370 internal-metric calls, 40 reassigned-noise silhouettes, 60 NPMI and 148 ARI evaluations; repeatability identical. Against the forecast of about 4 min, 4 to 12 min (E, D30 E6). Records: 232,566 B tracked, 446,679 B gitignored | plan T19; run output and manifest |
 
 ### Notes on the ledger
 
@@ -270,7 +271,7 @@ leaves out the 40-byte `refs/main` file.
 - [x] T14 embeddings for the 2 models: 549.0 s from an empty cache (encoding 127.2 s with
   MiniLM and 306.3 s with mpnet, 41.0 and 17.0 texts/s), 17.1 MB of vectors and a 24.7 MB
   chunk-vector cache (2026-10-16, the user's run).
-- [ ] T19 experiment grid, the user's run, now that the runner is built (`run_experiment`; its dry run counts 12 UMAP fits, 371 clusterings and 25 c-TF-IDF fits): time per configuration and in total, against the forecast of about 4 min, or 4 to 12 min allowing for real-data convergence (estimate, D30 E6).
+- [x] T19 experiment grid: 417.0 s for the whole real run (389.2 s in the manifest), 371 clusterings, 2026-10-20, run by the parent.
 - [ ] T21 labeling workload: annotator hours per pair and in total.
 - [ ] T28 app latency: start-up time and time per query.
 - [ ] T29 Docker build: build time and image size.

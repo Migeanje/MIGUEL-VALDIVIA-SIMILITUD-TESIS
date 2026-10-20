@@ -1,0 +1,71 @@
+{
+  "snapshot_id": "20261002T224412Z",
+  "declaration_sha256": "b974c54c3378c8fe02f7983323f0d58fa7672e4ca7d1999df15f708d2b76850b",
+  "git_commit": "bf0ca62532cb08e43e6c4ccfbb21c104d89e0c9f",
+  "inputs": {
+    "embeddings_manifest.json": "b6a6ec9598d73e6c04b3b13ee359791787242c1f2c4c42b4d9f47a2b56441e8e",
+    "tfidf_manifest.json": "6d20efa133488f05f837c6e0a946c679c3ab14bd6762c24f5569b9e6ba091af7",
+    "fichas_manifest.json": "cf5926cb80861de76c402c2c8d683b92f51ed0274eb17aab2366dc4aa0368512"
+  },
+  "documents": 744,
+  "provisional": true,
+  "winner": "C4",
+  "matched": "sweep",
+  "counts": {
+    "umap_fits": 12,
+    "pca_fits": 1,
+    "clusterings": 371,
+    "ctfidf_fits": 30,
+    "internal_metrics": 370,
+    "reassigned_silhouettes": 40,
+    "npmi_evaluations": 60,
+    "ari_evaluations": 148,
+    "reductions_reused": 0
+  },
+  "repeatability": {
+    "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    "seed": 7,
+    "k": 8,
+    "umap_sha256": [
+      "d457cfa0e440f1a3761a6cf2a50730e8dff129d2dca172fa51ef9e26601af2e7",
+      "d457cfa0e440f1a3761a6cf2a50730e8dff129d2dca172fa51ef9e26601af2e7"
+    ],
+    "kmeans_sha256": [
+      "01ee36fd182826c3c778377ae162beae987204cecc15e0e30afbdeaafa1996d2",
+      "01ee36fd182826c3c778377ae162beae987204cecc15e0e30afbdeaafa1996d2"
+    ],
+    "umap_identical": true,
+    "kmeans_identical": true
+  },
+  "versions": {
+    "python": "3.13.2",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "scikit-learn": "1.9.1",
+    "umap-learn": "0.5.12",
+    "numba": "0.68.0",
+    "pynndescent": "0.6.0",
+    "hdbscan": "0.8.44",
+    "bertopic": "0.17.4",
+    "pyarrow": "25.0.1"
+  },
+  "cpu": {
+    "processor": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+    "machine": "AMD64",
+    "system": "Windows 11",
+    "logical_cpus": 16
+  },
+  "files": {
+    "runs.parquet": "7d1d0aadd37232ed9fc17c0adf709d59679c6d80e1d06698d14a362f9cbff0a4",
+    "configurations.parquet": "9ef500a4a0bb0048972d76c2f67150ea8afa8166118dcfd931dfc909232cf8e3",
+    "topics.parquet": "295154351d79253913b5b7dccf82ccc83d2dec5a2d0454e94ae6b9accb70df62",
+    "selection.json": "91a1cb16250001d12f1992be160fdbec53b13faaabad8bed2c89e277a4cd1bd8"
+  },
+  "data_files": {
+    "labels.parquet": "e452fb550b701b7ae66d47fb5274581522b6045c847c1f7d750bcb8b3e435e56",
+    "map.parquet": "39e340d9cf18ac0a0c3986f312b59ae8cdff3a63d276a445a582dc891a90689a"
+  },
+  "started_at": "2026-10-20T14:41:36Z",
+  "finished_at": "2026-10-20T14:48:05Z",
+  "seconds": 389.212
+}
