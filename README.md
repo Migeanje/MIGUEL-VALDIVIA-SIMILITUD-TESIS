@@ -455,6 +455,41 @@ It writes `results/eda/<snapshot_id>/stopword_candidates.json`: each lemma found
 of the theses, with its document count. Like the metadata profile, it writes nothing if the
 output holds a title, an abstract, a person's name or an ORCID.
 
+## Gap run
+
+Run the gap rules (a) to (d) and their stability filter (T24a, D32) on the records of the T19
+experiment, with the values of `gaps` in `config/default.yaml`:
+
+```sh
+uv run python -m thematic_redundancy.gaps.run_gaps --dry-run
+uv run python -m thematic_redundancy.gaps.run_gaps
+```
+
+It uses the snapshot harvested last (`--snapshot-id` picks another one) and refits nothing. It
+reads T19's `manifest.json`, `selection.json`, `topics.parquet` and the gitignored
+`labels.parquet`, each checked against the SHA-256 that T19's manifest records; the document
+vectors through T19's loader, whose input manifests must be the ones T19 ran on; the fichas, for
+each thesis's program and year; `config/career_affinity.yaml` (U4); and the snapshot's metadata,
+for the privacy guard. Rule (a)'s size cut and NPMI floor are computed once over the winner's
+seed runs, and the stability filter assesses the gaps of T19's medoid run (D30). `--dry-run`
+computes and prints everything (the cuts, the gaps per run, the stable gaps and the sensitivity
+table), applies the privacy guard and writes nothing; on snapshot `20261002T224412Z` it takes
+about 10 seconds. A real run refuses a dirty git tree outside `results/gaps/<snapshot_id>/`,
+holds that directory's run lock and writes:
+
+| File | Content | In git |
+|---|---|---|
+| `results/gaps/<snapshot_id>/cuts.json` | Rule (a)'s size cut and NPMI floor, with the topics behind them | Yes |
+| `results/gaps/<snapshot_id>/gaps.parquet` | One row per gap of every run: rule, run, topics as `(run_id, topic)`, programs and years with their counts, the rule's counts and shares, the affinity score, and for the reference run's gaps their support and stability. No doc code, no term | Yes |
+| `results/gaps/<snapshot_id>/sensitivity.parquet` | D32's sensitivity table beside the declared values: the thesis plan's literal rules (a) and (b), `rare_max_share` 0.01 and `stability_min_overlap` 0.75. Never used for selection | Yes |
+| `results/gaps/<snapshot_id>/summary.md` | The stable gaps with the T19 terms of their topics, the counts per rule and the sensitivity table | Yes |
+| `results/gaps/<snapshot_id>/manifest.json` | Written last: snapshot, git commit, the SHA-256 of T19's records and of every input, the values used, T19's `provisional` flag, library versions, CPU, the SHA-256 of every output and the times | Yes |
+| `data/processed/<snapshot_id>/gaps/members.parquet` | The doc codes of each gap's theses, joined to `gaps.parquet` by `gap_id` | No |
+
+Before anything is written, every tracked output passes the privacy guard of `corpus/profile.py`:
+an output that holds a title, an abstract sentence, a person's name or an ORCID iD of the
+snapshot refuses the whole write, and the error names the file, never the string.
+
 ## Checks
 
 ```sh
@@ -502,6 +537,10 @@ work offline with `HF_HUB_OFFLINE=1`.
   secret, `data/interim/pseudonym.key`, which is created on first use and never committed.
   Without it, the codes can be neither re-derived nor reversed. Creating it needs no hard links,
   so `data/` may sit on a FAT or exFAT volume, a network share or a container mount.
+- The gap run's tracked records name topics by run and id and hold no doc code; only its
+  `summary.md` shows the topics' terms, which T19's records already hold. Which theses form each
+  gap lives under the gitignored `data/processed/`. The run refuses to write any tracked
+  output that holds a title, an abstract, a person's name or an ORCID iD from the snapshot.
 - `results/` holds aggregates only. The metadata profile refuses to write an output that holds a
   title, an abstract, a person's name or an ORCID from the snapshot.
 - Extracted page texts live only under the gitignored `data/interim/`. The extraction manifest
