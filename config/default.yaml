@@ -254,9 +254,26 @@ recommender:
   neighbor_topics: 3
   nearby_gaps: 3
 
+# Gap rules (a) to (d) and their stability filter (T24, D16). The values from
+# npmi_floor_quantile on were decided by the user on 2026-10-20 (D32), before any gap rule ran
+# on the real map; the rules state their reasons in the plan.
 gaps:
   temporal_split_year: 2024
   temporal_min_count: 3
   bridge_max_docs: 1
   nearest_topics: 3
   stability_min_runs: 4
+  # (a) The NPMI floor is this quantile of the per-topic NPMI of every seed run of the winner
+  # (D30's primary setting); the size cut is the first quartile of the same runs' topic sizes.
+  npmi_floor_quantile: 0.25
+  # (c) Two programs are affine at this U4 score or above; a topic is present in the source
+  # with at least this many theses and this share of the program's theses, and absent from
+  # the target at or below rare_max_share.
+  min_affinity: 1
+  present_min_count: 5
+  present_min_share: 0.05
+  rare_max_share: 0.0
+  # (d) The fall in a topic's share from 2021-2023 to 2024-2026 that counts.
+  min_decline: 0.025
+  # A gap is present in another run when one of its gaps overlaps it by this Jaccard or more.
+  stability_min_overlap: 0.5

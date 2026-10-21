@@ -21,6 +21,7 @@ from thematic_redundancy.gaps.rules import (
     TransferableTopic,
     interstitial_pairs,
     small_coherent_topics,
+    small_topic_cuts,
 )
 from thematic_redundancy.gaps.stability import GapSupport, stable_gaps
 from thematic_redundancy.recommendation.alternatives import (
@@ -336,9 +337,10 @@ def test_the_t24_rules_and_filter_feed_the_recommender():
         programs=("sistemas",) * count,
         years=(2022,) * count,
     )
-    run = small_coherent_topics(gap_map, metadata, npmi_floor=0.1) + interstitial_pairs(
-        gap_map, VECTORS, metadata, nearest_topics=3, bridge_max_docs=1
-    )
+    size_cut = small_topic_cuts([gap_map], npmi_floor_quantile=0.0).size_cut
+    run = small_coherent_topics(
+        gap_map, metadata, size_cut=size_cut, npmi_floor=0.1
+    ) + interstitial_pairs(gap_map, VECTORS, metadata, nearest_topics=3, bridge_max_docs=1)
     stable = stable_gaps([run] * 5, reference=0, min_runs=4, min_overlap=1.0)
 
     found = lines(stable, nearby_gaps=len(stable))

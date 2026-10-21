@@ -295,7 +295,9 @@ def test_a_small_topic_renumbered_in_every_seed_is_kept_and_a_merged_one_is_drop
     ]
 
     def gaps_of(maps: Sequence[GapMap]) -> list[tuple[SmallCoherentTopic, ...]]:
-        return [small_coherent_topics(each, metadata, npmi_floor=0.2) for each in maps]
+        return [
+            small_coherent_topics(each, metadata, size_cut=7.0, npmi_floor=0.2) for each in maps
+        ]
 
     (kept,) = stable_gaps(gaps_of(stable_maps), reference=0, min_runs=4, min_overlap=0.5)
     (dropped,) = gap_support(gaps_of(unstable_maps), reference=0, min_runs=4, min_overlap=0.5)

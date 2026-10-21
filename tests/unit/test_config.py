@@ -150,6 +150,10 @@ def test_default_config_loads_with_the_declared_plan_values() -> None:
     assert config.gaps.bridge_max_docs == 1
     assert config.gaps.nearest_topics == 3
     assert config.gaps.stability_min_runs == 4
+    assert config.gaps.npmi_floor_quantile == 0.25
+    assert (config.gaps.min_affinity, config.gaps.present_min_count) == (1, 5)
+    assert (config.gaps.present_min_share, config.gaps.rare_max_share) == (0.05, 0.0)
+    assert (config.gaps.min_decline, config.gaps.stability_min_overlap) == (0.025, 0.5)
     objectives = config.objectives
     assert (objectives.general_max_chars, objectives.specific_max_chars) == (1200, 4000)
     assert objectives.min_chars == 40
@@ -267,6 +271,15 @@ def test_stability_min_runs_above_the_seed_count_is_rejected(
     raw_default["gaps"]["stability_min_runs"] = len(raw_default["seeds"]) + 1
 
     with pytest.raises(ValidationError, match="stability_min_runs"):
+        load_variant(tmp_path, raw_default)
+
+
+def test_a_rare_share_not_below_the_present_share_is_rejected(
+    raw_default: dict[str, Any], tmp_path: Path
+) -> None:
+    raw_default["gaps"]["rare_max_share"] = raw_default["gaps"]["present_min_share"]
+
+    with pytest.raises(ValidationError, match="rare_max_share"):
         load_variant(tmp_path, raw_default)
 
 
@@ -644,6 +657,18 @@ def test_harvest_settings_take_their_defaults_when_omitted(
         ("recommender.mmr_lambda", 1.1),
         ("gaps.temporal_split_year", 2021),
         ("gaps.temporal_split_year", 2027),
+        ("gaps.npmi_floor_quantile", -0.1),
+        ("gaps.npmi_floor_quantile", 1.1),
+        ("gaps.min_affinity", 0),
+        ("gaps.present_min_count", 0),
+        ("gaps.present_min_share", 0.0),
+        ("gaps.present_min_share", 1.1),
+        ("gaps.rare_max_share", -0.01),
+        ("gaps.rare_max_share", 0.05),
+        ("gaps.min_decline", 0.0),
+        ("gaps.min_decline", 1.1),
+        ("gaps.stability_min_overlap", 0.0),
+        ("gaps.stability_min_overlap", 1.1),
         ("objectives.general_max_chars", 0),
         ("objectives.specific_max_chars", 0),
         ("objectives.min_chars", 0),
@@ -823,6 +848,13 @@ def test_the_global_safe_loader_still_reads_plain_exponents_as_text() -> None:
         ("recommender.mmr_lambda", 1),
         ("gaps.temporal_split_year", 2026),
         ("gaps.stability_min_runs", 5),
+        ("gaps.npmi_floor_quantile", 0.0),
+        ("gaps.npmi_floor_quantile", 1.0),
+        ("gaps.min_affinity", 2),
+        ("gaps.present_min_share", 1.0),
+        ("gaps.rare_max_share", 0.049),
+        ("gaps.min_decline", 1.0),
+        ("gaps.stability_min_overlap", 1.0),
         ("objectives.min_chars", 1),
         ("objectives.min_chars", 1199),
         ("objectives.specific_max_chars", 1),

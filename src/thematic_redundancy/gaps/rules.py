@@ -16,17 +16,21 @@ The plan declares (initial configuration, ``gaps``):
   Electrónica never a target (D29) and the rules normalized per program (R5);
 - (d) temporal decline: "change in share between 2021–2023 and 2024–2026, minimum count 3".
 
-D16 speaks of five gap types, while the plan lists only these four; no fifth rule is built here.
-The OpenAlex "never touched" reference of D17 belongs to T25.
+D16, as amended by D32, names these four rules with the stability filter; the OpenAlex "never
+touched" reference of D17 is a complementary external reference that belongs to T25.
 
-Every value the plan does not declare is a keyword argument with no default, so the caller
-states it: the NPMI floor (a); the affinity that counts as affine and what "present" and
-"absent or rare" mean (c); the decline that counts (d). The definitions the plan leaves open
-are fixed here and documented on each rule:
+Every threshold is a keyword argument with no default, so the caller states it; D32 declares
+them in the configuration (``gaps``), read by :meth:`GapSettings.from_config`: the size cut and
+the NPMI floor (a), the affinity that counts as affine and what "present" and "absent or rare"
+mean (c), the decline that counts (d). The definitions the plan leaves open are fixed here and
+documented on each rule:
 
 - topic size: a topic's theses; the noise (-1) is no topic and is left out of the sizes;
-- the bottom quartile: sizes at or below the first quartile of the map's topic sizes, by
-  linear interpolation (``numpy.quantile``'s default), so every topic tied at it is included;
+- the bottom quartile and the NPMI floor (a): one cut each over every seed run of the winner
+  (D32), the first quartile of all their topic sizes and the ``npmi_floor_quantile`` of all
+  their defined per-topic NPMI, both by linear interpolation (``numpy.quantile``'s default), so
+  that a topic's size means the same in every run (:func:`small_topic_cuts`); every topic tied
+  at a cut is included;
 - a bridge thesis (b): see :func:`interstitial_pairs`;
 - a program's share of a topic (c): the topic's theses of that program over all the program's
   theses in the map, noise included;
@@ -36,6 +40,7 @@ are fixed here and documented on each rule:
 
 import math
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Self
 
@@ -50,7 +55,7 @@ if TYPE_CHECKING:
     from thematic_redundancy.topic_map.build import TopicMap
 
 SIZE_QUANTILE = 0.25
-"""The bottom quartile of rule (a): sizes at or below this quantile of the topic sizes."""
+"""The bottom quartile of rule (a): sizes at or below this quantile of every run's topic sizes."""
 
 
 class GapInputError(ValueError):
@@ -74,6 +79,13 @@ class GapSettings:
     """Last year of the later window: ``snapshot.year_end``."""
     temporal_min_count: int
     stability_min_runs: int
+    npmi_floor_quantile: float
+    min_affinity: int
+    present_min_count: int
+    present_min_share: float
+    rare_max_share: float
+    min_decline: float
+    stability_min_overlap: float
 
     @classmethod
     def from_config(cls, config: "AppConfig") -> Self:
@@ -86,6 +98,13 @@ class GapSettings:
             temporal_last_year=config.snapshot.year_end,
             temporal_min_count=gaps.temporal_min_count,
             stability_min_runs=gaps.stability_min_runs,
+            npmi_floor_quantile=gaps.npmi_floor_quantile,
+            min_affinity=gaps.min_affinity,
+            present_min_count=gaps.present_min_count,
+            present_min_share=gaps.present_min_share,
+            rare_max_share=gaps.rare_max_share,
+            min_decline=gaps.min_decline,
+            stability_min_overlap=gaps.stability_min_overlap,
         )
 
 
@@ -218,7 +237,7 @@ class SmallCoherentTopic(_OneTopicGap):
     topic: int
     size: int
     size_threshold: float
-    """The first quartile of the map's topic sizes."""
+    """The size cut: the first quartile of the topic sizes of every seed run (D32)."""
     topics_in_map: int
     npmi: float
     npmi_floor: float
@@ -230,7 +249,8 @@ class SmallCoherentTopic(_OneTopicGap):
     def reason(self) -> str:
         return (
             f"topic {self.topic} has {self.size} theses, at most the bottom-quartile size "
-            f"{self.size_threshold:g} of the {self.topics_in_map} topics, and its NPMI "
+            f"{self.size_threshold:g} of the topics of every run ({self.topics_in_map} in this "
+            f"map), and its NPMI "
             f"{self.npmi:.4f} reaches the floor {self.npmi_floor:g}"
         )
 
@@ -350,34 +370,89 @@ Gap = SmallCoherentTopic | InterstitialPair | TransferableTopic | TemporalDeclin
 # --- Rules ----------------------------------------------------------------------------------
 
 
-def small_coherent_topics(
-    gap_map: GapMap, metadata: ThesisMetadata, *, npmi_floor: float
-) -> tuple[SmallCoherentTopic, ...]:
-    """Rule (a): the topics in the bottom quartile of size whose NPMI reaches ``npmi_floor``.
+@dataclass(frozen=True)
+class SmallTopicCuts:
+    """The two cuts of rule (a), each computed once over every seed run of the winner (D32)."""
 
-    A topic is in the bottom quartile when its size is at most the first quartile of the map's
-    topic sizes (linear interpolation; the noise is no topic). A topic with an undefined NPMI
-    never reaches the floor. The gaps come in topic order.
+    size_cut: float
+    """The first quartile of the sizes of all the runs' topics."""
+    npmi_floor: float
+    """The ``npmi_floor_quantile`` of all the runs' defined per-topic NPMI."""
+    npmi_floor_quantile: float
+    runs: int
+    topics: int
+    """The topics of all the runs, each counted once per run."""
+    npmi_topics: int
+    """The topics among them whose NPMI is defined."""
+
+
+def small_topic_cuts(maps: Sequence[GapMap], *, npmi_floor_quantile: float) -> SmallTopicCuts:
+    """Return rule (a)'s size cut and NPMI floor over the topic maps of every seed run.
+
+    One cut each over all the runs (D32) gives a topic of a given size and NPMI the same answer
+    in every run, so the stability filter judges the topic and not a cut that moves with the
+    seed. Both cuts interpolate linearly (``numpy.quantile``'s default); the noise is no topic
+    and an undefined NPMI is left out.
 
     Raises:
-        GapInputError: if the metadata does not describe the map's theses or the floor is not
-            a finite value in [-1, 1].
+        GapInputError: if there is no run, the runs hold no topic or no defined NPMI, or the
+            quantile is not a finite value in [0, 1].
+    """
+    if not (math.isfinite(npmi_floor_quantile) and 0.0 <= npmi_floor_quantile <= 1.0):
+        raise GapInputError(
+            f"the NPMI floor quantile must lie in [0, 1], not {npmi_floor_quantile}"
+        )
+    if not maps:
+        raise GapInputError("rule (a) needs the topic maps of the seed runs, and no run was given")
+    sizes = [
+        int(np.count_nonzero(gap_map.labels == topic))
+        for gap_map in maps
+        for topic in gap_map.topics
+    ]
+    if not sizes:
+        raise GapInputError("the seed runs hold no topic, so rule (a) has no size cut")
+    npmi = [value for gap_map in maps for value in gap_map.npmi if value is not None]
+    if not npmi:
+        raise GapInputError("the seed runs' topics have no defined NPMI, so rule (a) has no floor")
+    return SmallTopicCuts(
+        size_cut=float(np.quantile(sizes, SIZE_QUANTILE)),
+        npmi_floor=float(np.quantile(npmi, npmi_floor_quantile)),
+        npmi_floor_quantile=npmi_floor_quantile,
+        runs=len(maps),
+        topics=len(sizes),
+        npmi_topics=len(npmi),
+    )
+
+
+def small_coherent_topics(
+    gap_map: GapMap, metadata: ThesisMetadata, *, size_cut: float, npmi_floor: float
+) -> tuple[SmallCoherentTopic, ...]:
+    """Rule (a): the topics at most ``size_cut`` theses large whose NPMI reaches ``npmi_floor``.
+
+    Both cuts come from :func:`small_topic_cuts` over every seed run (D32), so that a topic of a
+    given size and NPMI gets the same answer in every run. A topic with an undefined NPMI never
+    reaches the floor. The gaps come in topic order.
+
+    Raises:
+        GapInputError: if the metadata does not describe the map's theses, the size cut is not
+            a finite size, or the floor is not a finite value in [-1, 1].
     """
     _require_rows(gap_map, metadata)
+    if not (math.isfinite(size_cut) and size_cut >= 0.0):
+        raise GapInputError(f"the size cut must be a finite size of at least 0, not {size_cut}")
     if not (math.isfinite(npmi_floor) and -1.0 <= npmi_floor <= 1.0):
         raise GapInputError(f"the NPMI floor must lie in [-1, 1], not {npmi_floor}")
     if not gap_map.topics:
         return ()
     sizes = [int(np.count_nonzero(gap_map.labels == topic)) for topic in gap_map.topics]
-    threshold = float(np.quantile(sizes, SIZE_QUANTILE))
     gaps = []
     for topic, size, npmi in zip(gap_map.topics, sizes, gap_map.npmi, strict=True):
-        if size <= threshold and npmi is not None and npmi >= npmi_floor:
+        if size <= size_cut and npmi is not None and npmi >= npmi_floor:
             gaps.append(
                 SmallCoherentTopic(
                     topic=topic,
                     size=size,
-                    size_threshold=threshold,
+                    size_threshold=size_cut,
                     topics_in_map=len(gap_map.topics),
                     npmi=npmi,
                     npmi_floor=npmi_floor,

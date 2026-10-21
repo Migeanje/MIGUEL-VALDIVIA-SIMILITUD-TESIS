@@ -772,6 +772,31 @@ class GapsConfig(_FrozenModel):
     nearest_topics: PositiveInt
     stability_min_runs: PositiveInt
     """Seeds in which a gap must reappear to be kept."""
+    npmi_floor_quantile: Annotated[StrictFloat, Field(ge=0.0, le=1.0)]
+    """Rule (a): the quantile of the per-topic NPMI of every seed run of the winner that a small
+    topic must reach (D32)."""
+    min_affinity: PositiveInt
+    """Rule (c): the lowest career-affinity score (U4) at which two programs are affine."""
+    present_min_count: PositiveInt
+    """Rule (c): the fewest theses of the source program for a topic to be present in it."""
+    present_min_share: Annotated[StrictFloat, Field(gt=0.0, le=1.0)]
+    """Rule (c): the smallest share of the source program's theses for a topic to be present."""
+    rare_max_share: Annotated[StrictFloat, Field(ge=0.0, lt=1.0)]
+    """Rule (c): the largest share of the target program's theses for a topic to be absent from
+    it; below ``present_min_share``."""
+    min_decline: Annotated[StrictFloat, Field(gt=0.0, le=1.0)]
+    """Rule (d): the smallest fall in a topic's share from the earlier to the later window."""
+    stability_min_overlap: Annotated[StrictFloat, Field(gt=0.0, le=1.0)]
+    """The Jaccard overlap at or above which a gap of another run matches (D32)."""
+
+    @model_validator(mode="after")
+    def _require_rare_below_present(self) -> Self:
+        if self.rare_max_share >= self.present_min_share:
+            raise ValueError(
+                f"gaps.rare_max_share ({self.rare_max_share}) must be below "
+                f"gaps.present_min_share ({self.present_min_share})"
+            )
+        return self
 
 
 class AppConfig(_FrozenModel):

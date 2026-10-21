@@ -1,7 +1,8 @@
 """Gap rules (a) to (d) over one topic map (T24, D16), on hand-built synthetic maps.
 
 Each rule is shown firing and not firing at the boundaries that the plan declares: the bottom
-quartile of topic size and the NPMI floor (a), each topic's 3 nearest topics and at most one
+quartile of topic size and the NPMI floor (a), both cut once over every seed run (D32), each
+topic's 3 nearest topics and at most one
 bridge thesis (b), the affinity matrix of U4 with D29 and the per-program shares of R5 (c), and
 the share change between 2021–2023 and 2024–2026 with a minimum count of 3 (d). No thesis is
 read: the theses are doc codes, program keys, years and, for rule (b), points on a circle.
@@ -23,11 +24,13 @@ from thematic_redundancy.gaps.rules import (
     GapSettings,
     InterstitialPair,
     SmallCoherentTopic,
+    SmallTopicCuts,
     TemporalDecline,
     ThesisMetadata,
     TransferableTopic,
     interstitial_pairs,
     small_coherent_topics,
+    small_topic_cuts,
     temporal_declines,
     transferable_topics,
 )
@@ -167,7 +170,7 @@ def test_every_rule_refuses_metadata_of_another_length() -> None:
     metadata = make_metadata(["minas"] * 3)
 
     with pytest.raises(GapInputError, match="theses"):
-        small_coherent_topics(gap_map, metadata, npmi_floor=0.0)
+        small_coherent_topics(gap_map, metadata, size_cut=2.0, npmi_floor=0.0)
     with pytest.raises(GapInputError, match="theses"):
         temporal_declines(
             gap_map,
@@ -183,7 +186,8 @@ def test_every_rule_refuses_metadata_of_another_length() -> None:
 @pytest.mark.parametrize(
     ("rule", "undeclared"),
     [
-        (small_coherent_topics, {"npmi_floor"}),
+        (small_topic_cuts, {"npmi_floor_quantile"}),
+        (small_coherent_topics, {"size_cut", "npmi_floor"}),
         (interstitial_pairs, {"nearest_topics", "bridge_max_docs"}),
         (
             transferable_topics,
@@ -214,17 +218,118 @@ def test_the_declared_values_come_from_the_configuration() -> None:
         temporal_last_year=2026,
         temporal_min_count=3,
         stability_min_runs=4,
+        npmi_floor_quantile=0.25,
+        min_affinity=1,
+        present_min_count=5,
+        present_min_share=0.05,
+        rare_max_share=0.0,
+        min_decline=0.025,
+        stability_min_overlap=0.5,
     )
+
+
+# --- Rule (a): the cuts, once over every seed run (D32) ---------------------------------------
+
+
+def test_the_size_cut_is_the_first_quartile_of_every_runs_topic_sizes() -> None:
+    first = make_map(labels_by_size([10, 2, 8]))
+    second = make_map(labels_by_size([4, 6]))  # Q1 of 2, 4, 6, 8, 10 is exactly 4.
+
+    cuts = small_topic_cuts([first, second], npmi_floor_quantile=0.25)
+
+    assert cuts.size_cut == 4.0
+    assert (cuts.runs, cuts.topics) == (2, 5)
+
+
+def test_the_size_cut_interpolates_between_sizes() -> None:
+    labels = labels_by_size([16, 2, 14, 4, 12, 6, 10, 8])  # Q1 is 4 + 0.75 * (6 - 4) = 5.5.
+
+    assert small_topic_cuts([make_map(labels)], npmi_floor_quantile=0.25).size_cut == 5.5
+
+
+def test_the_size_cut_leaves_the_noise_out_of_the_topic_sizes() -> None:
+    labels = [-1, *labels_by_size([2, 4, 6, 8, 10])]  # With the noise as a size, Q1 is 2.5.
+
+    assert small_topic_cuts([make_map(labels)], npmi_floor_quantile=0.25).size_cut == 4.0
+
+
+def test_the_npmi_floor_is_a_quantile_of_every_runs_defined_npmi() -> None:
+    first = make_map(labels_by_size([3, 3, 3]), npmi=[0.4, None, 0.1])
+    second = make_map(labels_by_size([3, 3]), npmi=[0.3, 0.2])
+
+    cuts = small_topic_cuts([first, second], npmi_floor_quantile=0.25)
+
+    # The defined values are 0.1, 0.2, 0.3 and 0.4: Q1 is 0.1 + 0.75 * 0.1 = 0.175.
+    assert cuts.npmi_floor == pytest.approx(0.175, abs=1e-15)
+    assert (cuts.npmi_floor_quantile, cuts.npmi_topics) == (0.25, 4)
+    assert small_topic_cuts([first, second], npmi_floor_quantile=0.0).npmi_floor == 0.1
+    assert small_topic_cuts([first, second], npmi_floor_quantile=1.0).npmi_floor == 0.4
+
+
+def test_the_cuts_report_their_evidence() -> None:
+    cuts = small_topic_cuts(
+        [make_map(labels_by_size([2, 4]), npmi=[0.1, 0.3])], npmi_floor_quantile=0.5
+    )
+
+    assert cuts == SmallTopicCuts(
+        size_cut=2.5,
+        npmi_floor=pytest.approx(0.2, abs=1e-15),
+        npmi_floor_quantile=0.5,
+        runs=1,
+        topics=2,
+        npmi_topics=2,
+    )
+
+
+@pytest.mark.parametrize(
+    ("maps", "quantile", "message"),
+    [
+        ([], 0.25, "no run"),
+        ([make_map([-1, -1])], 0.25, "no topic"),
+        ([make_map([0, 1], npmi=[None, None])], 0.25, "no defined NPMI"),
+        ([make_map([0, 1])], -0.1, "quantile"),
+        ([make_map([0, 1])], 1.1, "quantile"),
+        ([make_map([0, 1])], float("nan"), "quantile"),
+    ],
+)
+def test_the_cuts_refuse_inputs_without_a_value(maps, quantile: float, message: str) -> None:
+    with pytest.raises(GapInputError, match=message):
+        small_topic_cuts(maps, npmi_floor_quantile=quantile)
+
+
+def test_one_cut_keeps_a_topic_small_in_every_run_whatever_each_maps_own_quartile() -> None:
+    # Topic 0 has 16 theses in two runs whose own first quartiles are 15.0 (sizes 12, 16, 17,
+    # 30) and 17.5 (16, 18, 20, 40): a quartile per map calls it small in the second run only.
+    # The one cut over both runs, Q1 of all eight sizes, is 16.0 and calls it small in both.
+    first = make_map(labels_by_size([16, 12, 17, 30]))
+    second = make_map(labels_by_size([16, 18, 20, 40]))
+    cuts = small_topic_cuts([first, second], npmi_floor_quantile=0.0)
+
+    found = [
+        [
+            gap.topic
+            for gap in small_coherent_topics(
+                each,
+                make_metadata(["minas"] * len(each.labels)),
+                size_cut=cuts.size_cut,
+                npmi_floor=0.0,
+            )
+        ]
+        for each in (first, second)
+    ]
+
+    assert cuts.size_cut == 16.0
+    assert found == [[0, 1], [0]]
 
 
 # --- Rule (a): small coherent topics ----------------------------------------------------------
 
 
-def test_rule_a_keeps_the_topics_at_or_below_the_first_quartile_of_size() -> None:
-    labels = labels_by_size([10, 2, 8, 4, 6])  # Q1 of 2, 4, 6, 8, 10 is exactly 4.
+def test_rule_a_keeps_the_topics_at_or_below_the_size_cut() -> None:
+    labels = labels_by_size([10, 2, 8, 4, 6])
 
     gaps = small_coherent_topics(
-        make_map(labels), make_metadata(["minas"] * len(labels)), npmi_floor=0.1
+        make_map(labels), make_metadata(["minas"] * len(labels)), size_cut=4.0, npmi_floor=0.1
     )
 
     assert [gap.topic for gap in gaps] == [1, 3]
@@ -232,33 +337,15 @@ def test_rule_a_keeps_the_topics_at_or_below_the_first_quartile_of_size() -> Non
     assert all(gap.size_threshold == 4.0 and gap.topics_in_map == 5 for gap in gaps)
 
 
-def test_rule_a_interpolates_the_quartile_between_sizes() -> None:
-    labels = labels_by_size([16, 2, 14, 4, 12, 6, 10, 8])  # Q1 is 4 + 0.75 * (6 - 4) = 5.5.
-
-    gaps = small_coherent_topics(
-        make_map(labels), make_metadata(["minas"] * len(labels)), npmi_floor=0.1
-    )
-
-    assert [gap.topic for gap in gaps] == [1, 3]
-    assert gaps[0].size_threshold == 5.5
-
-
-def test_rule_a_leaves_the_noise_out_of_the_topic_sizes() -> None:
-    labels = [-1, *labels_by_size([2, 4, 6, 8, 10])]  # With the noise as a size, Q1 is 2.5.
-
-    gaps = small_coherent_topics(
-        make_map(labels), make_metadata(["minas"] * len(labels)), npmi_floor=0.1
-    )
-
-    assert [gap.topic for gap in gaps] == [0, 1]
-
-
 def test_rule_a_needs_the_npmi_at_or_above_the_floor() -> None:
-    labels = labels_by_size([2, 2, 2, 9, 9, 9, 9, 9])  # Q1 is 2: topics 0, 1 and 2 are small.
+    labels = labels_by_size([2, 2, 2, 9, 9, 9, 9, 9])  # Topics 0, 1 and 2 are small.
     npmi = [0.05, 0.1, None, 0.9, 0.9, 0.9, 0.9, 0.9]
 
     gaps = small_coherent_topics(
-        make_map(labels, npmi=npmi), make_metadata(["minas"] * len(labels)), npmi_floor=0.1
+        make_map(labels, npmi=npmi),
+        make_metadata(["minas"] * len(labels)),
+        size_cut=2.0,
+        npmi_floor=0.1,
     )
 
     assert [gap.topic for gap in gaps] == [1]
@@ -270,7 +357,10 @@ def test_rule_a_reports_its_evidence() -> None:
     programs = ["minas", "sistemas", "minas", *["industrial"] * 27]
 
     (gap,) = small_coherent_topics(
-        make_map(labels, npmi=[0.21, 0.3, 0.3, 0.3]), make_metadata(programs), npmi_floor=0.2
+        make_map(labels, npmi=[0.21, 0.3, 0.3, 0.3]),
+        make_metadata(programs),
+        size_cut=7.5,
+        npmi_floor=0.2,
     )
 
     assert gap == SmallCoherentTopic(
@@ -290,15 +380,27 @@ def test_rule_a_reports_its_evidence() -> None:
 
 
 def test_rule_a_finds_nothing_on_a_map_without_topics() -> None:
-    assert (
-        small_coherent_topics(make_map([-1, -1]), make_metadata(["minas"] * 2), npmi_floor=0) == ()
+    gaps = small_coherent_topics(
+        make_map([-1, -1]), make_metadata(["minas"] * 2), size_cut=1.0, npmi_floor=0
     )
+
+    assert gaps == ()
 
 
 @pytest.mark.parametrize("floor", [float("nan"), -1.5, 1.5])
 def test_rule_a_refuses_a_floor_outside_the_npmi_range(floor: float) -> None:
     with pytest.raises(GapInputError, match="floor"):
-        small_coherent_topics(make_map([0, 1]), make_metadata(["minas"] * 2), npmi_floor=floor)
+        small_coherent_topics(
+            make_map([0, 1]), make_metadata(["minas"] * 2), size_cut=1.0, npmi_floor=floor
+        )
+
+
+@pytest.mark.parametrize("cut", [float("nan"), float("inf"), -1.0])
+def test_rule_a_refuses_a_size_cut_that_is_not_a_finite_size(cut: float) -> None:
+    with pytest.raises(GapInputError, match="size cut"):
+        small_coherent_topics(
+            make_map([0, 1]), make_metadata(["minas"] * 2), size_cut=cut, npmi_floor=0.0
+        )
 
 
 # --- Rule (b): interstitial pairs ------------------------------------------------------------
@@ -684,7 +786,12 @@ def test_every_rule_returns_the_same_gaps_on_a_second_call(affinity: CareerAffin
 
     def everything() -> tuple[object, ...]:
         return (
-            small_coherent_topics(gap_map, metadata, npmi_floor=0.0),
+            small_coherent_topics(
+                gap_map,
+                metadata,
+                size_cut=small_topic_cuts([gap_map], npmi_floor_quantile=0.0).size_cut,
+                npmi_floor=0.0,
+            ),
             interstitial_pairs(gap_map, vectors, metadata, nearest_topics=3, bridge_max_docs=1),
             transfer(gap_map, transfer_metadata, affinity, rare_max_share=0.1),
             temporal_declines(
