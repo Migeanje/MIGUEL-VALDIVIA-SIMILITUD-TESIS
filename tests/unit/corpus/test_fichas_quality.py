@@ -223,6 +223,52 @@ def test_an_advisor_name_counts_only_when_one_of_its_values_is_not_blank(
     assert orcid["without_advisor"] == 1
 
 
+def unvalidated_record(number: int, metadata: dict[str, Any]) -> SnapshotRecord:
+    """Return a record built without validation, whose metadata may have any shape."""
+    return SnapshotRecord.model_construct(
+        uuid=item(number),
+        handle=handle(number),
+        program_key="sistemas",
+        collection_uuid=COLLECTION,
+        harvested_at=HARVEST_TIME,
+        metadata=metadata,
+    )
+
+
+@pytest.mark.parametrize(
+    ("metadata", "with_orcid", "from_name"),
+    [
+        ({"dc.contributor.advisor": None}, 0, 0),
+        ({"dc.contributor.advisor": [ADVISOR]}, 0, 0),
+        ({"dc.contributor.advisor": [None, 7]}, 0, 0),
+        ({"dc.contributor.advisor": [ADVISOR, {"value": ADVISOR}]}, 0, 1),
+        ({"renati.advisor.orcid": None}, 0, 0),
+        ({"renati.advisor.orcid": [VALID_ORCID]}, 0, 0),
+        ({"renati.advisor.orcid": [VALID_ORCID, {"value": VALID_ORCID}]}, 1, 0),
+    ],
+    ids=[
+        "advisors-none",
+        "advisor-text",
+        "advisor-none-and-number",
+        "advisor-text-then-entry",
+        "orcids-none",
+        "orcid-text",
+        "orcid-text-then-entry",
+    ],
+)
+def test_advisor_values_that_are_not_metadata_entries_count_as_absent(
+    metadata: dict[str, Any], with_orcid: int, from_name: int
+) -> None:
+    fichas = [metadata_only(1, advisor_code=None), ficha(2)]
+
+    orcid = report_of(fichas, [unvalidated_record(1, metadata), record(2)])["advisor_orcid"]
+
+    assert orcid["theses_with_orcid"] == with_orcid
+    assert orcid["valid"] == with_orcid
+    assert orcid["advisor_code_from_name"] == from_name + 1
+    assert orcid["without_advisor"] == 1
+
+
 def test_text_lengths_give_the_median_and_the_nearest_rank_p95() -> None:
     fichas = [ficha(n, title="x" * (10 * n)) for n in range(1, 21)]
 

@@ -542,6 +542,11 @@ def create_together(path: Path, runs: int) -> list[bytes]:
 def test_runs_that_create_the_key_at_the_same_time_all_use_one_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, hard_links: bool
 ) -> None:
+    # Real races never reach the settle loop, the wait for a key file that is still short or
+    # all zero bytes: a probe of 200 rounds in each mode saw several creators in every round
+    # but never a short read (T08a). That loop is covered with a fake clock by the tests
+    # above, such as test_a_key_file_that_another_run_is_still_writing_is_waited_for and
+    # test_without_hard_links_a_key_that_the_winning_run_is_still_writing_is_waited_for.
     if not hard_links:
         without_hard_links(monkeypatch, NO_HARD_LINKS[0])
 

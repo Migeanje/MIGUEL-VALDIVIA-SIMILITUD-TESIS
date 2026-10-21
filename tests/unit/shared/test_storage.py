@@ -9,7 +9,7 @@ import os
 import re
 from datetime import date
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, get_protocol_members
 from uuid import UUID
 
 import pyarrow as pa
@@ -260,6 +260,54 @@ def test_an_empty_table_keeps_its_columns(tmp_path: Path) -> None:
 
 def test_the_parquet_adapter_implements_the_table_store_port() -> None:
     assert isinstance(STORE, TableStore)
+
+
+# Store doubles
+
+PORT_MEMBERS = ("write", "read", "read_verified")
+
+
+class InMemoryTableStore:
+    """A store double that keeps tables in memory and defines every member of the port."""
+
+    def __init__(self) -> None:
+        self.tables: dict[Path, tuple[BaseModel, ...]] = {}
+
+    def write(self, models: Any, path: Path, *, model_cls: type[BaseModel] | None = None) -> None:
+        self.tables[path] = tuple(models)
+
+    def read(self, model_cls: type[BaseModel], path: Path) -> tuple[BaseModel, ...]:
+        return self.tables[path]
+
+    def read_verified(
+        self, model_cls: type[BaseModel], path: Path, *, sha256: str
+    ) -> tuple[BaseModel, ...]:
+        return self.read(model_cls, path)
+
+
+def test_the_table_store_port_has_exactly_the_members_that_a_double_must_define() -> None:
+    # read_verified is the member that load_fichas and the other verified readers call, so a
+    # double passed to them without it fails there with an AttributeError.
+    assert get_protocol_members(TableStore) == frozenset(PORT_MEMBERS)
+
+
+def test_a_store_double_with_every_member_of_the_port_is_a_table_store(tmp_path: Path) -> None:
+    store = InMemoryTableStore()
+    path = tmp_path / "fichas.parquet"
+
+    store.write([ficha(1)], path, model_cls=Ficha)
+
+    assert isinstance(store, TableStore)
+    assert store.read_verified(Ficha, path, sha256=SHA256) == (ficha(1),)
+
+
+@pytest.mark.parametrize("missing", PORT_MEMBERS)
+def test_a_store_double_without_a_member_of_the_port_is_not_a_table_store(missing: str) -> None:
+    members = {name: getattr(InMemoryTableStore, name) for name in PORT_MEMBERS}
+    del members[missing]
+    partial = type("PartialStore", (), members)
+
+    assert not isinstance(partial(), TableStore)
 
 
 # Refused writes

@@ -28,6 +28,10 @@ the previous outputs. A rename cannot be undone, so a failed rename, or an inter
 between two renames, leaves the outputs renamed before it new and the others as they were;
 the run then says so, and running it again writes them all. Other files of the directory,
 such as the stopword candidates, stay as they are.
+
+While it writes, the script holds the lock ``results/eda/.lock`` (:func:`exclusive_run`),
+which ``experiments/domain_stopwords.py`` also takes, so two runs never stage the same files
+at once. A run that finds the lock taken writes nothing, says so, and exits with 1.
 """
 
 import argparse
@@ -71,7 +75,7 @@ from thematic_redundancy.corpus.snapshot import (
     read_snapshot,
 )
 from thematic_redundancy.shared.config import load_config
-from thematic_redundancy.shared.filesystem import write_files_atomically
+from thematic_redundancy.shared.filesystem import exclusive_run, write_files_atomically
 
 CONFIG_PATH = Path("config") / "default.yaml"
 SCRIPT_PATH = "experiments/eda_metadata.py"
@@ -83,6 +87,18 @@ TOKENIZER_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 TokenizerLoader = Callable[[str], tuple[TokenCounter, dict[str, Any]]]
 """Loads the tokenizer of a model, as :func:`load_token_counter` does."""
+
+
+class OutputsInUseError(RuntimeError):
+    """Another run is writing under ``results/eda/``, the directory that this script locks."""
+
+
+def _in_use_message(eda_dir: Path) -> str:
+    return (
+        f"another run is writing the outputs in {eda_dir}; wait until it ends, then run the "
+        "script again"
+    )
+
 
 SUFFIX_SHAPES = {
     "place_and_year": "`…, Arequipa 2023`, `… - Arequipa, Perú 2021`",
@@ -177,7 +193,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         for model in config.embedding.models
         if model != TOKENIZER_MODEL
     ]
-    provenance = _provenance(project_root, config_path, manifest, tokenizer, other_tokenizers)
+    eda_dir = paths.results_dir / OUTPUT_DIR_NAME
+    output_dir = eda_dir / snapshot_id
+    provenance = _provenance(
+        project_root, config_path, manifest, tokenizer, other_tokenizers, output_dir
+    )
     outputs = render_outputs(profile, provenance, programs)
     sensitive = sensitive_strings(records)
     leaks = {
@@ -192,10 +212,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
         print("error: nothing was written", file=sys.stderr)
         return 1
-    output_dir = paths.results_dir / OUTPUT_DIR_NAME / snapshot_id
     try:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        write_files_atomically(output_dir, outputs)
+        eda_dir.mkdir(parents=True, exist_ok=True)
+        with exclusive_run(eda_dir, OutputsInUseError(_in_use_message(eda_dir))):
+            output_dir.mkdir(exist_ok=True)
+            write_files_atomically(output_dir, outputs)
+    except OutputsInUseError as error:
+        print(f"error: {error}", file=sys.stderr)
+        print("error: nothing was written", file=sys.stderr)
+        return 1
     except OSError as error:
         print(f"error: {error}", file=sys.stderr)
         print(
@@ -276,11 +301,19 @@ def compare_tokenizer(
     reference's. A partly downloaded cache, with the configuration files but without
     ``tokenizer.json`` or ``sentencepiece.bpe.model``, loads offline as a stub tokenizer of a
     few tokens, whose counts would say nothing about the model.
+
+    The comparison is advisory, so a tokenizer that is in the cache but fails to load with any
+    other error, as a damaged file makes it do (a ``ValueError`` or a ``KeyError`` from its
+    configuration, or the bare ``Exception`` that the tokenizers library raises for a
+    ``tokenizer.json`` that it cannot parse), is reported with the name of the error's type,
+    and its counts are not compared. An interruption still stops the run.
     """
     try:
         count_tokens, description = load(model_id)
     except OSError:
         return {"model": model_id, "cached": False}
+    except Exception as error:
+        return {"model": model_id, "cached": True, "load_error": type(error).__name__}
     found = {**description, "cached": True}
     if description["vocabulary_size"] != reference["vocabulary_size"]:
         return found
@@ -294,6 +327,7 @@ def _provenance(
     manifest: SnapshotManifest,
     tokenizer: dict[str, Any],
     other_tokenizers: Sequence[dict[str, Any]],
+    output_dir: Path,
 ) -> dict[str, Any]:
     return {
         "script": SCRIPT_PATH,
@@ -302,12 +336,24 @@ def _provenance(
         "metadata_sha256": manifest.metadata_sha256,
         "config_sha256": hashlib.sha256(config_path.read_bytes()).hexdigest(),
         "git_commit": _git(project_root, "rev-parse", "HEAD"),
-        "git_uncommitted_changes": bool(
-            _git(project_root, "status", "--porcelain", "--untracked-files=no")
-        ),
+        "git_uncommitted_changes": _uncommitted_changes(project_root, output_dir),
         "tokenizer": tokenizer,
         "other_tokenizers": list(other_tokenizers),
     }
+
+
+def _uncommitted_changes(project_root: Path, output_dir: Path) -> bool:
+    """Tell whether a tracked file differs from the last commit, the outputs aside.
+
+    The files of ``output_dir`` do not count, so that a run that follows another one before
+    its outputs are committed still reads a clean tree. Untracked files never count.
+    """
+    exclusion: list[str] = []
+    if output_dir.is_relative_to(project_root):
+        relative = output_dir.relative_to(project_root).as_posix()
+        # With an exclusion alone, git looks at the whole work tree but that directory.
+        exclusion = ["--", f":(exclude,literal){relative}"]
+    return bool(_git(project_root, "status", "--porcelain", "--untracked-files=no", *exclusion))
 
 
 def _git(project_root: Path, *arguments: str) -> str | None:
@@ -806,6 +852,13 @@ def _second_model_note(facts: Mapping[str, Any], reference: Mapping[str, Any]) -
         return (
             f"- **Second model.** The tokenizer of `{name}` is not in the local cache, so D09's "
             "check under both tokenizers is still pending."
+        )
+    if "load_error" in facts:
+        return (
+            f"- **Second model.** The tokenizer of `{name}` is in the local cache but failed to "
+            f"load ({facts['load_error']}), so its token counts were not compared with those of "
+            f"`{first}`: that cache may be damaged, and D09's check under both tokenizers is "
+            "still pending."
         )
     if facts["vocabulary_size"] != reference["vocabulary_size"]:
         return (

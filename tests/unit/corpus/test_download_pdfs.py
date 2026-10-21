@@ -1352,13 +1352,45 @@ def test_cli_exits_with_1_when_a_thesis_is_unverifiable_and_says_why(
     assert f"{item_uuid(2)}  unverifiable (checksum_mismatch)" in out
     assert f"{item_uuid(4)}  downloaded" in out  # The run went on.
     assert re.search(r"^  unverifiable +2$", out, re.M)
+    # Each reason gets its own hint: --recheck-unverifiable can clear a stale listing only.
     assert re.search(
-        r"^2 theses are unverifiable \(checksum_mismatch 1, unsupported_checksum_algorithm 1\): "
-        r".*--recheck-unverifiable",
+        r"^1 theses are unverifiable \(checksum_mismatch 1\): .* run the command again with "
+        r"--recheck-unverifiable$",
         out,
         re.M,
     )
+    assert re.search(UNSUPPORTED_HINT, out, re.M)
     assert "theses failed" not in out
+
+
+UNSUPPORTED_HINT = (
+    r"^1 theses are unverifiable \(unsupported_checksum_algorithm 1\): the repository lists a "
+    r"checksum that this downloader cannot verify, so no run clears them, "
+    r"--recheck-unverifiable included, until the repository lists another one; check them by "
+    r"hand$"
+)
+
+
+@pytest.mark.parametrize("recheck", [False, True], ids=["plain", "recheck-unverifiable"])
+def test_cli_never_suggests_a_recheck_for_a_checksum_that_cannot_be_verified(
+    cli_root: Path, files: FakeFiles, capsys: pytest.CaptureFixture[str], recheck: bool
+) -> None:
+    write_test_snapshot(cli_root, [record(1), record(2)])
+    serve_kinds(files, ["unknown", "downloaded"])
+    arguments = ["--project-root", str(cli_root)]
+
+    code = main(
+        [*arguments, "--recheck-unverifiable"] if recheck else arguments,
+        repository=files,
+        clock=lambda: RUN_TIME,
+    )
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert f"{item_uuid(1)}  unverifiable (unsupported_checksum_algorithm)" in out
+    assert re.search(UNSUPPORTED_HINT, out, re.M)
+    assert "again with --recheck-unverifiable" not in out
+    assert ("download", file_uuid(1)) not in files.calls
 
 
 def test_cli_stops_when_the_same_wrong_file_comes_for_several_theses(

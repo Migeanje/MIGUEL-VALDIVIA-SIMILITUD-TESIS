@@ -175,7 +175,9 @@ How a run behaves:
   - retries the theses recorded as `error` or `integrity_error`;
   - fetches an `unverifiable` thesis again only once the repository lists its file
     differently, or with `--recheck-unverifiable`, which downloads each one again (twice at
-    most) even when its listing is unchanged.
+    most) even when its listing is unchanged. A thesis whose checksum cannot be verified
+    (`unsupported_checksum_algorithm`) stays `unverifiable`, that option included, until the
+    repository lists another checksum; check it by hand.
 - **Bounded.** `--limit N` takes the first N theses in snapshot order, and `--per-program N`
   the first N of each program.
 - **Guarded.** Only one run at a time may use a PDF directory. A run stops:
@@ -188,8 +190,9 @@ How a run behaves:
     one kept from an earlier run) neither counts nor breaks that run of theses; any other
     outcome breaks it, and an `unverifiable` thesis also breaks a run of failures.
 - **Exit code.** 0 when no thesis looked at needs anything more; 1 after a fatal error, when
-  a thesis failed (run the command again), or when a thesis is `unverifiable` (the last line
-  then says how many and why, for a person to check them); 130 after an interruption.
+  a thesis failed (run the command again), or when a thesis is `unverifiable` (the closing
+  lines then say how many and why, one line for stale listings and one for checksums that
+  cannot be verified, for a person to check them); 130 after an interruption.
 - **One snapshot.** A PDF manifest that belongs to another snapshot is refused before any
   request.
 

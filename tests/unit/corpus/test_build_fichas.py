@@ -1185,6 +1185,15 @@ def test_a_second_interruption_during_the_cleanup_keeps_the_message_of_the_moves
     assert capsys.readouterr().err.strip() == being_replaced(interim)
     with pytest.raises(ValueError, match="fichas.parquet differs from fichas_manifest.json"):
         load_fichas(interim)
+    # The fichas table had moved; the second Ctrl+C stopped the cleanup before the staged
+    # exclusions table, whose move the first one interrupted, was removed.
+    assert leftovers(interim) == ["exclusions.parquet.staged"]
+
+    # The next run stages that table anew, moves it into place, and leaves nothing behind.
+    monkeypatch.undo()
+    assert run(tmp_path) == 0
+    assert leftovers(interim) == []
+    assert load_fichas(interim) == ParquetTableStore().read(Ficha, interim / "fichas.parquet")
 
 
 def test_an_interruption_during_the_cleanup_of_a_complete_publish_left_nothing_half_written(

@@ -425,9 +425,40 @@ def test_a_staged_file_that_cannot_be_removed_does_not_hide_the_failure(
     assert path.read_bytes() == b"{}\n"
 
 
-def test_flushing_a_real_directory_never_fails(tmp_path: Path) -> None:
-    # Windows cannot open a directory, so there the step is skipped; elsewhere it flushes.
-    fsync_directory(tmp_path)
+def test_flushing_a_real_directory_never_fails_and_leaves_it_as_it_was(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "manifest.json").write_bytes(b"{}\n")
+    opened: list[int] = []
+    flushed: list[int] = []
+    closed: list[int] = []
+    real_open, real_fsync, real_close = os.open, os.fsync, os.close
+
+    def open_(path: Any, flags: int, *args: Any, **kwargs: Any) -> int:
+        descriptor = real_open(path, flags, *args, **kwargs)
+        opened.append(descriptor)
+        return descriptor
+
+    def fsync(descriptor: int) -> None:
+        flushed.append(descriptor)
+        real_fsync(descriptor)
+
+    def close(descriptor: int) -> None:
+        closed.append(descriptor)
+        real_close(descriptor)
+
+    monkeypatch.setattr(os, "open", open_)
+    monkeypatch.setattr(os, "fsync", fsync)
+    monkeypatch.setattr(os, "close", close)
+
+    assert fsync_directory(tmp_path) is None
+
+    # Windows cannot open a directory, so there the step is skipped; elsewhere the directory
+    # is opened, flushed and closed once.
+    assert len(opened) == (0 if sys.platform == "win32" else 1)
+    assert flushed == closed == opened
+    assert listing(tmp_path) == ["manifest.json"]
+    assert (tmp_path / "manifest.json").read_bytes() == b"{}\n"
 
 
 # --- Atomic byte writes, of one file or of several -----------------------------------------

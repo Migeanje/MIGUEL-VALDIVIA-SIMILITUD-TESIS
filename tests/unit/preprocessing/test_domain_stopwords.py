@@ -36,6 +36,7 @@ from thematic_redundancy.preprocessing.stopwords import (
     spacy_stopwords,
     stopword_candidates,
 )
+from thematic_redundancy.shared.filesystem import LOCK_FILE_NAME, exclusive_run
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 CURATED_LIST = PROJECT_ROOT / DOMAIN_STOPWORDS_FILE
@@ -541,6 +542,30 @@ def test_main_reports_the_documents_cleaned_per_second(
     assert code == 0
     assert "Full cleaner: 2 documents in 4.0 s (0.5 documents/s, " in out
     assert "model load 1.5 s" in out
+
+
+def test_main_while_another_run_writes_under_results_eda_writes_nothing(
+    cli_root: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_test_snapshot(cli_root, [record(1), record(2)])
+    eda_dir = cli_root.resolve() / "results" / "eda"
+    eda_dir.mkdir(parents=True)
+
+    with exclusive_run(eda_dir, RuntimeError("the other run")):
+        code = script.main(["--project-root", str(cli_root)])
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert captured.err == (
+        f"error: another run is writing the outputs in {eda_dir}; wait until it ends, then "
+        "run the script again\nerror: nothing was written\n"
+    )
+    assert "Wrote" not in captured.out
+    assert sorted(path.name for path in eda_dir.iterdir()) == [LOCK_FILE_NAME]
+    # Once the other run ends, a run writes; the lock stays beside the output directory.
+    assert script.main(["--project-root", str(cli_root)]) == 0
+    assert sorted(path.name for path in eda_dir.iterdir()) == sorted([LOCK_FILE_NAME, SNAPSHOT_ID])
+    assert [path.name for path in (eda_dir / SNAPSHOT_ID).iterdir()] == ["stopword_candidates.json"]
 
 
 # The candidates script: publishing the output durably

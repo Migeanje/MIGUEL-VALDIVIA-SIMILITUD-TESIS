@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -30,6 +31,7 @@ from thematic_redundancy.corpus.snapshot import (
     encode_records,
     write_snapshot,
 )
+from thematic_redundancy.shared.filesystem import LOCK_FILE_NAME, exclusive_run
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT_PATH = PROJECT_ROOT / "experiments" / "eda_metadata.py"
@@ -47,6 +49,8 @@ def load_script() -> ModuleType:
 
 
 script = load_script()
+REAL_GIT = script._git
+"""The script's own git helper, which the command-line fixture replaces with a stub."""
 
 MINILM = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 MPNET = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
@@ -315,6 +319,49 @@ def test_compare_tokenizer_compares_no_counts_when_the_vocabularies_differ() -> 
     assert "texts_compared" not in found
 
 
+DAMAGED_CACHE_ERRORS = [
+    pytest.param(json.JSONDecodeError("Expecting value", "", 0), id="file-not-json"),
+    pytest.param(KeyError("model_type"), id="key-missing-from-config"),
+    pytest.param(Exception("data did not match any variant"), id="tokenizers-library"),
+]
+"""Errors that a damaged cache raises while a tokenizer loads: the Rust tokenizers library
+raises a bare Exception for a ``tokenizer.json`` that it cannot parse."""
+
+
+def failing_loader(model: str, error: BaseException) -> Callable[[str], Any]:
+    """Return a loader whose tokenizer of ``model`` fails with ``error``; MiniLM's loads."""
+    known = stand_in_loader({MINILM: count_tokens, MPNET: count_tokens})
+
+    def load(model_id: str) -> Any:
+        if model_id == model:
+            raise error
+        return known(model_id)
+
+    return load
+
+
+def failed_to_load(error: BaseException) -> dict[str, Any]:
+    return {"model": MPNET, "cached": True, "load_error": type(error).__name__}
+
+
+@pytest.mark.parametrize("error", DAMAGED_CACHE_ERRORS)
+def test_compare_tokenizer_reports_a_tokenizer_that_fails_to_load_without_comparing(
+    error: Exception,
+) -> None:
+    counted = {"": 2, "uno dos": 4}
+
+    found = script.compare_tokenizer(MPNET, counted, failing_loader(MPNET, error), REFERENCE)
+
+    assert found == failed_to_load(error)
+
+
+def test_compare_tokenizer_lets_an_interruption_through() -> None:
+    loader = failing_loader(MPNET, KeyboardInterrupt())
+
+    with pytest.raises(KeyboardInterrupt):
+        script.compare_tokenizer(MPNET, {"": 2}, loader, REFERENCE)
+
+
 @pytest.mark.parametrize(
     ("other", "note"),
     [
@@ -352,6 +399,14 @@ def test_compare_tokenizer_compares_no_counts_when_the_vocabularies_differ() -> 
             "compared: that cache may be incomplete, and D09's check under both tokenizers is "
             "still pending.",
             id="other vocabulary",
+        ),
+        pytest.param(
+            {"model": MPNET, "cached": True, "load_error": "JSONDecodeError"},
+            "- **Second model.** The tokenizer of `paraphrase-multilingual-mpnet-base-v2` is in "
+            "the local cache but failed to load (JSONDecodeError), so its token counts were not "
+            "compared with those of `paraphrase-multilingual-MiniLM-L12-v2`: that cache may be "
+            "damaged, and D09's check under both tokenizers is still pending.",
+            id="failed to load",
         ),
     ],
 )
@@ -466,6 +521,22 @@ def test_main_reports_a_second_tokenizer_with_another_vocabulary_without_compari
     summary = (output_dir(cli_root) / "summary.md").read_text(encoding="utf-8")
     assert "has a vocabulary of 5 tokens, while that of" in summary
     assert "holds for both models" not in summary
+
+
+@pytest.mark.parametrize("error", DAMAGED_CACHE_ERRORS)
+def test_main_reports_a_second_tokenizer_that_fails_to_load_and_writes_the_outputs(
+    cli_root: Path, monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    write_test_snapshot(cli_root, THESES)
+    monkeypatch.setattr(script, "load_token_counter", failing_loader(MPNET, error))
+
+    code = script.main(["--project-root", str(cli_root)])
+
+    assert code == 0
+    written = json.loads((output_dir(cli_root) / "metadata_profile.json").read_bytes())
+    assert written["provenance"]["other_tokenizers"] == [failed_to_load(error)]
+    summary = (output_dir(cli_root) / "summary.md").read_text(encoding="utf-8")
+    assert f"failed to load ({type(error).__name__})" in summary
 
 
 # A whole run: the privacy gate and the writing, with stand-in outputs
@@ -682,6 +753,85 @@ def test_a_run_leaves_the_other_files_of_the_output_directory_alone(
 
     assert (output_dir(cli_root) / "stopword_candidates.json").read_bytes() == b"{}\n"
     assert listing(output_dir(cli_root)) == sorted([*OUTPUT_NAMES, "stopword_candidates.json"])
+
+
+def test_a_run_while_another_one_writes_under_results_eda_writes_nothing(
+    cli_root: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_test_snapshot(cli_root, RECORDS)
+    render_with(monkeypatch, CLEAN)
+    eda_dir = cli_root.resolve() / "results" / "eda"
+    eda_dir.mkdir(parents=True)
+
+    with exclusive_run(eda_dir, RuntimeError("the other run")):
+        code = script.main(["--project-root", str(cli_root)])
+
+    assert code == 1
+    assert capsys.readouterr().err == (
+        f"error: another run is writing the outputs in {eda_dir}; wait until it ends, then "
+        "run the script again\nerror: nothing was written\n"
+    )
+    assert listing(eda_dir) == [LOCK_FILE_NAME]
+    # Once the other run ends, a run writes; the lock stays beside the output directory.
+    assert script.main(["--project-root", str(cli_root)]) == 0
+    assert listing(eda_dir) == sorted([LOCK_FILE_NAME, SNAPSHOT_ID])
+    assert listing(output_dir(cli_root)) == sorted(OUTPUT_NAMES)
+
+
+def git(root: Path, *arguments: str) -> None:
+    """Run git in ``root`` as an isolated author, with hooks and signing off."""
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Synthetic Author",
+            "-c",
+            "user.email=author@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            *arguments,
+        ],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+
+
+def provenance_of_a_run(cli_root: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Run the script and return the provenance that it rendered its outputs from."""
+    rendered: dict[str, Any] = {}
+
+    def render(
+        profile: MetadataProfile, provenance: dict[str, Any], programs: Mapping[str, str]
+    ) -> dict[str, bytes]:
+        rendered.update(provenance)
+        return dict(CLEAN)
+
+    monkeypatch.setattr(script, "render_outputs", render)
+    assert script.main(["--project-root", str(cli_root)]) == 0
+    return rendered
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+def test_uncommitted_changes_leave_out_the_outputs_that_the_script_writes(
+    cli_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(script, "_git", REAL_GIT)
+    write_test_snapshot(cli_root, RECORDS)
+    (cli_root / "notes.md").write_text("Notes.\n", encoding="utf-8")
+    git(cli_root, "init", "--quiet")
+    provenance_of_a_run(cli_root, monkeypatch)  # Writes the outputs that the commit holds.
+    git(cli_root, "add", "config", "notes.md", "results")
+    git(cli_root, "commit", "--quiet", "--no-verify", "--message", "outputs of an earlier run")
+    for name in OUTPUT_NAMES:
+        (output_dir(cli_root) / name).write_bytes(b"outputs of a later run, not committed\n")
+
+    # A rerun before the outputs of the last one are committed reads a clean tree.
+    assert provenance_of_a_run(cli_root, monkeypatch)["git_uncommitted_changes"] is False
+
+    # Any other tracked change still counts.
+    (cli_root / "notes.md").write_text("Notes, edited.\n", encoding="utf-8")
+    assert provenance_of_a_run(cli_root, monkeypatch)["git_uncommitted_changes"] is True
 
 
 def test_searchable_text_reads_the_bytes_as_utf8_and_as_latin1() -> None:

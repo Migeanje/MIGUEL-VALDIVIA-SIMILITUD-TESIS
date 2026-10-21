@@ -42,13 +42,19 @@ def test_the_revision_is_the_snapshot_folder_of_the_cache(path: Path, expected: 
     assert snapshot_revision(path) == expected
 
 
+@pytest.mark.parametrize(
+    "lookup_raises", [False, True], ids=["lookup-returns-none", "lookup-raises"]
+)
 def test_a_cache_without_the_tokenizer_file_is_refused_before_any_load(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, lookup_raises: bool
 ) -> None:
     lookups = []
 
     def cached_file(model_id: str, file_name: str, **options: Any) -> None:
         lookups.append((model_id, file_name, options))
+        if lookup_raises:
+            # Newer transformers releases raise under local_files_only instead of returning None.
+            raise OSError(f"{model_id} does not appear to have a file named {file_name}")
 
     def from_pretrained(*_: Any, **__: Any) -> None:
         raise AssertionError("no tokenizer may be loaded")

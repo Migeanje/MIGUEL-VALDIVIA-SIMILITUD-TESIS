@@ -19,7 +19,9 @@ least :data:`MIN_DOCUMENT_RATIO` of the documents, with its document count and s
 provenance and the method. It holds aggregates only. Before it is written, the output is
 searched for every title, abstract, long abstract sentence, person's name and ORCID of the
 snapshot, and each candidate must be a single lemma; one failure stops the run with nothing
-written.
+written. While it writes, the script holds the lock ``results/eda/.lock``
+(:func:`exclusive_run`), which ``experiments/eda_metadata.py`` also takes, so two runs never
+stage the same file at once; a run that finds the lock taken writes nothing and exits with 1.
 
 ``config/stopwords_domain_es.txt`` is then curated by hand from the candidates.
 """
@@ -63,7 +65,7 @@ from thematic_redundancy.preprocessing.light_cleaner import clean_light, normali
 from thematic_redundancy.preprocessing.stopwords import stopword_candidates
 from thematic_redundancy.preprocessing.title_suffix import strip_title_suffix
 from thematic_redundancy.shared.config import load_config
-from thematic_redundancy.shared.filesystem import write_bytes_atomically
+from thematic_redundancy.shared.filesystem import exclusive_run, write_bytes_atomically
 
 CONFIG_PATH = Path("config") / "default.yaml"
 SCRIPT_PATH = "experiments/domain_stopwords.py"
@@ -77,6 +79,17 @@ distinct theses of snapshot ``20261002T224412Z``. Genre and boilerplate words li
 
 MAX_LEMMA_LENGTH = 40
 """Longest candidate that the output may hold; a longer one is no single lemma."""
+
+
+class OutputsInUseError(RuntimeError):
+    """Another run is writing under ``results/eda/``, the directory that this script locks."""
+
+
+def _in_use_message(eda_dir: Path) -> str:
+    return (
+        f"another run is writing the outputs in {eda_dir}; wait until it ends, then run the "
+        "script again"
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -131,8 +144,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"error: {problem}", file=sys.stderr)
         print("error: nothing was written", file=sys.stderr)
         return 1
-    output_path = paths.results_dir / OUTPUT_DIR_NAME / snapshot_id / OUTPUT_FILE_NAME
-    _write_atomically(output_path, content)
+    eda_dir = paths.results_dir / OUTPUT_DIR_NAME
+    output_path = eda_dir / snapshot_id / OUTPUT_FILE_NAME
+    try:
+        eda_dir.mkdir(parents=True, exist_ok=True)
+        with exclusive_run(eda_dir, OutputsInUseError(_in_use_message(eda_dir))):
+            _write_atomically(output_path, content)
+    except OutputsInUseError as error:
+        print(f"error: {error}", file=sys.stderr)
+        print("error: nothing was written", file=sys.stderr)
+        return 1
     name_words = _person_name_words(records)
     print(
         f"Ranked the lemmas of snapshot {snapshot_id}: {len(theses)} theses, "

@@ -26,7 +26,9 @@ A checksum in an algorithm that cannot be verified is also ``unverifiable``, wit
 download. Asking again would not change an ``unverifiable`` outcome, so it is not retried:
 a later run fetches the file again only once the repository lists it differently, or when
 ``recheck_unverifiable`` asks for it. It is not a failure either, but a person has to look
-at it, so the command line exits with 1 and names the reasons.
+at it, so the command line exits with 1 and names the reasons, with a hint for each kind:
+``recheck_unverifiable`` can clear a stale listing once the repository is fixed, but never a
+checksum that cannot be verified, which stays until the repository lists another one.
 
 The manifest ``pdfs/manifest.json`` is replaced atomically after every thesis, so an
 interrupted run loses nothing, and running the command again resumes it. A PDF found on
@@ -112,6 +114,10 @@ it, sends wrong files."""
 FAILURE_STATUSES: frozenset[PdfStatus] = frozenset({"error", "integrity_error"})
 """Statuses that may pass another time: a later run tries them again, and they count toward
 :data:`MAX_CONSECUTIVE_FAILURES`. Every other status stands."""
+
+UNSUPPORTED_ALGORITHM = "unsupported_checksum_algorithm"
+"""Reason of an ``unverifiable`` thesis whose listed checksum this downloader cannot verify;
+no download, ``--recheck-unverifiable`` included, can change it."""
 
 PDF_MAGIC = b"%PDF"
 """First bytes of every PDF file."""
@@ -464,7 +470,7 @@ class _ThesisFetcher:
             return PdfEntry(
                 **found,
                 status="unverifiable",
-                reason="unsupported_checksum_algorithm",
+                reason=UNSUPPORTED_ALGORITHM,
                 detail=f"the repository lists a {thesis.checksum.algorithm} checksum, "
                 "which this downloader cannot verify",
             )
@@ -852,7 +858,7 @@ def _parse_arguments(argv: Sequence[str] | None) -> argparse.Namespace:
         help=(
             "download again the theses recorded as unverifiable, at most twice each, even "
             "when the repository lists them as before (default: only once their listing "
-            "changes)"
+            "changes); a checksum that cannot be verified stays unverifiable"
         ),
     )
     return parser.parse_args(argv)
@@ -934,13 +940,20 @@ def main(
         for outcome in report.outcomes
         if outcome.entry.status == "unverifiable"
     )
-    if unverifiable:
-        reasons = ", ".join(f"{reason} {count}" for reason, count in sorted(unverifiable.items()))
+    stale = Counter({r: count for r, count in unverifiable.items() if r != UNSUPPORTED_ALGORITHM})
+    if stale:
+        reasons = ", ".join(f"{reason} {count}" for reason, count in sorted(stale.items()))
         print(
-            f"{unverifiable.total()} theses are unverifiable ({reasons}): their files differ "
-            "from the repository's listing the same way on every download, or it lists a "
-            "checksum that cannot be verified. Check them; once the repository is fixed, run "
-            "the command again with --recheck-unverifiable"
+            f"{stale.total()} theses are unverifiable ({reasons}): their files differ from the "
+            "repository's listing the same way on every download. Check them; once the "
+            "repository is fixed, run the command again with --recheck-unverifiable"
+        )
+    if unsupported := unverifiable[UNSUPPORTED_ALGORITHM]:
+        print(
+            f"{unsupported} theses are unverifiable ({UNSUPPORTED_ALGORITHM} {unsupported}): "
+            "the repository lists a checksum that this downloader cannot verify, so no run "
+            "clears them, --recheck-unverifiable included, until the repository lists another "
+            "one; check them by hand"
         )
     return 1 if failed or unverifiable else 0
 

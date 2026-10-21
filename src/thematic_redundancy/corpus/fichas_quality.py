@@ -349,13 +349,13 @@ def _advisor_orcid(
     with_orcid = valid = with_name = 0
     for ficha in included:
         metadata = by_uuid[ficha.item_uuid].metadata
-        orcids = [entry.get("value") for entry in metadata.get(ADVISOR_ORCID_KEY, ())]
+        orcids = _entry_values(metadata, ADVISOR_ORCID_KEY)
         orcid = next((value for value in orcids if isinstance(value, str) and value.strip()), None)
         with_orcid += orcid is not None
         is_valid = orcid is not None and normalize_orcid(orcid) is not None
         valid += is_valid
         # As the builder does, a name counts only when one of its values is not blank.
-        names = [entry.get("value") for entry in metadata.get(ADVISOR_KEY, ())]
+        names = _entry_values(metadata, ADVISOR_KEY)
         has_name = any(isinstance(value, str) and value.strip() for value in names)
         with_name += not is_valid and has_name
     return {
@@ -368,6 +368,19 @@ def _advisor_orcid(
         "distinct_advisor_codes": len({f.advisor_code for f in included if f.advisor_code}),
         "distinct_author_codes": len({code for f in included for code in f.author_codes}),
     }
+
+
+def _entry_values(metadata: Mapping[str, Any], key: str) -> list[Any]:
+    """Return the ``value`` of each entry of the field ``key``, in order.
+
+    A validated record holds a list of entries in each field. One built without validation
+    may hold ``None`` or entries that are not mappings; those give no value, so that the
+    report counts them as absent instead of failing.
+    """
+    entries = metadata.get(key)
+    if not isinstance(entries, list | tuple):
+        return []
+    return [entry.get("value") for entry in entries if isinstance(entry, Mapping)]
 
 
 def _lengths(texts: Iterable[str | None]) -> dict[str, Any]:

@@ -172,6 +172,8 @@ across sessions with care.
 | 2026-10-20 | all | Test suite (`pytest -q`), in the main tree after T26 | 2,710 tests, plus 3 skipped; 36 smoke tests deselected | 114.52 s (118 s for the whole command), 1 run | — | 0 | After T26: 56 new tests in `tests/unit/recommendation`, which pass alone in 13.16 s (19.1 s for the whole command) | plan T26 |
 | 2026-10-20 | all | Test suite (`pytest -q`), in the main tree after the statistics for T21, T30 and T32 | 2,840 tests, plus 3 skipped; 36 smoke tests deselected | 94.50 s (99 s for the whole command), 1 run | — | 0 | After the statistics: 130 new tests in `tests/unit/evaluation`, where all 251 pass in 6.49 s (19.2 s for the whole command) | plan T21 |
 | 2026-10-20 | all | Test suite (`pytest -q`), in the main tree after D31 (Fleiss' κ) | 2,858 tests, plus 3 skipped; 36 smoke tests deselected | 159.87 s (164 s for the whole command), 1 run | — | 0 | After D31: 18 new tests in `tests/unit/evaluation/test_rater_agreement.py`; all 269 evaluation tests pass in 4.67 s (13.4 s for the whole command); the 6 mutant runs took 2.89–3.27 s each | plan T21 |
+| 2026-10-20 | all | Test suite (`pytest -q`), in the main tree after T12c | 2,907 tests, plus 3 skipped; 36 smoke tests deselected | 150.90 s (157 s for the whole command), 1 run | — | 0 | After T12c: 49 new tests (D: 2,907 − 2,858) | plan T12c |
+| 2026-10-20 | T12c | Chunker smoke tests (`pytest -m smoke tests/smoke/test_chunker.py`), offline (`HF_HUB_OFFLINE=1`), in the main tree | the real chunk table and both tokenizers of the HF cache | 55.17 s (60 s for the whole command), 1 run | — | 0 | 6 passed; item 11 changed the manifest test, which the worktree could not run without `data/` | plan T12c |
 
 ### Notes on the ledger
 

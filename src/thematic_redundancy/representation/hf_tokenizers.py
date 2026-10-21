@@ -54,9 +54,14 @@ def load_token_counter(model_id: str) -> HuggingFaceTokenCounter:
 
     # Counting a text longer than the model's limit is the point here, so silence the warning.
     transformers_logging.set_verbosity_error()
-    found = cached_file(model_id, TOKENIZER_FILE_NAME, local_files_only=True)
+    missing = OSError(f"{TOKENIZER_FILE_NAME} of {model_id} is not in the local cache")
+    try:
+        found = cached_file(model_id, TOKENIZER_FILE_NAME, local_files_only=True)
+    except OSError:
+        # Some transformers releases raise instead of returning None.
+        raise missing from None
     if found is None:
-        raise OSError(f"{TOKENIZER_FILE_NAME} of {model_id} is not in the local cache")
+        raise missing
     path = Path(found)
     tokenizer = AutoTokenizer.from_pretrained(path.parent, local_files_only=True)
     identity = TokenizerIdentity(

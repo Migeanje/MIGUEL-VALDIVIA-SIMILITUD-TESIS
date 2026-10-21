@@ -584,6 +584,34 @@ def test_embeddings_without_their_chunk_manifest_are_refused(tmp_path: Path) -> 
     )
 
 
+@pytest.mark.parametrize("damage", ["truncated", "not-json", "refused-value"])
+def test_embeddings_whose_chunk_manifest_is_damaged_are_refused_without_quoting_it(
+    tmp_path: Path, damage: str
+) -> None:
+    write_chunk_outputs(interim(tmp_path))
+    build(tmp_path, FakeLoader())
+    path = interim(tmp_path) / CHUNKS_MANIFEST_FILE_NAME
+    content = path.read_bytes()
+    if damage == "truncated":
+        path.write_bytes(content[: len(content) // 2])
+    elif damage == "not-json":
+        path.write_bytes(f"{MARKER} ".encode() + content)
+    else:
+        path.write_bytes(content.replace(f'"{SNAPSHOT}"'.encode(), f'"{MARKER}"'.encode(), 1))
+    loaded = None
+
+    with pytest.raises(ValueError) as caught:
+        loaded = load_embeddings(interim(tmp_path), "org/small", store=UnreadStore())
+
+    assert loaded is None
+    assert str(caught.value) == (
+        f"{CHUNKS_MANIFEST_FILE_NAME} in {interim(tmp_path)} is damaged; run "
+        f"{CHUNKS_BUILD_COMMAND} again"
+    )
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__
+    assert MARKER not in str(caught.value)
+
+
 def test_embeddings_stay_valid_when_the_chunk_build_writes_the_same_table_again(
     tmp_path: Path,
 ) -> None:

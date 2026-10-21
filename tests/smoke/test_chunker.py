@@ -146,7 +146,11 @@ def test_the_manifest_records_the_sha256_of_each_tokenizer_file_on_disk(
 
     assert [tokenizer.model_id for tokenizer in tokenizers] == list(config.embedding.models)
     for tokenizer in tokenizers:
-        found = cached_file(tokenizer.model_id, TOKENIZER_FILE_NAME, local_files_only=True)
+        try:
+            found = cached_file(tokenizer.model_id, TOKENIZER_FILE_NAME, local_files_only=True)
+        except OSError:
+            # Some transformers releases raise instead of returning None.
+            found = None
         if found is None:
             pytest.skip("a configured tokenizer is not in the local Hugging Face cache")
         on_disk = hashlib.sha256(Path(found).read_bytes()).hexdigest()

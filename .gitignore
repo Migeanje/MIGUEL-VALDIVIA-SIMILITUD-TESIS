@@ -13,6 +13,9 @@ __pycache__/
 dist/
 build/
 
+# Run locks that the commands leave beside their output folders
+results/**/.lock
+
 # Tool caches
 .pytest_cache/
 .ruff_cache/
