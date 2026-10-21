@@ -1,0 +1,15 @@
+{
+  "npmi_floor": 0.13887054639924953,
+  "npmi_floor_quantile": 0.25,
+  "npmi_topics": 92,
+  "runs": [
+    "sentence-transformers--paraphrase-multilingual-mpnet-base-v2__hdbscan_mcs10__seed7",
+    "sentence-transformers--paraphrase-multilingual-mpnet-base-v2__hdbscan_mcs10__seed13",
+    "sentence-transformers--paraphrase-multilingual-mpnet-base-v2__hdbscan_mcs10__seed21",
+    "sentence-transformers--paraphrase-multilingual-mpnet-base-v2__hdbscan_mcs10__seed42",
+    "sentence-transformers--paraphrase-multilingual-mpnet-base-v2__hdbscan_mcs10__seed73"
+  ],
+  "size_cut": 15.0,
+  "size_quantile": 0.25,
+  "topics": 92
+}

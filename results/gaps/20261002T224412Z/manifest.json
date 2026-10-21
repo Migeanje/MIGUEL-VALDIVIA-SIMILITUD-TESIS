@@ -1,0 +1,92 @@
+{
+  "snapshot_id": "20261002T224412Z",
+  "git_commit": "1e8fe3abaf7fb94e0a2d4ff9249d886a2718df17",
+  "experiment": {
+    "manifest.json": "05f4182a0228303447645e8520f4080a8c657f9c8246ff638478cdc3bdd1d531",
+    "selection.json": "91a1cb16250001d12f1992be160fdbec53b13faaabad8bed2c89e277a4cd1bd8",
+    "topics.parquet": "295154351d79253913b5b7dccf82ccc83d2dec5a2d0454e94ae6b9accb70df62",
+    "labels.parquet": "e452fb550b701b7ae66d47fb5274581522b6045c847c1f7d750bcb8b3e435e56"
+  },
+  "inputs": {
+    "embeddings_manifest.json": "b6a6ec9598d73e6c04b3b13ee359791787242c1f2c4c42b4d9f47a2b56441e8e",
+    "tfidf_manifest.json": "6d20efa133488f05f837c6e0a946c679c3ab14bd6762c24f5569b9e6ba091af7",
+    "fichas_manifest.json": "cf5926cb80861de76c402c2c8d683b92f51ed0274eb17aab2366dc4aa0368512",
+    "metadata.jsonl": "d88839012df3e6f3bd7ee08f90c8e1f3b6588cf75386127dde52f429b4d9d932",
+    "default.yaml": "e77120585f75122418c5a07b367502a269a256884e69b897f44a55070737d9db",
+    "career_affinity.yaml": "a0e04a78139278ee658a5aef3380959d9dc217a6346db858cc3a4f5efa6befaa"
+  },
+  "winner": "C4",
+  "representation": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+  "provisional": true,
+  "runs": [
+    "sentence-transformers--paraphrase-multilingual-mpnet-base-v2__hdbscan_mcs10__seed7",
+    "sentence-transformers--paraphrase-multilingual-mpnet-base-v2__hdbscan_mcs10__seed13",
+    "sentence-transformers--paraphrase-multilingual-mpnet-base-v2__hdbscan_mcs10__seed21",
+    "sentence-transformers--paraphrase-multilingual-mpnet-base-v2__hdbscan_mcs10__seed42",
+    "sentence-transformers--paraphrase-multilingual-mpnet-base-v2__hdbscan_mcs10__seed73"
+  ],
+  "reference_run": "sentence-transformers--paraphrase-multilingual-mpnet-base-v2__hdbscan_mcs10__seed42",
+  "settings": {
+    "nearest_topics": 3,
+    "bridge_max_docs": 1,
+    "temporal_first_year": 2021,
+    "temporal_split_year": 2024,
+    "temporal_last_year": 2026,
+    "temporal_min_count": 3,
+    "stability_min_runs": 4,
+    "npmi_floor_quantile": 0.25,
+    "min_affinity": 1,
+    "present_min_count": 5,
+    "present_min_share": 0.05,
+    "rare_max_share": 0.0,
+    "min_decline": 0.025,
+    "stability_min_overlap": 0.5
+  },
+  "sensitivity": {
+    "literal_small_percent": 5,
+    "literal_distance_quantile": 0.75,
+    "rare_max_share": 0.01,
+    "min_overlap": 0.75
+  },
+  "counts": {
+    "documents": 744,
+    "runs": 5,
+    "gaps": 184,
+    "reference_gaps": 31,
+    "stable": 24,
+    "stable_a": 1,
+    "stable_b": 2,
+    "stable_c": 19,
+    "stable_d": 2
+  },
+  "versions": {
+    "python": "3.13.2",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "scikit-learn": "1.9.1",
+    "umap-learn": "0.5.12",
+    "numba": "0.68.0",
+    "pynndescent": "0.6.0",
+    "hdbscan": "0.8.44",
+    "bertopic": "0.17.4",
+    "pyarrow": "25.0.1"
+  },
+  "cpu": {
+    "processor": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+    "machine": "AMD64",
+    "system": "Windows 11",
+    "logical_cpus": 16
+  },
+  "files": {
+    "gaps.parquet": "a2e4c0a3e3d98b6f4e727e4f12f5fd724617f7c97d3dd9c52e40a4f759708f93",
+    "sensitivity.parquet": "5b0345629e932c42aacd29bef548b183e61852d5f827e6ca4a42d2abcfa6edb8",
+    "cuts.json": "34b2a1b43a5a5e50d3b08f119fe6e9fa08e2a9f3799c1dab68e195c2a8e2d17a",
+    "summary.md": "ad00db1ae10c87611a427d62cd9c59587cb3c64b3f16656d56a6e1c4e491ca19"
+  },
+  "data_files": {
+    "members.parquet": "06ead43fd9b71832491e02a973902fb787b4ccbf10f8796c6f472b434ac9ef38"
+  },
+  "started_at": "2026-10-21T22:58:15Z",
+  "finished_at": "2026-10-21T22:58:17Z",
+  "seconds": 1.479
+}
