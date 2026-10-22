@@ -234,7 +234,7 @@ def make_sample(
         if not sum(sizes.values()):
             continue
         population[program] = sizes
-        for status, quota in _allocate(sizes, per_program).items():
+        for status, quota in allocate(sizes, per_program).items():
             stratum_rng = random.Random(f"{seed}:{program}:{status}")
             drawn.extend(stratum_rng.sample(strata[status], quota))
     random.Random(f"{seed}:order").shuffle(drawn)
@@ -301,9 +301,12 @@ def _first_value(record: SnapshotRecord, key: str) -> str:
     return ""
 
 
-def _allocate(sizes: Mapping[LocatorStatus, int], per_program: int) -> dict[LocatorStatus, int]:
-    """Split ``per_program`` rows over the statuses in proportion to their sizes, by largest
-    remainder (ties go to the earlier status); a smaller program gives all its theses."""
+def allocate[K](sizes: Mapping[K, int], per_program: int) -> dict[K, int]:
+    """Split ``per_program`` rows over the keys of ``sizes`` (here, the statuses of a program)
+    in proportion to their sizes, by largest remainder (ties go to the earlier key); sizes that
+    hold no more than ``per_program`` give all they hold.
+
+    The pair sampler of the labeled set (:mod:`.pairs`) shares it."""
     total = sum(sizes.values())
     if total <= per_program:
         return dict(sizes)

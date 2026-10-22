@@ -490,6 +490,47 @@ Before anything is written, every tracked output passes the privacy guard of `co
 an output that holds a title, an abstract sentence, a person's name or an ORCID iD of the
 snapshot refuses the whole write, and the error names the file, never the string.
 
+## Labeled-set draw
+
+Draw the pairs of the labeled set (T20a, D34) once, with the values of `labeling` in
+`config/default.yaml`:
+
+```sh
+uv run python -m thematic_redundancy.labeling.draw_pairs --dry-run
+uv run python -m thematic_redundancy.labeling.draw_pairs
+```
+
+It uses the snapshot harvested last (`--snapshot-id` picks another one). It reads the included
+fichas, for each thesis's program; the document vectors of both embedding models and the TF-IDF
+matrix (`section_mean`), each checked against its manifest by its loader; and the snapshot's
+metadata, for the privacy guard. The universe is every pair of the included theses, within and
+across programs, each scored by the cosine under every representation and ranked by its
+percentile rank. The pilot (10 pairs, at least 2 per pool) is drawn first, then the labeled set:
+20 pairs from each embedding model's top 1 %, 20 from the TF-IDF top 1 %, 30 from the mid-range
+(a mean percentile rank of at least 0.90 and below 0.99) and 30 uniformly from the whole
+universe; no pair is drawn twice. The labeled set's high and mid-range pools spread their quota
+over the strata (each program, and the pairs between programs) in proportion to their
+candidates, with at least 2 for each stratum that has any. Every random choice derives from the
+seed, so the same configuration and inputs give the same draw. `--dry-run` computes and prints
+everything (the cuts, the composition of each pool by stratum, the pilot), applies the privacy
+guard and writes nothing; on snapshot `20261002T224412Z` it takes about 20 seconds. A draw happens
+once: a real run refuses an earlier draw of the snapshot and a dirty git tree outside
+`results/labeled_set/<snapshot_id>/draw/`, holds that directory's run lock and writes:
+
+| File | Content | In git |
+|---|---|---|
+| `data/labels/labeled_set/<snapshot_id>/pairs.parquet` (`labeling.records_dir`) | One row per drawn pair: its pair id (`P-` for the pilot, `L-` for the labeled set), phase, draw order, pool, source model, stratum, the two doc codes and programs, the score and percentile rank under each representation, and the known-duplicate flag (O09) | No |
+| `results/labeled_set/<snapshot_id>/draw/composition.parquet` | Each pool's candidates, quota and drawn pairs per stratum, for the pilot and the labeled set | Yes |
+| `results/labeled_set/<snapshot_id>/draw/ranges.parquet` | Each pool's score and percentile-rank ranges under each representation, and of the mean rank | Yes |
+| `results/labeled_set/<snapshot_id>/draw/cuts.json` | The pairs per stratum, each representation's top-1 % cut score with its strata, and the mid-range's candidates | Yes |
+| `results/labeled_set/<snapshot_id>/draw/summary.md` | The same, readable, with the score ranges and the values used | Yes |
+| `results/labeled_set/<snapshot_id>/draw/manifest.json` | Written last: snapshot, git commit, seed and values, the SHA-256 of every input and output, library versions, CPU and the times | Yes |
+
+Before anything is written, every tracked output passes the gap run's privacy guard with the
+theses' doc codes added: an output that holds a doc code, a title, an abstract sentence, a
+person's name or an ORCID iD of the snapshot refuses the whole write. To draw again, move the
+earlier draw's records away first.
+
 ## Checks
 
 ```sh
@@ -541,6 +582,10 @@ work offline with `HF_HUB_OFFLINE=1`.
   `summary.md` shows the topics' terms, which T19's records already hold. Which theses form each
   gap lives under the gitignored `data/processed/`. The run refuses to write any tracked
   output that holds a title, an abstract, a person's name or an ORCID iD from the snapshot.
+- The labeled-set draw's tracked records hold counts and scores only; which theses form each
+  drawn pair lives under the gitignored `data/labels/`, and the configuration refuses a records
+  directory outside `paths.data_dir`. The draw refuses to write any tracked output that holds a
+  doc code, a title, an abstract, a person's name or an ORCID iD from the snapshot.
 - `results/` holds aggregates only. The metadata profile refuses to write an output that holds a
   title, an abstract, a person's name or an ORCID from the snapshot.
 - Extracted page texts live only under the gitignored `data/interim/`. The extraction manifest

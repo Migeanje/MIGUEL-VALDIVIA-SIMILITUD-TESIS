@@ -67,6 +67,24 @@ def _resolve_inside(root: Path, location: Path, label: str) -> Path:
     return resolved
 
 
+def _resolve_inside_data_dir(
+    project_root: Path, data_dir: Path, location: Path, label: str, content: str
+) -> Path:
+    """Resolve ``location`` under the resolved ``project_root`` and refuse any result outside
+    the resolved ``data_dir``, which git ignores; ``label`` names the setting and ``content``
+    what its folder holds, in the error."""
+    root = Path(project_root).resolve()
+    resolved_data_dir = _resolve_inside(root, data_dir, "paths.data_dir")
+    resolved = _resolve_inside(root, location, label)
+    if not resolved.is_relative_to(resolved_data_dir):
+        raise ValueError(
+            f"{label} resolves to '{resolved}', outside paths.data_dir "
+            f"'{resolved_data_dir}', which git ignores; {content}, so no link under "
+            "paths.data_dir may lead it elsewhere"
+        )
+    return resolved
+
+
 def _require_relative_path(value: Path) -> Path:
     """Refuse an absolute or rooted path and ``..`` segments, judging the text alone.
 
@@ -239,16 +257,13 @@ class VerificationSampleConfig(_FrozenModel):
             ValueError: if it resolves outside the project root or outside ``data_dir``, for
                 example through a symbolic link that points elsewhere.
         """
-        root = Path(project_root).resolve()
-        resolved_data_dir = _resolve_inside(root, data_dir, "paths.data_dir")
-        resolved = _resolve_inside(root, self.workbook_dir, _WORKBOOK_DIR_SETTING)
-        if not resolved.is_relative_to(resolved_data_dir):
-            raise ValueError(
-                f"{_WORKBOOK_DIR_SETTING} resolves to '{resolved}', outside paths.data_dir "
-                f"'{resolved_data_dir}', which git ignores; the workbook holds thesis text, so "
-                "no link under paths.data_dir may lead it elsewhere"
-            )
-        return resolved
+        return _resolve_inside_data_dir(
+            project_root,
+            data_dir,
+            self.workbook_dir,
+            _WORKBOOK_DIR_SETTING,
+            "the workbook holds thesis text",
+        )
 
 
 class ObjectivesConfig(_FrozenModel):
@@ -799,6 +814,74 @@ class GapsConfig(_FrozenModel):
         return self
 
 
+_RECORDS_DIR_SETTING = "labeling.records_dir"
+LABELING_POOLS = 4
+"""The labeled set's pools (D34 (5)): SBERT-high, TF-IDF-high, mid-range and random."""
+
+
+class LabelingConfig(_FrozenModel):
+    """The labeled set's sampler (T20, D34): its seed, the pools' sizes, the share of the pairs
+    that forms a representation's top, the mid-range band of mean percentile ranks, the strata's
+    floor, the pilot, and where the drawn pairs go."""
+
+    seed: Seed
+    sbert_high_per_model: PositiveInt
+    """Pairs drawn from each embedding model's top (SBERT-high)."""
+    tfidf_high: PositiveInt
+    """Pairs drawn from the TF-IDF baseline's top (TF-IDF-high)."""
+    mid_range: PositiveInt
+    random: PositiveInt
+    """Pairs drawn uniformly from the whole universe, unstratified."""
+    top_share: Annotated[StrictFloat, Field(gt=0.0, lt=1.0)]
+    """A representation's top is this share of the pairs, rounded up, by rank."""
+    mid_low: Annotated[StrictFloat, Field(gt=0.0, lt=1.0)]
+    """The mid-range holds the pairs whose mean percentile rank is at least this..."""
+    mid_high: Annotated[StrictFloat, Field(gt=0.0, le=1.0)]
+    """...and below this."""
+    stratum_floor: NonNegativeInt
+    """Fewest pairs a high or mid-range pool draws from each stratum that has candidates."""
+    pilot_size: PositiveInt
+    pilot_floor: PositiveInt
+    """Fewest pilot pairs drawn from each pool."""
+    records_dir: Path
+    """Directory, relative to the project root, that holds one directory per snapshot with the
+    drawn pairs. They name theses, so it must lie inside ``paths.data_dir``."""
+
+    @field_validator("records_dir")
+    @classmethod
+    def _require_relative_without_parent_segments(cls, value: Path) -> Path:
+        return _require_relative_path(value)
+
+    @model_validator(mode="after")
+    def _require_a_band_and_a_pilot_that_hold(self) -> Self:
+        if self.mid_low >= self.mid_high:
+            raise ValueError(
+                f"labeling.mid_low ({self.mid_low}) must be below labeling.mid_high "
+                f"({self.mid_high})"
+            )
+        if self.pilot_floor * LABELING_POOLS > self.pilot_size:
+            raise ValueError(
+                f"labeling.pilot_size ({self.pilot_size}) cannot give each of the "
+                f"{LABELING_POOLS} pools labeling.pilot_floor ({self.pilot_floor}) pairs"
+            )
+        return self
+
+    def resolve_records_dir(self, project_root: Path, data_dir: Path) -> Path:
+        """Join ``records_dir`` onto ``project_root`` and return the absolute path, as
+        :meth:`VerificationSampleConfig.resolve_workbook_dir` does.
+
+        Raises:
+            ValueError: if it resolves outside the project root or outside ``data_dir``.
+        """
+        return _resolve_inside_data_dir(
+            project_root,
+            data_dir,
+            self.records_dir,
+            _RECORDS_DIR_SETTING,
+            "the drawn pairs name theses",
+        )
+
+
 class AppConfig(_FrozenModel):
     """Complete, validated configuration of one analysis run."""
 
@@ -821,6 +904,7 @@ class AppConfig(_FrozenModel):
     redundancy: RedundancyConfig
     recommender: RecommenderConfig
     gaps: GapsConfig
+    labeling: LabelingConfig
 
     @field_validator("seeds")
     @classmethod
@@ -848,6 +932,21 @@ class AppConfig(_FrozenModel):
                 f"objectives.verification_sample.workbook_dir ('{workbook_dir}') must lie inside "
                 f"paths.data_dir ('{self.paths.data_dir}'), which git ignores, because the "
                 "workbook holds thesis text"
+            )
+        labeling = self.labeling
+        if not labeling.records_dir.is_relative_to(self.paths.data_dir):
+            raise ValueError(
+                f"labeling.records_dir ('{labeling.records_dir}') must lie inside "
+                f"paths.data_dir ('{self.paths.data_dir}'), which git ignores, because the "
+                "drawn pairs name theses"
+            )
+        strata = len(self.snapshot.programs) + 1
+        smallest = min(labeling.sbert_high_per_model, labeling.tfidf_high, labeling.mid_range)
+        if labeling.stratum_floor * strata > smallest:
+            raise ValueError(
+                f"labeling.stratum_floor ({labeling.stratum_floor}) over the {strata} strata "
+                f"(each program and the pairs between programs) exceeds the smallest stratified "
+                f"pool ({smallest})"
             )
         return self
 

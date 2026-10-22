@@ -274,6 +274,93 @@ def test_stability_min_runs_above_the_seed_count_is_rejected(
         load_variant(tmp_path, raw_default)
 
 
+def test_the_labeling_block_declares_d34s_values() -> None:
+    labeling = load_config(DEFAULT_CONFIG_PATH).labeling
+
+    assert labeling.model_dump() == {
+        "seed": 20261021,
+        "sbert_high_per_model": 20,
+        "tfidf_high": 20,
+        "mid_range": 30,
+        "random": 30,
+        "top_share": 0.01,
+        "mid_low": 0.90,
+        "mid_high": 0.99,
+        "stratum_floor": 2,
+        "pilot_size": 10,
+        "pilot_floor": 2,
+        "records_dir": Path("data/labels/labeled_set"),
+    }
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"mid_low": 0.99}, "mid_low .* must be below labeling.mid_high"),
+        ({"mid_low": 0.995}, "mid_low .* must be below labeling.mid_high"),
+        ({"pilot_size": 7}, "cannot give each of the 4 pools labeling.pilot_floor"),
+        ({"pilot_floor": 3}, "cannot give each of the 4 pools labeling.pilot_floor"),
+        ({"stratum_floor": 4}, r"stratum_floor \(4\) over the 6 strata"),
+        ({"tfidf_high": 11}, "exceeds the smallest stratified pool"),
+        ({"records_dir": "results/labeled_set"}, "records_dir .* must lie inside paths.data_dir"),
+        ({"records_dir": "labels"}, "records_dir .* must lie inside paths.data_dir"),
+        ({"records_dir": "data/../results"}, "must not contain '..' segments"),
+        ({"records_dir": "/srv/labels"}, "must be relative to the project root"),
+    ],
+)
+def test_a_labeling_block_that_cannot_hold_is_rejected(
+    raw_default: dict[str, Any], tmp_path: Path, changes: dict[str, Any], message: str
+) -> None:
+    raw_default["labeling"].update(changes)
+
+    with pytest.raises(ValidationError, match=message):
+        load_variant(tmp_path, raw_default)
+
+
+def test_the_labeling_records_follow_a_custom_data_directory(
+    raw_default: dict[str, Any], tmp_path: Path
+) -> None:
+    raw_default["paths"]["data_dir"] = "corpus_data"
+    raw_default["objectives"]["verification_sample"]["workbook_dir"] = "corpus_data/check"
+    raw_default["labeling"]["records_dir"] = "corpus_data/pairs"
+
+    labeling = load_variant(tmp_path, raw_default).labeling
+
+    assert labeling.resolve_records_dir(tmp_path, Path("corpus_data")) == (
+        tmp_path.resolve() / "corpus_data" / "pairs"
+    )
+
+
+def test_the_labeling_records_resolution_refuses_a_link_that_leaves_the_data_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # As for the verification workbook: data/labels is made to lead to results/labels.
+    project_root = tmp_path.resolve() / "project"
+    linked = project_root / "data" / "labels"
+    resolve = Path.resolve
+
+    def resolve_through_a_link(path: Path, strict: bool = False) -> Path:
+        resolved = resolve(path, strict)
+        if resolved.is_relative_to(linked):
+            return project_root / "results" / "labels" / resolved.relative_to(linked)
+        return resolved
+
+    monkeypatch.setattr(Path, "resolve", resolve_through_a_link)
+    labeling = load_config(DEFAULT_CONFIG_PATH).labeling
+
+    with pytest.raises(ValueError, match="records_dir resolves to .*, outside paths.data_dir"):
+        labeling.resolve_records_dir(project_root, Path("data"))
+
+
+def test_the_labeling_block_is_outside_the_experiment_declaration(
+    raw_default: dict[str, Any], tmp_path: Path
+) -> None:
+    declared = load_config(DEFAULT_CONFIG_PATH).experiment_declaration_sha256()
+    raw_default["labeling"]["seed"] = 1
+
+    assert load_variant(tmp_path, raw_default).experiment_declaration_sha256() == declared
+
+
 def test_a_rare_share_not_below_the_present_share_is_rejected(
     raw_default: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -334,6 +421,7 @@ def test_kmeans_sweep_with_bounds_outside_the_contract_is_rejected(
         "experiment.acceptance.unexpected_key",
         "topic_map.unexpected_key",
         "topic_map.projection.unexpected_key",
+        "labeling.unexpected_key",
     ],
 )
 def test_unknown_keys_are_rejected(
@@ -454,8 +542,9 @@ def test_nested_paths_resolve_inside_the_project_root(
     raw_default: dict[str, Any], tmp_path: Path, nested_path: str
 ) -> None:
     raw_default["paths"]["data_dir"] = nested_path
-    # The verification workbook must stay inside data_dir, so it moves along.
+    # The verification workbook and the drawn pairs must stay inside data_dir, so they move along.
     raw_default["objectives"]["verification_sample"]["workbook_dir"] = f"{nested_path}/labels"
+    raw_default["labeling"]["records_dir"] = f"{nested_path}/labels/labeled_set"
 
     resolved = load_variant(tmp_path, raw_default).paths.resolve_against(tmp_path)
 
@@ -675,6 +764,21 @@ def test_harvest_settings_take_their_defaults_when_omitted(
         ("objectives.verification_sample.per_program", 0),
         ("objectives.verification_sample.seed", -1),
         ("objectives.verification_sample.seed", 2**32),
+        ("labeling.seed", -1),
+        ("labeling.seed", 2**32),
+        ("labeling.sbert_high_per_model", 0),
+        ("labeling.tfidf_high", 0),
+        ("labeling.mid_range", 0),
+        ("labeling.random", 0),
+        ("labeling.top_share", 0.0),
+        ("labeling.top_share", 1.0),
+        ("labeling.mid_low", 0.0),
+        ("labeling.mid_high", 1.1),
+        ("labeling.stratum_floor", -1),
+        ("labeling.pilot_size", 0),
+        ("labeling.pilot_floor", 0),
+        ("labeling.top_share", "0.01"),
+        ("labeling.random", 30.0),
     ],
 )
 def test_values_outside_the_contract_are_rejected(
@@ -865,6 +969,13 @@ def test_the_global_safe_loader_still_reads_plain_exponents_as_text() -> None:
         ("topic_map.projection.method", "pca"),
         ("topic_map.projection.n_neighbors", 2),
         ("topic_map.projection.min_dist", 1.0),
+        ("labeling.stratum_floor", 0),
+        ("labeling.stratum_floor", 3),
+        ("labeling.tfidf_high", 12),
+        ("labeling.mid_high", 1.0),
+        ("labeling.mid_low", 0.989),
+        ("labeling.pilot_size", 8),
+        ("labeling.records_dir", "data"),
     ],
 )
 def test_boundary_values_are_accepted(
@@ -930,6 +1041,7 @@ def test_the_verification_workbook_follows_a_custom_data_directory(
 ) -> None:
     raw_default["paths"]["data_dir"] = "corpus_data"
     raw_default["objectives"]["verification_sample"]["workbook_dir"] = "corpus_data/check"
+    raw_default["labeling"]["records_dir"] = "corpus_data/pairs"
 
     config = load_variant(tmp_path, raw_default)
 

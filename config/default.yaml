@@ -277,3 +277,30 @@ gaps:
   min_decline: 0.025
   # A gap is present in another run when one of its gaps overlaps it by this Jaccard or more.
   stability_min_overlap: 0.5
+
+# Labeled set (T20, D34), decided by the user on 2026-10-21 before any pair was drawn. The
+# universe is every pair of the included theses (D24), scored by the cosine of the document
+# vectors of each embedding model and of the TF-IDF baseline (their document_vector) and ranked
+# under each: a pair's percentile rank is its average rank in ascending order over the number of
+# pairs. A representation's top is the top_share of the pairs with the highest ranks, rounded
+# up. Drawn in this order, a pair never twice: the pilot, pilot_size pairs over the four pools
+# with at least pilot_floor each, unstratified; then sbert_high_per_model pairs from each
+# model's top, tfidf_high from the TF-IDF top, mid_range from the pairs whose mean percentile
+# rank is at least mid_low and below mid_high, and random from the whole universe, unstratified.
+# The high and mid-range pools spread their quota over the strata (each program, and the pairs
+# between programs) in proportion to their candidates, with at least stratum_floor per stratum
+# that has candidates. Every random choice derives from seed. The drawn pairs name theses, so
+# they go to records_dir/<snapshot_id>/, which must lie inside paths.data_dir (gitignored).
+labeling:
+  seed: 20261021
+  sbert_high_per_model: 20
+  tfidf_high: 20
+  mid_range: 30
+  random: 30
+  top_share: 0.01
+  mid_low: 0.90
+  mid_high: 0.99
+  stratum_floor: 2
+  pilot_size: 10
+  pilot_floor: 2
+  records_dir: data/labels/labeled_set
