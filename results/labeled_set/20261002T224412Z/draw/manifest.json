@@ -1,0 +1,79 @@
+{
+  "snapshot_id": "20261002T224412Z",
+  "git_commit": "2eb324944c4cb95cb73a28c6c6770eb7b29cc386",
+  "seed": 20261021,
+  "settings": {
+    "seed": 20261021,
+    "sbert_high_per_model": 20,
+    "tfidf_high": 20,
+    "mid_range": 30,
+    "random": 30,
+    "top_share": 0.01,
+    "mid_low": 0.9,
+    "mid_high": 0.99,
+    "stratum_floor": 2,
+    "pilot_size": 10,
+    "pilot_floor": 2,
+    "records_dir": "data/labels/labeled_set",
+    "embedding_document_vector": "section_mean",
+    "tfidf_document_vector": "section_mean"
+  },
+  "representations": [
+    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+    "tfidf"
+  ],
+  "inputs": {
+    "fichas_manifest.json": "cf5926cb80861de76c402c2c8d683b92f51ed0274eb17aab2366dc4aa0368512",
+    "embeddings_manifest.json": "b6a6ec9598d73e6c04b3b13ee359791787242c1f2c4c42b4d9f47a2b56441e8e",
+    "tfidf_manifest.json": "6d20efa133488f05f837c6e0a946c679c3ab14bd6762c24f5569b9e6ba091af7",
+    "metadata.jsonl": "d88839012df3e6f3bd7ee08f90c8e1f3b6588cf75386127dde52f429b4d9d932",
+    "default.yaml": "0dc4db287a812073d4ac38d8b60cfba4eb61e609e43b43373622ad2cc20810b6"
+  },
+  "counts": {
+    "theses": 744,
+    "pairs": 276396,
+    "top_count": 2764,
+    "mid_range_candidates": 17866,
+    "pilot": 10,
+    "labeled": 120,
+    "known_duplicates_listed": 1,
+    "known_duplicates_in_universe": 1,
+    "known_duplicates_drawn": 0
+  },
+  "versions": {
+    "python": "3.13.2",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "scikit-learn": "1.9.1",
+    "umap-learn": "0.5.12",
+    "numba": "0.68.0",
+    "pynndescent": "0.6.0",
+    "hdbscan": "0.8.44",
+    "bertopic": "0.17.4",
+    "pyarrow": "25.0.1"
+  },
+  "cpu": {
+    "processor": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+    "machine": "AMD64",
+    "system": "Windows 11",
+    "logical_cpus": 16
+  },
+  "files": {
+    "composition.parquet": "65dc0243fe8c69f0bd85460fa508c5fec8720920dd03cdba1b55cc4442fac030",
+    "ranges.parquet": "f3b2616d14dbb062cf8a43683ab289dc4a02f1d1636b8e530cd237f9e3ba79a1",
+    "cuts.json": "eeb7d1c81888e448a60723fc9fac567c090c20f777d193bc47e3c4f41a1a759d",
+    "summary.md": "88b774121692b29905ed3d1b20f27fffb84f74dd19a323d78c49ca957bf06132"
+  },
+  "data_files": {
+    "pairs.parquet": "48768eef65c26279a389ecaced896ccca0dca984275b477aa4011e8d879c5230"
+  },
+  "started_at": "2026-10-22T02:52:26Z",
+  "finished_at": "2026-10-22T02:52:32Z",
+  "seconds": 5.334,
+  "timings": {
+    "load": 1.502,
+    "universe": 3.563,
+    "draw": 0.249
+  }
+}

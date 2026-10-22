@@ -1,0 +1,68 @@
+{
+  "mid_range": {
+    "candidates": 17866,
+    "high": 0.99,
+    "low": 0.9,
+    "strata": {
+      "between": 3820,
+      "electronica": 108,
+      "industrial": 11150,
+      "mecanica": 1441,
+      "minas": 1181,
+      "sistemas": 166
+    }
+  },
+  "pairs": 276396,
+  "representations": [
+    {
+      "cut_score": 0.7350249774425617,
+      "highest_score": 0.9898142617904644,
+      "name": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+      "top_strata": {
+        "between": 364,
+        "electronica": 8,
+        "industrial": 1909,
+        "mecanica": 198,
+        "minas": 272,
+        "sistemas": 13
+      }
+    },
+    {
+      "cut_score": 0.7668107159016733,
+      "highest_score": 0.9905305787119918,
+      "name": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+      "top_strata": {
+        "between": 456,
+        "electronica": 3,
+        "industrial": 1765,
+        "mecanica": 271,
+        "minas": 259,
+        "sistemas": 10
+      }
+    },
+    {
+      "cut_score": 0.15117022807202948,
+      "highest_score": 0.9825795112995515,
+      "name": "tfidf",
+      "top_strata": {
+        "between": 551,
+        "electronica": 34,
+        "industrial": 1403,
+        "mecanica": 364,
+        "minas": 349,
+        "sistemas": 63
+      }
+    }
+  ],
+  "theses": 744,
+  "top_count": 2764,
+  "top_share": 0.01,
+  "universe_strata": {
+    "between": 192592,
+    "electronica": 1035,
+    "industrial": 57291,
+    "mecanica": 18145,
+    "minas": 5253,
+    "sistemas": 2080
+  }
+}
