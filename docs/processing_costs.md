@@ -211,6 +211,7 @@ across sessions with care.
 | 2026-10-27 | all | Test suite (`pytest -q`), in the t27 worktree after T27 | 3,198 tests, plus 3 skipped; 36 smoke tests deselected | 129.48 s (152 s for the whole command), 1 run | — | 0 | 110 new tests (D: 3,198 − 3,088); 3,196 passed, the 2 failures are the worktree's known `test_anonymize` cases | plan T27 |
 | 2026-10-27 | all | Test suite (`pytest -q`) run by the independent verifier of T27's runner | 3,196 passed and 2 environmental failures, plus 3 skipped; 36 smoke tests deselected | 109.75 s, 1 run | — | 0 | No blocker; 8 of 8 checks passed | plan T27 |
 | 2026-10-27 | all | Test suite (`pytest -q`), in the main tree after T27's runner | 3,438 passed, plus 3 skipped; 36 smoke tests deselected | 181.18 s (lock held 183.5 s), 1 run | — | 0 | After T27's runner: 110 new tests | plan T27 |
+| 2026-10-28 | T27 | Temporal split, real run (`run_temporal`), offline (`HF_HUB_OFFLINE=1`), at commit `b161016`, 1 run, after 1 dry run at the same commit; a second real run refused | Snapshot `20261002T224412Z`: 5 seeds, 458 theses fitted and 286 assigned per seed; the expert sample of 40 | 32.8 s in the run, 38 s for the whole command (dry run 64.7 s and 71 s) | — | 0 | Tracked records 36,162 B, gitignored 71,331 B; numbers identical to the dry runs | plan T27 |
 
 ### Notes on the ledger
 
