@@ -604,3 +604,6 @@ Scope, decisions, and the task checklist live in
 [`odd/tasks/thematic-redundancy-system.md`](odd/tasks/thematic-redundancy-system.md).
 Processing times, request counts, data sizes and costs are recorded in
 [`docs/processing_costs.md`](docs/processing_costs.md), one row per long or measured operation.
+The expert-session kit (the consent template, the session script, the questionnaire, the judges'
+form, the samples' specification and the data protocol, in Spanish) is in
+[`docs/expert_session/`](docs/expert_session/README.md).
