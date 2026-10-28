@@ -191,6 +191,14 @@ across sessions with care.
 | 2026-10-27 | T28a | Mutation check of the app (12 throwaway mutants against `tests/unit/app`) | `app/data.py`, `charts.py`, `ui.py`, `map_view.py` | 135.1 s | — | 0 | 12 of 12 killed, each file restored byte-identical | plan T28 (t28a) |
 | 2026-10-27 | all | Test suite (`pytest -q`) in the t28a worktree, through the lock | 3,166 tests, plus 3 skipped; 36 smoke tests deselected | 182.38 s (lock held 185.3 s) | — | 0 | 3,164 passed; the 2 failures are the worktree-junction cases of `test_anonymize.py`, which pass in the main repository; 78 new tests (D: 3,166 − 3,088) | plan T28 (t28a) |
 | 2026-10-27 | all | Test suite (`pytest -q`), in the main tree after T28a | 3,167 passed, 3 skipped; 36 smoke tests deselected | 105.63 s (lock held 108.7 s), 1 run | — | 0 | After T28a: 78 new tests (D: 3,167 − 3,089) | plan T28 |
+| 2026-10-27 | T28b | Read-only probe: T24a's gap objects rebuilt from the saved records and assessed again by T24's stability filter | Snapshot `20261002T224412Z`: 184 gap rows, 5,592 member rows, 5 runs | 22.7 s (lock held) | — | 0 | 184 of 184 reasons and 31 of 31 supports equal; 24 stable | plan T28 (t28b) |
+| 2026-10-27 | T28b | Real run of the query view: server health, AppTest with the real model on one invented proposal and two more, 12 real theses re-represented, offline, read only | The winner's 744 document vectors, T19's and T24a's records, the fichas, the mpnet model from the local cache | 122.3 s (lock held); first query 65.31 s cold, next 0.15 s and 0.20 s; model reload 10.94 s; index 0.24 s; represent median 0.754 s | — | 0 | Representation equal to the corpus (cosine 1 − 1.1e-14); 0 person strings; 0 proposal words in logs | plan T28 (t28b) |
+| 2026-10-27 | T28b | The same proposal submitted through the real server in headless Chrome (DevTools protocol) | As above | 63.9 s (lock held); first query 40.52 s cold, next 1.00 s and 1.01 s | — | 0 | The server's log holds none of the proposal's words; ports free after | plan T28 (t28b) |
+| 2026-10-27 | T28b | Mutation check of the query view (19 throwaway mutants) | `app/query.py`, `gap_supports.py`, `tables.py`, `query_view.py`, `ui.py` | 198.5 s, then 23.2 s | — | 0 | 17 of 19 killed, the 2 survivors killed after 2 tests were added | plan T28 (t28b) |
+| 2026-10-27 | all | Test suite (`pytest -q`) in the t28b worktree, through the lock | 3,200 tests, plus 3 skipped; 36 smoke tests deselected | 224.97 s (lock held 228.5 s) | — | 0 | 3,198 passed; the 2 failures are the worktree-junction cases of `test_anonymize.py`; 34 new tests (D: 3,200 − 3,088 − 78) | plan T28 (t28b) |
+| 2026-10-27 | all | Test suite (`pytest -q`) run by the independent verifier of T28b | 3,198 passed and 2 environmental failures, plus 3 skipped; 36 smoke tests deselected | 174.61 s, 1 run | — | 0 | No blocker; 8 of 8 checks passed | plan T28 (t28b) |
+| 2026-10-27 | T28b | The parent's real run of the app (port 8551, headless Chrome, an invented proposal), offline, read only | Snapshot `20261002T224412Z`: the three pages | health 3.2 s; map page 6.7 s; gaps page 1.0 s; first query 31.9 s | — | 0 | Five sections present; the proposal absent from the server log; ports freed | plan T28 (t28b) |
+| 2026-10-27 | all | Test suite (`pytest -q`), in the main tree after T28b | 3,201 passed, 3 skipped; 36 smoke tests deselected | 155.64 s (lock held 158.5 s), 1 run | — | 0 | After T28b: 34 new tests (D: 3,201 − 3,167) | plan T28 |
 
 ### Notes on the ledger
 
@@ -298,9 +306,9 @@ leaves out the 40-byte `refs/main` file.
   chunk-vector cache (2026-10-16, the user's run).
 - [x] T19 experiment grid: 417.0 s for the whole real run (389.2 s in the manifest), 371 clusterings, 2026-10-20, run by the parent.
 - [ ] T21 labeling workload: annotator hours per pair and in total.
-- [ ] T28 app latency: start-up time and time per query. Start-up measured with T28a
-  (2026-10-27): server healthy after 3.1 s (6.99 s on a colder run), the first page run 4.63 s;
-  the time per query waits for the query view.
+- [x] T28 app latency: server healthy after 3.1 to 3.6 s; the first query after a start 31.9 to
+  65.3 s (the model's cold load), later queries 0.15 to 0.20 s in process and about 1 s in the
+  browser (a 1-second polling floor) (2026-10-27, T28a and T28b).
 - [ ] T29 Docker build: build time and image size.
 - [x] Time the EDA script (T07): 17.4 s and 16.5 s for the whole command, offline, in the
   regeneration after T07a (2026-10-13).

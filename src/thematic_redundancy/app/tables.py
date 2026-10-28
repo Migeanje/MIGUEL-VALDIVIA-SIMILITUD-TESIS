@@ -11,6 +11,7 @@ import pandas as pd
 
 from thematic_redundancy.app import texts
 from thematic_redundancy.app.data import NOISE_TOPIC, GapRecords, StableGap, TopicMapView
+from thematic_redundancy.app.query import QueryAnswer, QueryIndex, nearby_stable_gaps
 from thematic_redundancy.topic_map.experiment import TopicRow
 
 LINK_COLUMN = "Repositorio"
@@ -28,6 +29,26 @@ GAP_TABLE_COLUMNS = (
     "Estabilidad",
 )
 MEMBER_TABLE_COLUMNS = ("Título", LINK_COLUMN, "Carrera", "Año", "Parte")
+SIMILAR_TABLE_COLUMNS = ("N.º", "Similitud", "Título", LINK_COLUMN, "Carrera", "Año", "Nota")
+ANTECEDENT_TABLE_COLUMNS = (
+    "N.º",
+    "Similitud con la propuesta",
+    "Parecido con los anteriores",
+    "Título",
+    LINK_COLUMN,
+    "Carrera",
+    "Año",
+)
+NEIGHBOR_TABLE_COLUMNS = ("Tema", "Similitud con la propuesta", "Tesis", "Términos principales")
+NEARBY_GAP_TABLE_COLUMNS = (
+    "N.º del vacío",
+    "Similitud con la propuesta",
+    "Regla",
+    "Temas",
+    "Descripción",
+)
+DECIMALS = 3
+"""Decimals of a cosine in a table."""
 
 
 def topic_table(topic_map: TopicMapView) -> pd.DataFrame:
@@ -93,3 +114,79 @@ def member_table(members: pd.DataFrame) -> pd.DataFrame:
         }
     )
     return table.reset_index(drop=True)
+
+
+def similar_table(answer: QueryAnswer, index: QueryIndex, theses: pd.DataFrame) -> pd.DataFrame:
+    """Return the proposal's most similar theses (T22), best first, with their cosine and no
+    verdict; a thesis known to be deposited twice (O09) carries a note."""
+    shown = theses.set_index("doc_code")
+    rows = []
+    for rank, neighbor in enumerate(answer.similar, start=1):
+        code = index.doc_codes[neighbor.index]
+        thesis = shown.loc[code]
+        note = texts.DUPLICATE_NOTE if code in index.settings.known_duplicates else ""
+        rows.append(
+            (
+                rank,
+                round(neighbor.score, DECIMALS),
+                thesis["title"],
+                thesis["url"],
+                thesis["program_name"],
+                thesis["year"],
+                note,
+            )
+        )
+    return pd.DataFrame(rows, columns=list(SIMILAR_TABLE_COLUMNS))
+
+
+def antecedent_table(answer: QueryAnswer, index: QueryIndex, theses: pd.DataFrame) -> pd.DataFrame:
+    """Return the antecedents (T26, MMR) in the order they were picked, with their similarity to
+    the proposal and to the ones picked before (none for the first)."""
+    shown = theses.set_index("doc_code")
+    rows = []
+    for antecedent in answer.antecedents.antecedents:
+        thesis = shown.loc[index.doc_codes[antecedent.index]]
+        redundancy = antecedent.redundancy
+        rows.append(
+            (
+                antecedent.rank,
+                round(antecedent.similarity, DECIMALS),
+                texts.NO_VALUE if redundancy is None else f"{redundancy:.{DECIMALS}f}",
+                thesis["title"],
+                thesis["url"],
+                thesis["program_name"],
+                thesis["year"],
+            )
+        )
+    return pd.DataFrame(rows, columns=list(ANTECEDENT_TABLE_COLUMNS))
+
+
+def neighbor_table(answer: QueryAnswer) -> pd.DataFrame:
+    """Return the neighbor topics (T26), nearest first, with their size and terms."""
+    rows = [
+        (
+            texts.topic_label(neighbor.topic, neighbor.terms),
+            round(neighbor.similarity, DECIMALS),
+            neighbor.size,
+            ", ".join(neighbor.terms),
+        )
+        for neighbor in answer.lines.neighbors
+    ]
+    return pd.DataFrame(rows, columns=list(NEIGHBOR_TABLE_COLUMNS))
+
+
+def nearby_gap_table(answer: QueryAnswer, index: QueryIndex, records: GapRecords) -> pd.DataFrame:
+    """Return the nearby stable gaps (T26), nearest first, by their number on the gaps page."""
+    rows = [
+        (
+            gap.number,
+            round(nearby.similarity, DECIMALS),
+            texts.RULE_LABELS.get(gap.row.rule, gap.row.rule),
+            texts.gap_topics_text(gap),
+            texts.gap_description(
+                gap, program_names=records.program_names, windows=records.windows
+            ),
+        )
+        for nearby, gap in nearby_stable_gaps(answer, index, records)
+    ]
+    return pd.DataFrame(rows, columns=list(NEARBY_GAP_TABLE_COLUMNS))

@@ -16,7 +16,11 @@ from thematic_redundancy.app.data import (
     StableGap,
     Winner,
 )
+from thematic_redundancy.app.query import ModelError, ProposalProblem
 from thematic_redundancy.corpus.snapshot import RAW_DIR_NAME
+from thematic_redundancy.recommendation.alternatives import AlternativeLines
+from thematic_redundancy.redundancy.saturation import SaturationQuartiles, TopicSaturation
+from thematic_redundancy.topic_map.assignment import AtypicalCheck
 
 APP_TITLE = "Redundancia temática y vacíos de investigación"
 APP_CAPTION = (
@@ -250,3 +254,127 @@ def affinity_text(gap: StableGap) -> str:
 def support_text(gap: StableGap, runs: int) -> str:
     """Return in how many of the seed runs the gap is present."""
     return f"En {gap.row.support} de {runs} corridas"
+
+
+# --- The query view ---------------------------------------------------------------------------
+
+QUERY_TITLE = "Consulta de una propuesta"
+QUERY_INTRO = (
+    "Escriba una propuesta de tesis para ubicarla en el mapa temático: el tema al que se "
+    "acerca, las tesis más parecidas, los antecedentes que conviene revisar y las líneas "
+    "alternativas cercanas, con los vacíos estables próximos."
+)
+QUERY_TITLE_FIELD = "Título de la propuesta (obligatorio)"
+QUERY_ABSTRACT_FIELD = "Resumen"
+QUERY_OBJECTIVES_FIELD = "Objetivos (general y específicos)"
+QUERY_FORM_NOTE = (
+    "Escriba el título y, al menos, el resumen o los objetivos, las mismas partes con las que se "
+    "representan las tesis del corpus. Lo que escriba se usa solo para esta consulta: no se "
+    "guarda en ningún archivo ni registro y se pierde al cerrar la sesión."
+)
+QUERY_SUBMIT = "Analizar la propuesta"
+QUERY_WAITING = "Complete el formulario y pulse «Analizar la propuesta» para ver los resultados."
+MISSING_FIELDS: dict[ProposalProblem, str] = {
+    "title": "Escriba el título de la propuesta.",
+    "body": "Escriba el resumen, los objetivos o ambos.",
+}
+QUERY_NOT_REPRESENTED = (
+    "No se pudo representar la propuesta: revise que el título, el resumen o los objetivos "
+    "contengan texto."
+)
+LOADING_MODEL = "Cargando el modelo de lenguaje desde la caché local…"
+QUERY_TOPIC_HEADER = "Tema asignado"
+QUERY_SIMILAR_HEADER = "Tesis más parecidas"
+QUERY_ANTECEDENTS_HEADER = "Antecedentes recomendados"
+QUERY_LINES_HEADER = "Líneas alternativas"
+PENDING_CALIBRATION = (
+    "Pendiente de calibración: la aplicación todavía no indica si una tesis es redundante con "
+    "la propuesta. El umbral de similitud que separa una tesis redundante de una solo parecida "
+    "se calibrará con el conjunto de pares etiquetados por los asesores. Mientras tanto, la "
+    "similitud del coseno (de −1 a 1; cuanto más alta, más parecida) solo ordena las tesis."
+)
+SIMILAR_CAPTION = "Las {count} tesis del corpus más parecidas a la propuesta, de mayor a menor."
+ANTECEDENTS_CAPTION = (
+    "Las {count} tesis elegidas por relevancia marginal máxima (MMR, λ = {mmr:g}): cada una se "
+    "parece a la propuesta y se diferencia de las ya elegidas, para cubrir más enfoques que la "
+    "lista anterior."
+)
+NEIGHBORS_HEADER = "Temas vecinos"
+NEIGHBORS_CAPTION = "Los {count} temas más cercanos a la propuesta, sin contar el tema asignado."
+NEARBY_GAPS_HEADER = "Vacíos estables cercanos"
+NEARBY_GAPS_CAPTION = (
+    "Los {count} vacíos de la página «Vacíos de investigación» más cercanos a la propuesta, "
+    "medidos desde el centro de su tema o, para un par de temas, desde el punto medio entre ambos."
+)
+NO_NEIGHBORS = "El mapa no tiene otros temas."
+NO_NEARBY_GAPS = "No hay vacíos estables en el mapa."
+DUPLICATE_NOTE = "Tesis depositada dos veces en el repositorio"
+
+
+def assignment_text(lines: AlternativeLines) -> str:
+    """Return the proposal's assigned topic, its similarity and its runner-up."""
+    assignment = lines.assignment
+    text = (
+        f"**{topic_label(assignment.topic, lines.assigned_terms)}** ({lines.assigned_size} "
+        f"tesis). Similitud con el centro del tema: {assignment.similarity:.3f}."
+    )
+    if assignment.runner_up is not None:
+        text += (
+            f" Segundo tema más cercano: Tema {assignment.runner_up} "
+            f"({assignment.runner_up_similarity:.3f})."
+        )
+    return text
+
+
+def assigned_terms_text(lines: AlternativeLines) -> str:
+    """Return every top term of the assigned topic."""
+    return f"Términos principales del tema: {', '.join(lines.assigned_terms)}."
+
+
+def atypical_text(check: AtypicalCheck) -> str:
+    """Return O06's flag in plain words: typical or atypical for its topic, with both values."""
+    rule = (
+        f"el umbral de {check.threshold:.3f}: el 95 % de las tesis del mapa tiene una similitud "
+        "con el centro de su propio tema igual o mayor (el percentil 5)"
+    )
+    if check.atypical:
+        return (
+            f"Propuesta atípica para su tema: su similitud con el centro del tema "
+            f"({check.similarity:.3f}) está por debajo de {rule}. La propuesta se aleja de este "
+            "tema más que casi todas las tesis del mapa del suyo, así que el tema asignado es "
+            "solo una referencia débil."
+        )
+    return (
+        f"Propuesta típica para su tema: su similitud con el centro del tema "
+        f"({check.similarity:.3f}) alcanza {rule}."
+    )
+
+
+def saturation_text(entry: TopicSaturation, quartiles: SaturationQuartiles) -> str:
+    """Return the assigned topic's saturation quartile in plain words."""
+    if entry.quartile is None or quartiles.cuts is None:
+        return (
+            "La saturación del tema no está definida: todos los temas del mapa tienen el mismo "
+            "número de tesis."
+        )
+    first, second, third = (f"{cut:g}" for cut in quartiles.cuts)
+    return (
+        f"Saturación del tema: cuartil {entry.level} de 4 por número de tesis ({entry.size} "
+        f"tesis; los cortes entre cuartiles son {first}, {second} y {third} tesis). Q1 reúne los "
+        "temas con menos tesis y Q4 los más trabajados."
+    )
+
+
+def model_message(error: ModelError) -> str:
+    """Return what the user reads when the model cannot represent a proposal."""
+    if error.problem == "missing":
+        return (
+            f"El modelo «{error.model_id}» no está en la caché local de modelos de este equipo "
+            "(Hugging Face). La aplicación no descarga nada: copie el modelo a la caché local o "
+            "descárguelo una vez con conexión a Internet."
+        )
+    return (
+        f"El modelo «{error.model_id}» de la caché local no es la versión que representó las "
+        "tesis del corpus, así que sus resultados no serían comparables. Instale la versión "
+        "registrada en los manifiestos de los embeddings y de los fragmentos."
+    )

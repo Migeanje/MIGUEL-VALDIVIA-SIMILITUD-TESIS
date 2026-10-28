@@ -2,14 +2,18 @@
 Spanish error messages and the provisional notice.
 
 Streamlit's cache wraps the data layer's loaders and nothing else: it holds their results in
-the server's memory, keyed by the project root and the snapshot, and never on disk. Nothing a
-user types or selects is kept beyond the widgets of their session. A loader whose artifact
-cannot be used shows its Spanish message (:func:`thematic_redundancy.app.texts.error_message`)
-and stops the page, and the server's log gets the English detail; no traceback reaches the
-page.
+the server's memory, keyed by the project root and the snapshot, and never on disk; the query
+view's index and the language model are cached resources, shared read-only by every session.
+A proposal's answer is never cached: nothing a user types or selects is kept beyond the widgets
+of their session, and no proposal text reaches the server's log. A loader whose artifact or
+model cannot be used shows its Spanish message
+(:func:`thematic_redundancy.app.texts.error_message`,
+:func:`thematic_redundancy.app.texts.model_message`) and stops the page, and the server's log
+gets the English detail, which names files and models only; no traceback reaches the page.
 """
 
 import logging
+import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -17,7 +21,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from thematic_redundancy.app import data, texts
+from thematic_redundancy.app import data, query, texts
 from thematic_redundancy.app.data import (
     AppSettings,
     AppSources,
@@ -27,6 +31,7 @@ from thematic_redundancy.app.data import (
     SettingsError,
     TopicMapView,
 )
+from thematic_redundancy.app.query import ModelError, ProposalEncoder, QueryIndex
 from thematic_redundancy.app.tables import LINK_COLUMN
 
 LOGGER = logging.getLogger(__name__)
@@ -70,6 +75,21 @@ def _gap_records(root: str, snapshot_id: str | None) -> GapRecords:
     return data.load_gaps(sources, experiment, _theses(root, snapshot_id))
 
 
+@st.cache_resource(show_spinner=texts.LOADING)
+def _query_index(root: str, snapshot_id: str | None) -> QueryIndex:
+    sources, experiment = _sources(root, snapshot_id), _experiment(root, snapshot_id)
+    return query.load_query_index(
+        sources, experiment, _topic_map(root, snapshot_id), _gap_records(root, snapshot_id)
+    )
+
+
+@st.cache_resource(show_spinner=texts.LOADING_MODEL)
+def _proposal_encoder(root: str, snapshot_id: str | None) -> ProposalEncoder:
+    # The model comes from the local cache only; nothing is downloaded.
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    return query.load_proposal_encoder(_sources(root, snapshot_id), _query_index(root, snapshot_id))
+
+
 def _loaded[T](loader: Callable[[str, str | None], T]) -> T:
     """Return what ``loader`` reads for the app's settings, or show why it cannot and stop."""
     chosen = settings()
@@ -78,6 +98,10 @@ def _loaded[T](loader: Callable[[str, str | None], T]) -> T:
     except ArtifactError as error:
         LOGGER.warning("a saved artifact cannot be used: %s", error)
         st.error(texts.error_message(error))
+        st.stop()
+    except ModelError as error:
+        LOGGER.warning("the language model cannot be used: %s", error)
+        st.error(texts.model_message(error))
         st.stop()
 
 
@@ -94,6 +118,21 @@ def topic_map() -> TopicMapView:
 def gap_records() -> GapRecords:
     """Return the gap run's stable gaps with their theses, or stop the page."""
     return _loaded(_gap_records)
+
+
+def theses() -> pd.DataFrame:
+    """Return the display fields of the included theses, or stop the page."""
+    return _loaded(_theses)
+
+
+def query_index() -> QueryIndex:
+    """Return the saved artifacts that a proposal is compared with, or stop the page."""
+    return _loaded(_query_index)
+
+
+def proposal_encoder() -> ProposalEncoder:
+    """Return the winner's model and the corpus's tokenizers, loaded once, or stop the page."""
+    return _loaded(_proposal_encoder)
 
 
 def provisional_notice(loaded: Experiment) -> None:

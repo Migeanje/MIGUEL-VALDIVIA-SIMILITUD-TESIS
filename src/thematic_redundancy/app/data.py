@@ -230,6 +230,8 @@ class Experiment:
     """The SHA-256 of T19's ``manifest.json``, which the gap run records."""
     fichas_manifest_sha256: str
     """The SHA-256 of the fichas manifest that T19 ran on."""
+    inputs: Mapping[str, str]
+    """The SHA-256 of each input manifest that T19 ran on, by name (the embeddings' among them)."""
     files: Mapping[str, str]
     """The SHA-256 of T19's tracked records, by name."""
     data_files: Mapping[str, str]
@@ -287,6 +289,7 @@ def load_experiment(sources: AppSources) -> Experiment:
         map_seed=map_seed,
         manifest_sha256=hashlib.sha256(content).hexdigest(),
         fichas_manifest_sha256=fichas_sha256,
+        inputs=dict(manifest.inputs),
         files=dict(manifest.files),
         data_files=dict(manifest.data_files),
     )
@@ -421,13 +424,24 @@ class GapRecords:
     """The theses of the stable gaps (:data:`MEMBER_COLUMNS`)."""
 
 
-def load_gaps(sources: AppSources, experiment: Experiment, theses: pd.DataFrame) -> GapRecords:
-    """Return the stable gaps of the gap run's reference run, in its order, with their topics'
-    terms and the display fields of their theses, each record checked against its manifest.
+@dataclass(frozen=True)
+class SavedGapRun:
+    """The gap run's records as saved: its manifest, every run's gap rows and their members."""
+
+    manifest: GapManifest
+    rows: tuple[GapRow, ...]
+    members: tuple[MemberRow, ...]
+    gaps_path: Path
+    """Where ``gaps.parquet`` is, which an error about its rows names."""
+
+
+def read_gap_run(sources: AppSources, experiment: Experiment) -> SavedGapRun:
+    """Return the gap run's manifest, rows and members, each checked against the manifest, which
+    must name the snapshot and T19's manifest read in ``experiment``.
 
     Raises:
-        ArtifactError: if a record is missing or differs from its manifest, the gap run read
-            another T19 record or snapshot, or a gap names a topic or a thesis that is unknown.
+        ArtifactError: if a record is missing or differs from its manifest, or the gap run read
+            another T19 record or snapshot.
     """
     results = sources.gaps_results
     manifest_path = results / gap_store.MANIFEST_FILE_NAME
@@ -447,6 +461,30 @@ def load_gaps(sources: AppSources, experiment: Experiment, theses: pd.DataFrame)
             command=GAPS_COMMAND,
             detail="the gaps were computed on another T19 record",
         )
+    gaps_path = results / gap_store.GAPS_FILE_NAME
+    rows = _verified_table(GapRow, gaps_path, manifest.files, GAPS_COMMAND)
+    members_path = sources.gaps_processed / gap_store.MEMBERS_FILE_NAME
+    member_rows = _verified_table(MemberRow, members_path, manifest.data_files, GAPS_COMMAND)
+    return SavedGapRun(manifest=manifest, rows=rows, members=member_rows, gaps_path=gaps_path)
+
+
+def load_gaps(sources: AppSources, experiment: Experiment, theses: pd.DataFrame) -> GapRecords:
+    """Return the stable gaps of the gap run's reference run, in its order, with their topics'
+    terms and the display fields of their theses, each record checked against its manifest.
+
+    Raises:
+        ArtifactError: if a record is missing or differs from its manifest, the gap run read
+            another T19 record or snapshot, or a gap names a topic or a thesis that is unknown.
+    """
+    saved = read_gap_run(sources, experiment)
+    manifest, rows, member_rows, gaps_path = (
+        saved.manifest,
+        saved.rows,
+        saved.members,
+        saved.gaps_path,
+    )
+    manifest_path = gaps_path.parent / gap_store.MANIFEST_FILE_NAME
+    members_path = sources.gaps_processed / gap_store.MEMBERS_FILE_NAME
     try:
         settings = manifest.settings
         min_runs = int(settings["stability_min_runs"])
@@ -456,10 +494,6 @@ def load_gaps(sources: AppSources, experiment: Experiment, theses: pd.DataFrame)
         )
     except (KeyError, TypeError, ValueError) as error:
         _fail("invalid", manifest_path, command=GAPS_COMMAND, detail=_kind(error))
-    gaps_path = results / gap_store.GAPS_FILE_NAME
-    rows = _verified_table(GapRow, gaps_path, manifest.files, GAPS_COMMAND)
-    members_path = sources.gaps_processed / gap_store.MEMBERS_FILE_NAME
-    member_rows = _verified_table(MemberRow, members_path, manifest.data_files, GAPS_COMMAND)
     reference = manifest.reference_run
     topics = {topic.topic: topic for topic in _run_topics(sources, experiment, reference)}
     stable = [row for row in rows if row.run_id == reference and row.reference and row.stable]
@@ -551,10 +585,20 @@ def filter_gaps(
 # --- Helpers ----------------------------------------------------------------------------------
 
 
+def read_topic_rows(sources: AppSources, experiment: Experiment) -> tuple[TopicRow, ...]:
+    """Return every topic of T19's final runs (``topics.parquet``), checked against T19's
+    manifest.
+
+    Raises:
+        ArtifactError: if the table is missing or differs from the manifest.
+    """
+    path = sources.t19_results / t19_store.TOPICS_FILE_NAME
+    return _verified_table(TopicRow, path, experiment.files, T19_COMMAND)
+
+
 def _run_topics(sources: AppSources, experiment: Experiment, run: str) -> tuple[TopicRow, ...]:
     """Return the topics of the run ``run`` in ascending order, checked against T19's manifest."""
-    path = sources.t19_results / t19_store.TOPICS_FILE_NAME
-    rows = _verified_table(TopicRow, path, experiment.files, T19_COMMAND)
+    rows = read_topic_rows(sources, experiment)
     return tuple(sorted((row for row in rows if row.run_id == run), key=lambda row: row.topic))
 
 

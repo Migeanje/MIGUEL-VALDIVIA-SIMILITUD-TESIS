@@ -31,5 +31,6 @@ class PageSpec:
 
 PAGES = (
     PageSpec("map_view.py", texts.MAP_TITLE, "mapa", ":material/scatter_plot:"),
+    PageSpec("query_view.py", texts.QUERY_TITLE, "consulta", ":material/search:"),
     PageSpec("gaps_view.py", texts.GAPS_TITLE, "vacios", ":material/travel_explore:"),
 )

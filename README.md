@@ -533,8 +533,8 @@ earlier draw's records away first.
 
 ## Streamlit app
 
-Browse the topic map and the research gaps of a snapshot (T28), in Spanish (O01). Start it from
-the project root:
+Browse the topic map and the research gaps of a snapshot, and query a thesis proposal against
+them (T28), in Spanish (O01). Start it from the project root:
 
 ```sh
 uv run streamlit run src/thematic_redundancy/app/main.py
@@ -544,12 +544,14 @@ uv run streamlit run src/thematic_redundancy/app/main.py -- --snapshot-id 202610
 The arguments after `--` are the app's own: `--project-root` (the folder that holds
 `config/default.yaml`; default: the current directory) and `--snapshot-id` (default: the snapshot
 harvested last). Streamlit reads `.streamlit/config.toml` from the folder it starts in, so start
-it from the project root. The app serves `http://localhost:8501/` (the map) and
-`http://localhost:8501/vacios` (the gaps); `--server.port` picks another port.
+it from the project root. The app serves `http://localhost:8501/` (the map),
+`http://localhost:8501/consulta` (the query) and `http://localhost:8501/vacios` (the gaps);
+`--server.port` picks another port.
 
 | Page | What it shows |
 |---|---|
 | Mapa temático | T19's 2-D UMAP map of the winner's representative run (`map.parquet`), each thesis colored by topic, with filters by topic and by program and a switch for the theses without a topic (HDBSCAN's noise); the hover gives a thesis's title, program and year. Below, each topic's size and top terms, and the theses shown with their repository links |
+| Consulta de una propuesta | A form for one proposal: its title (required), and its abstract, its objectives or both, the sections that represent a thesis (D09). On submission: its assigned topic (T23, nearest centroid) with its top terms, whether it is atypical for that topic (O06: below the 5th percentile of the map's member-to-own-centroid similarities) and the topic's saturation quartile; its 10 most similar theses by cosine (T22), with no redundancy verdict and a "pendiente de calibración" note; its 5 antecedents by MMR (T26, λ 0.7); and its alternative lines (T26): the 3 neighbor topics and the 3 nearest stable gaps of the gaps page. Each thesis links to the repository |
 | Vacíos de investigación | T24a's stable gaps of the reference run, filtered by rule (a) to (d), by program (the programs of a gap's theses, and rule (c)'s source and target) and by rule (c)'s high-confidence group (affinity 2); each with its topics and their terms, its counts and shares, programs, years and stability. Below, the theses of the chosen gap with their repository links |
 
 It reads, and never writes, the saved artifacts of the snapshot, each checked against the SHA-256
@@ -562,14 +564,28 @@ it again, and the page stops there. A notice says that the results are provision
 winner waits for T22's labeled-set F1. The results are cached in the server's memory only; the
 sidebar's button reloads them after a new run.
 
+The query page also reads the winner's document vectors (`load_embeddings`; their manifest must be
+the one T19 ran on) and the chunk manifest, and loads the winner's model and every configured
+tokenizer from the local Hugging Face cache only (`HF_HUB_OFFLINE=1`), once per server; the model
+must be the revision that embedded the corpus, and each tokenizer the one that chunked it, or the
+page says so in Spanish. A proposal is represented exactly as a thesis: light cleaning, the
+title's place and year suffix removed, sentence-aligned chunks (T13), the model's chunk vectors
+pooled into the `section_mean` document vector (T14). The centroids, O06's threshold and the
+saturation quartiles are computed from the saved vectors and labels with T23's functions, and
+the stable gaps that T26 needs are rebuilt from the gap run's records and checked again with
+T24's stability filter, so the query page needs no artifact of its own.
+
 What the app does not do:
 
-- It keeps no query and writes no file: what a user selects lives only in their session.
+- It keeps no query and writes no file: a proposal is used for its answer only, is never
+  cached, written or logged, and what a user types or selects lives only in their session; the
+  chunk vectors of a proposal are not added to the vector cache.
 - It shows no author or advisor: of each thesis it loads only the doc code, title, program, year
   and repository link, never the person codes, abstract, objectives or keywords.
 - It sends no usage statistics (`browser.gatherUsageStats = false`), and the server runs headless
   and listens on `localhost` only; pass `--server.address` to serve another interface.
-- It shows no redundancy verdict yet: the similarity threshold τ waits for T22.
+- It shows no redundancy verdict yet: the query page ranks the theses by similarity, marked
+  "pendiente de calibración", until T22 calibrates the threshold τ on the labeled set.
 
 ## Checks
 

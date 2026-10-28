@@ -4,12 +4,8 @@ Each test runs the real entry point, ``app/main.py``, with its arguments in ``sy
 ``streamlit run main.py -- --project-root ... --snapshot-id ...`` passes them.
 """
 
-import builtins
-import io
 import json
-import os
 import tomllib
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +17,9 @@ from app_artifacts import (
     STABLE_GAPS,
     THESES,
     Project,
+    WriteRecorder,
     files_under,
+    rendered_text,
 )
 from streamlit.testing.v1 import AppTest
 
@@ -50,25 +48,6 @@ def on_gaps_page(app: AppTest) -> AppTest:
     return app
 
 
-def nodes(node: Any) -> Iterator[Any]:
-    yield node
-    for child in getattr(node, "children", {}).values():
-        yield from nodes(child)
-
-
-def rendered_text(app: AppTest) -> str:
-    """Return everything the app rendered: each element's message, every table's cells and
-    every chart's specification."""
-    parts = []
-    for element in nodes(app._tree):
-        proto = getattr(element, "proto", None)
-        if proto is not None:
-            parts.append(str(proto))
-    parts += [frame.value.to_csv() for frame in app.dataframe]
-    parts += [chart.proto.spec for chart in app.get("plotly_chart")]
-    return "\n".join(parts)
-
-
 def chart_points(app: AppTest) -> dict[str, int]:
     """Return the points of each trace of the page's map, by trace name."""
     (chart,) = app.get("plotly_chart")
@@ -90,9 +69,10 @@ def messages(elements: Any) -> list[str]:
 # --- Navigation -------------------------------------------------------------------------------
 
 
-def test_the_registry_lists_the_map_and_gaps_pages_in_spanish() -> None:
+def test_the_registry_lists_the_map_query_and_gaps_pages_in_spanish() -> None:
     assert [(page.script, page.title, page.url_path) for page in PAGES] == [
         (MAP_PAGE, "Mapa temático", "mapa"),
+        ("query_view.py", "Consulta de una propuesta", "consulta"),
         (GAPS_PAGE, "Vacíos de investigación", "vacios"),
     ]
     assert all((APP_DIR / page.script).is_file() for page in PAGES)
@@ -271,30 +251,6 @@ def test_an_argument_that_is_not_valid_is_reported_in_spanish(
     assert not app.exception
     (error,) = messages(app.error)
     assert error.startswith("Los argumentos de la aplicación no son válidos")
-
-
-class WriteRecorder:
-    """Record every file that Python opens for writing while it is installed."""
-
-    def __init__(self) -> None:
-        self.paths: list[str] = []
-
-    def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        original_open, original_os_open = builtins.open, os.open
-
-        def recording_open(file: Any, mode: str = "r", *args: Any, **kwargs: Any) -> Any:
-            if any(flag in mode for flag in "wax+"):
-                self.paths.append(str(file))
-            return original_open(file, mode, *args, **kwargs)
-
-        def recording_os_open(path: Any, flags: int, *args: Any, **kwargs: Any) -> int:
-            if flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_APPEND):
-                self.paths.append(str(path))
-            return original_os_open(path, flags, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "open", recording_open)
-        monkeypatch.setattr(io, "open", recording_open)
-        monkeypatch.setattr(os, "open", recording_os_open)
 
 
 def test_using_every_page_and_filter_writes_no_file(
