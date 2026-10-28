@@ -529,7 +529,77 @@ once: a real run refuses an earlier draw of the snapshot and a dirty git tree ou
 Before anything is written, every tracked output passes the gap run's privacy guard with the
 theses' doc codes added: an output that holds a doc code, a title, an abstract sentence, a
 person's name or an ORCID iD of the snapshot refuses the whole write. To draw again, move the
-earlier draw's records away first.
+earlier draw's records away first. If a run stops after some records are written and before
+`manifest.json`, the error names the partial records to move away before running it again.
+
+## Labeled-set workbooks
+
+Make the annotators' workbooks from the draw (T20b, D34) in three steps, each run once and in
+this order:
+
+```sh
+uv run python -m thematic_redundancy.labeling.pair_workbooks pilot --dry-run
+uv run python -m thematic_redundancy.labeling.pair_workbooks pilot
+# the calibration meeting fills the pilot workbook, saved under its name in its folder
+uv run python -m thematic_redundancy.labeling.pair_workbooks import-pilot --dry-run
+uv run python -m thematic_redundancy.labeling.pair_workbooks import-pilot
+# set labeling.annotators to 3 or 4 in config/default.yaml (U3) and commit it
+uv run python -m thematic_redundancy.labeling.pair_workbooks main --dry-run
+uv run python -m thematic_redundancy.labeling.pair_workbooks main
+```
+
+Each step takes `--project-root` and `--snapshot-id` (default: the snapshot harvested last). It
+reads the draw's tracked `manifest.json` and the gitignored `pairs.parquet` it vouches for (by
+its SHA-256), the included fichas and the snapshot's metadata.
+
+- **`pilot`** gives every drawn pair a blind code, such as `KT482`: two letters and three digits
+  drawn at random (`secrets`), unrelated to the pair id and kept only in the gitignored
+  `blind_codes.parquet`, so a pair has the same code in every workbook. It writes the pilot
+  workbook, `etiquetado_piloto.xlsx`, with its 10 pairs.
+- **`import-pilot`** reads the pilot workbook back from the calibration meeting and stores its
+  agreed labels and justifications. It refuses the workbook, listing every problem, if a pair
+  was lost, repeated or added, its `N.º`, `Código` or `Campo` cells changed, a label is blank or
+  not one of the scale, or a level of the scale has no pair (D34 (7)). A file that is not a
+  readable xlsx workbook, a damaged compressed part included, is reported in one `error:` line.
+- **`main`** waits until `labeling.annotators` is set (3 or 4; `null` until the user confirms it)
+  and the pilot's labels are imported. It spreads the 120 pairs of the labeled set evenly over
+  the pairs of annotators, 3 pairs of 40 for 3 annotators or 6 of 20 for 4, each pool and model
+  as evenly as well, and writes one workbook per annotator, `etiquetado_anotador_<k>.xlsx`, with
+  the pairs that the annotator labels (80 or 60), each labeled by both annotators of its pair.
+
+Every workbook is in Spanish. Its `Guía` sheet names the scale, `Redundante` (mismo problema y
+mismo enfoque), `Relacionado` (mismo tema, distinto problema o enfoque) and `No relacionado`
+(distinto tema), states that only `Redundante` counts as redundant for the evaluation (D31 (b)),
+and gives the rules of blind labeling. Its `Etiquetado` sheet shows each pair as a block of four
+rows, the title, abstract, objectives and keywords of both fichas side by side, with the pair's
+number and code and a drop-down list for the label (the pilot also has a justification column,
+an annotator's workbook an optional notes column). An annotator's workbook also has an
+`Ejemplos` sheet: the pilot's pairs with their agreed labels and justifications. The pairs come
+in a random order and each pair's two theses on random sides, both from `labeling.seed`, so they
+can be made again. A field the ficha lacks shows a fixed text, such as
+`(La ficha no registra objetivos.)` for the theses with metadata only. No workbook shows a
+score, a pool or stratum, a link, a doc code, a pair id or any person: names go through the
+objectives workbook's redactor (`[nombre omitido]`), and then every text of every workbook, its
+guide included, passes a name guard without word boundaries against the snapshot's person-name
+forms and ORCID iDs (D34 (1)). A hit stops the step before anything is written and names the
+workbook, sheet, cell and pair code, never the name.
+
+`--dry-run` computes everything, applies the name guard and the privacy guard, and writes
+nothing. A real run refuses its earlier records and a dirty git tree outside
+`results/labeled_set/<snapshot_id>/workbooks/`, holds that directory's run lock and writes:
+
+| File | Content | In git |
+|---|---|---|
+| `data/labels/labeled_set/<snapshot_id>/blind_codes.parquet` | The blind code of every drawn pair | No |
+| `data/labels/labeled_set/<snapshot_id>/pilot_layout.parquet`, `main_layout.parquet` | Each workbook's pairs: workbook, annotator, `N.º`, code, pair id, the thesis shown on each side | No |
+| `data/labels/labeled_set/<snapshot_id>/workbooks/*.xlsx` | The pilot workbook and the annotators' workbooks | No |
+| `data/labels/labeled_set/<snapshot_id>/pilot_labels.parquet` | The pilot's agreed labels: code, pair id, level, binary label, justification | No |
+| `data/labels/labeled_set/<snapshot_id>/assignment.parquet` | Each labeled pair's pair of annotators | No |
+| `results/labeled_set/<snapshot_id>/workbooks/pilot_manifest.json`, `pilot_labels_manifest.json`, `main_manifest.json` | Each step's manifest, written last: snapshot, git commit, seed and values, counts (the pilot's levels, each pair of annotators' pairs by pool), the SHA-256 of every input and record, library versions and the times | Yes |
+
+The manifests pass the privacy guard with the theses' doc codes, the pair ids and the blind
+codes added. A workbook is never overwritten; to make one again, move its step's records away
+first.
 
 ## Redundancy threshold and stage 2 of the winner
 
@@ -764,6 +834,11 @@ work offline with `HF_HUB_OFFLINE=1`.
   drawn pair lives under the gitignored `data/labels/`, and the configuration refuses a records
   directory outside `paths.data_dir`. The draw refuses to write any tracked output that holds a
   doc code, a title, an abstract, a person's name or an ORCID iD from the snapshot.
+- The labeled set's workbooks and their records name theses, so they live only under the
+  gitignored `data/labels/`; a pair is shown under a random blind code kept there, never under
+  its pair id, and with no author, advisor or link. A workbook that holds a person's name or an
+  ORCID iD of the snapshot, even glued to another word, is never written. The workbooks' tracked
+  manifests hold counts and digests only.
 - The redundancy run's tracked records hold counts, thresholds and F1 values only; each labeled
   pair's scores and labels live under the gitignored `data/processed/`. The run refuses to
   write any tracked output that holds a doc code, a pair id, a title, an abstract, a person's
