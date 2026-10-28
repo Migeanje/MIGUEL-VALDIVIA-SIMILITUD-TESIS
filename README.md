@@ -531,6 +531,69 @@ theses' doc codes added: an output that holds a doc code, a title, an abstract s
 person's name or an ORCID iD of the snapshot refuses the whole write. To draw again, move the
 earlier draw's records away first.
 
+## Redundancy threshold and stage 2 of the winner
+
+Once the consensus labels of the labeled set exist, run T22 on them (D15, D30 E3, UD3) with one
+command:
+
+```sh
+uv run python -m thematic_redundancy.redundancy.run_redundancy --dry-run
+uv run python -m thematic_redundancy.redundancy.run_redundancy
+```
+
+It uses the snapshot harvested last (`--snapshot-id` picks another one). Its inputs, each
+checked before use:
+
+- T20a's draw: `results/labeled_set/<snapshot_id>/draw/manifest.json` and the gitignored
+  `pairs.parquet`, which must have the SHA-256 that the manifest records. The labeled set's pairs
+  (phase `labeled`) are the pairs of the run; the pilot's are never used.
+- The consensus labels, `data/labels/labeled_set/<snapshot_id>/labels/consensus.parquet`
+  (`labeling.records_dir`), one row per labeled pair with exactly these columns: `pair_id`
+  (T20a's `L-` id), `label_3` (`Redundante`, `Relacionado` or `No relacionado`), `label` (1 for
+  `Redundante`, else 0) and `source` (`agreement` or `adjudication`). The contract, its path and
+  its row model live in `src/thematic_redundancy/redundancy/labels.py`.
+- T19's `manifest.json` and `selection.json`, under the configuration's experiment declaration.
+- The document vectors of both models and the TF-IDF matrix (`section_mean`), through T20a's
+  loader; their input manifests must be those T20a drew from and T19 ran on, and each labeled
+  pair's cosine must equal the score T20a stored, exactly.
+
+The run refuses, writing nothing, missing labels; labels that are not exactly one per labeled
+pair (a pair without a label, a pair id given twice, an id that is not of the labeled set, a
+pilot pair); a `label` that does not follow `label_3`; a value outside the domains; a labels
+file with other columns; scores that differ from T20a's; records that differ from their
+manifests; and labels with too few redundant pairs for every training split of the
+cross-validation to hold one.
+
+With `redundancy` (5 folds, seed 7, stratified, ties to the highest τ, the final τ from all the
+pairs) and `experiment.selection.f1` (2,000 resamples, seed 7, a 95 % interval), it computes,
+for each representation, τ by cross-validation from the precision-recall curve, the
+cross-validated F1, and the F1 of all the labeled pairs at τ with its bootstrap interval; the
+paired comparison of the two embedding models and of each against TF-IDF; and stage 2 of the
+winner by D30's full rule (the gates, the labeled-set F1, NPMI, then MiniLM), which confirms
+T19's provisional winner, changes it, or is undefined when the F1 step names no higher F1 (a
+decision for the user). It also reports acceptance criterion 1 (F1 part, and T19's NPMI part
+while the winner stands) and criterion 2 (the winner's cross-validated F1 against 0.70).
+`--dry-run` computes and prints everything, applies the privacy guard and writes nothing;
+`--labels PATH` reads another labels file, in a dry run only, such as a check with synthetic
+labels. A run happens once: a real run refuses an earlier run of the snapshot and a dirty git
+tree outside `results/experiments/<snapshot_id>/t22/`, holds that directory's run lock and
+writes:
+
+| File | Content | In git |
+|---|---|---|
+| `results/experiments/<snapshot_id>/t22/representations.parquet` | One row per representation: τ, the counts, precision, recall and F1 at τ with its bootstrap interval, and the cross-validated counts and F1 | Yes |
+| `results/experiments/<snapshot_id>/t22/folds.parquet` | Each fold of each representation: its τ and its held-out counts and F1 | Yes |
+| `results/experiments/<snapshot_id>/t22/curves.parquet` | Each representation's precision-recall curve over the labeled pairs, the selected τ flagged | Yes |
+| `results/experiments/<snapshot_id>/t22/comparisons.parquet` | ΔF1 with its paired interval and verdict: the two models (stage 2) and each against TF-IDF (criterion 1) | Yes |
+| `results/experiments/<snapshot_id>/t22/selection.json` | Stage 2 step by step against T19's provisional winner, the sensitivity, criteria 1 and 2, the findings and what follows from the outcome | Yes |
+| `results/experiments/<snapshot_id>/t22/summary.md` | The same, readable | Yes |
+| `results/experiments/<snapshot_id>/t22/manifest.json` | Written last: snapshot, git commit, the values used, the SHA-256 of T20a's and T19's records, the labels and every input, the outcome, library versions, CPU, the SHA-256 of every output and the times | Yes |
+| `data/processed/<snapshot_id>/experiments/t22/pair_scores.parquet` | One row per labeled pair: pair id, labels, fold, the score and prediction under each representation, and the known-duplicate flag | No |
+
+Before anything is written, every tracked output passes the gap run's privacy guard with the
+theses' doc codes and the drawn pairs' ids added. To run again, move the earlier run's records
+away first.
+
 ## Streamlit app
 
 Browse the topic map and the research gaps of a snapshot, and query a thesis proposal against
@@ -642,6 +705,10 @@ work offline with `HF_HUB_OFFLINE=1`.
   drawn pair lives under the gitignored `data/labels/`, and the configuration refuses a records
   directory outside `paths.data_dir`. The draw refuses to write any tracked output that holds a
   doc code, a title, an abstract, a person's name or an ORCID iD from the snapshot.
+- The redundancy run's tracked records hold counts, thresholds and F1 values only; each labeled
+  pair's scores and labels live under the gitignored `data/processed/`. The run refuses to
+  write any tracked output that holds a doc code, a pair id, a title, an abstract, a person's
+  name or an ORCID iD from the snapshot.
 - `results/` holds aggregates only. The metadata profile refuses to write an output that holds a
   title, an abstract, a person's name or an ORCID from the snapshot.
 - Extracted page texts live only under the gitignored `data/interim/`. The extraction manifest
