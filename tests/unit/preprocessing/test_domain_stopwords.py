@@ -12,6 +12,7 @@ import importlib.util
 import json
 import os
 import shutil
+import subprocess
 import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime
@@ -55,6 +56,7 @@ def load_script() -> ModuleType:
 
 
 script = load_script()
+REAL_GIT = script._git
 
 
 def write_list(tmp_path: Path, content: str) -> Path:
@@ -695,3 +697,49 @@ def test_write_atomically_creates_the_output_directory(tmp_path: Path) -> None:
 
     assert path.read_bytes() == b"{}\n"
     assert [entry.name for entry in path.parent.iterdir()] == ["stopword_candidates.json"]
+
+
+def git(root: Path, *arguments: str) -> None:
+    """Run git in ``root`` as an isolated author, with hooks and signing off."""
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Synthetic Author",
+            "-c",
+            "user.email=author@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            *arguments,
+        ],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+def test_uncommitted_changes_leave_out_the_candidates_that_the_script_writes(
+    cli_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(script, "_git", REAL_GIT)
+    write_test_snapshot(cli_root, [record(1), record(2)])
+    (cli_root / "notes.md").write_text("Notes.\n", encoding="utf-8")
+    output = cli_root / "results" / "eda" / SNAPSHOT_ID / "stopword_candidates.json"
+
+    def provenance_of_a_run() -> dict[str, Any]:
+        assert script.main(["--project-root", str(cli_root)]) == 0
+        return json.loads(output.read_text(encoding="utf-8"))["provenance"]
+
+    git(cli_root, "init", "--quiet")
+    provenance_of_a_run()  # Writes the candidates that the commit holds.
+    git(cli_root, "add", "config", "notes.md", "results")
+    git(cli_root, "commit", "--quiet", "--no-verify", "--message", "candidates of an earlier run")
+    output.write_bytes(b"candidates of a later run, not committed\n")
+
+    # A rerun before the candidates of the last one are committed reads a clean tree.
+    assert provenance_of_a_run()["git_uncommitted_changes"] is False
+
+    # Any other tracked change still counts.
+    (cli_root / "notes.md").write_text("Notes, edited.\n", encoding="utf-8")
+    assert provenance_of_a_run()["git_uncommitted_changes"] is True

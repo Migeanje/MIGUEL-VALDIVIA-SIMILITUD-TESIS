@@ -121,8 +121,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     tokens = clean_full_batch(documents, domain_stopwords=frozenset())
     seconds = time.perf_counter() - started
     candidates = stopword_candidates(tokens, min_ratio=MIN_DOCUMENT_RATIO)
+    eda_dir = paths.results_dir / OUTPUT_DIR_NAME
+    output_path = eda_dir / snapshot_id / OUTPUT_FILE_NAME
     document = {
-        "provenance": _provenance(project_root, config_path, manifest, nlp.meta),
+        "provenance": _provenance(project_root, config_path, manifest, nlp.meta, output_path),
         "method": {
             "theses": len(theses),
             "documents": len(documents),
@@ -144,8 +146,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"error: {problem}", file=sys.stderr)
         print("error: nothing was written", file=sys.stderr)
         return 1
-    eda_dir = paths.results_dir / OUTPUT_DIR_NAME
-    output_path = eda_dir / snapshot_id / OUTPUT_FILE_NAME
     try:
         eda_dir.mkdir(parents=True, exist_ok=True)
         with exclusive_run(eda_dir, OutputsInUseError(_in_use_message(eda_dir))):
@@ -278,7 +278,11 @@ def _first_text(record: SnapshotRecord, key: str) -> str:
 
 
 def _provenance(
-    project_root: Path, config_path: Path, manifest: SnapshotManifest, meta: Mapping[str, Any]
+    project_root: Path,
+    config_path: Path,
+    manifest: SnapshotManifest,
+    meta: Mapping[str, Any],
+    output_path: Path,
 ) -> dict[str, Any]:
     return {
         "script": SCRIPT_PATH,
@@ -287,12 +291,25 @@ def _provenance(
         "metadata_sha256": manifest.metadata_sha256,
         "config_sha256": hashlib.sha256(config_path.read_bytes()).hexdigest(),
         "git_commit": _git(project_root, "rev-parse", "HEAD"),
-        "git_uncommitted_changes": bool(
-            _git(project_root, "status", "--porcelain", "--untracked-files=no")
-        ),
+        "git_uncommitted_changes": _uncommitted_changes(project_root, output_path),
         "spacy_model": f"{SPACY_MODEL} {meta.get('version', 'unknown')}",
         "spacy_version": metadata.version("spacy"),
     }
+
+
+def _uncommitted_changes(project_root: Path, output_path: Path) -> bool:
+    """Tell whether a tracked file differs from the last commit, the candidates aside.
+
+    The candidates file that this script writes does not count, so that a run that follows
+    another one before its output is committed still reads a clean tree, as
+    ``experiments/eda_metadata.py`` does for its outputs. Untracked files never count.
+    """
+    exclusion: list[str] = []
+    if output_path.is_relative_to(project_root):
+        relative = output_path.relative_to(project_root).as_posix()
+        # With an exclusion alone, git looks at the whole work tree but that file.
+        exclusion = ["--", f":(exclude,literal){relative}"]
+    return bool(_git(project_root, "status", "--porcelain", "--untracked-files=no", *exclusion))
 
 
 def _git(project_root: Path, *arguments: str) -> str | None:
