@@ -748,10 +748,25 @@ DocCode = Annotated[str, Field(pattern=r"^DOC-[0-9a-f]{8}$")]
 """A thesis's short report code, ``DOC-`` and 8 lowercase hex digits."""
 
 
+F1Tie = Literal["highest_tau", "lowest_tau"]
+"""Which threshold a tie of the highest F1 picks, as
+:func:`thematic_redundancy.redundancy.threshold.calibrate_threshold` names the rules."""
+
+FinalTau = Literal["all_pairs", "fold_mean"]
+"""How the final threshold follows the folds, as
+:func:`thematic_redundancy.redundancy.threshold.calibrate_threshold` names the rules."""
+
+
 class RedundancyConfig(_FrozenModel):
     """Calibration of the direct-redundancy threshold, and the pairs known to be duplicates."""
 
     cv_folds: Annotated[StrictInt, Field(ge=2)]
+    cv_seed: Seed
+    """The ``random_state`` of the fold split."""
+    cv_stratified: StrictBool
+    """Stratified folds, which keep the share of redundant pairs in each fold."""
+    f1_tie: F1Tie
+    final_tau: FinalTau
     known_duplicates: tuple[tuple[DocCode, DocCode], ...]
     """Pairs of included theses known to be one thesis deposited twice (O09). They stay in the
     labeled pairs and the search, and the results flag them; the order within a pair does not

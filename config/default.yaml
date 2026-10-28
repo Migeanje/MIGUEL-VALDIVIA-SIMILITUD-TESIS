@@ -240,11 +240,22 @@ topic_map:
     metric: cosine
 
 # Direct redundancy (T22, D13, D15). cv_folds is the k of the cross-validation that chooses
-# tau. known_duplicates lists pairs of included theses known to be one thesis deposited twice
-# (O09, user decision 2026-10-19): they stay in the labeled pairs and the search, and the
-# results flag them, in either order.
+# tau; the folds are drawn with cv_seed, stratified by the binary label when cv_stratified is
+# true. A pair is predicted redundant when its score is at least tau. Each fold's tau is the
+# max-F1 point of the precision-recall curve of its training pairs, and a tie of the highest
+# F1 goes to the highest tau (highest_tau) or the lowest (lowest_tau); the final tau is the
+# max-F1 point of all the labeled pairs (all_pairs) or the mean of the fold taus (fold_mean).
+# These four values are T22's implementation notes 2 to 5, declared on 2026-10-27 as proposed
+# there, and they wait for the user's confirmation before the real run. The bootstrap of the
+# F1 is experiment.selection.f1. known_duplicates lists pairs of included theses known to be
+# one thesis deposited twice (O09, user decision 2026-10-19): they stay in the labeled pairs
+# and the search, and the results flag them, in either order.
 redundancy:
   cv_folds: 5
+  cv_seed: 7
+  cv_stratified: true
+  f1_tie: highest_tau
+  final_tau: all_pairs
   known_duplicates:
     - [DOC-1b29cde4, DOC-b2303c69]
 

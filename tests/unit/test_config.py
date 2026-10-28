@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from thematic_redundancy.evaluation.coherence import UNITS
 from thematic_redundancy.evaluation.stability import NOISE_HANDLINGS
+from thematic_redundancy.redundancy.threshold import F1_TIES, FINAL_TAUS
 from thematic_redundancy.shared import config as config_module
 from thematic_redundancy.shared.config import (
     AppConfig,
@@ -361,6 +362,47 @@ def test_the_labeling_block_is_outside_the_experiment_declaration(
     assert load_variant(tmp_path, raw_default).experiment_declaration_sha256() == declared
 
 
+def test_the_redundancy_block_declares_the_threshold_calibration() -> None:
+    redundancy = load_config(DEFAULT_CONFIG_PATH).redundancy
+
+    assert redundancy.model_dump() == {
+        "cv_folds": 5,
+        "cv_seed": 7,
+        "cv_stratified": True,
+        "f1_tie": "highest_tau",
+        "final_tau": "all_pairs",
+        "known_duplicates": (("DOC-1b29cde4", "DOC-b2303c69"),),
+    }
+
+
+def test_the_threshold_rules_are_those_of_the_calibration() -> None:
+    # The shared configuration does not import the redundancy package, so it names the rules
+    # itself; they must stay the ones that calibrate_threshold accepts.
+    assert get_args(config_module.F1Tie) == F1_TIES
+    assert get_args(config_module.FinalTau) == FINAL_TAUS
+
+
+@pytest.mark.parametrize("key", ["cv_folds", "cv_seed", "cv_stratified", "f1_tie", "final_tau"])
+def test_every_threshold_calibration_value_must_be_declared(
+    raw_default: dict[str, Any], tmp_path: Path, key: str
+) -> None:
+    del raw_default["redundancy"][key]
+
+    with pytest.raises(ValidationError, match=key):
+        load_variant(tmp_path, raw_default)
+
+
+def test_the_threshold_calibration_is_outside_the_experiment_declaration(
+    raw_default: dict[str, Any], tmp_path: Path
+) -> None:
+    declared = load_config(DEFAULT_CONFIG_PATH).experiment_declaration_sha256()
+    raw_default["redundancy"].update(
+        {"cv_seed": 8, "cv_stratified": False, "f1_tie": "lowest_tau", "final_tau": "fold_mean"}
+    )
+
+    assert load_variant(tmp_path, raw_default).experiment_declaration_sha256() == declared
+
+
 def test_a_rare_share_not_below_the_present_share_is_rejected(
     raw_default: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -422,6 +464,7 @@ def test_kmeans_sweep_with_bounds_outside_the_contract_is_rejected(
         "topic_map.unexpected_key",
         "topic_map.projection.unexpected_key",
         "labeling.unexpected_key",
+        "redundancy.unexpected_key",
     ],
 )
 def test_unknown_keys_are_rejected(
@@ -732,6 +775,13 @@ def test_harvest_settings_take_their_defaults_when_omitted(
         ("seeds", [7, 13, 21, 42]),
         ("seeds", [7, 13, 21, 42, 73, 99]),
         ("redundancy.cv_folds", 1),
+        ("redundancy.cv_seed", -1),
+        ("redundancy.cv_seed", 2**32),
+        ("redundancy.f1_tie", "middle_tau"),
+        ("redundancy.f1_tie", None),
+        ("redundancy.final_tau", "median_tau"),
+        ("redundancy.final_tau", None),
+        ("redundancy.cv_stratified", None),
         ("redundancy.known_duplicates", [["DOC-1b29cde4", "DOC-1b29cde4"]]),
         ("redundancy.known_duplicates", [["DOC-1b29cde4"]]),
         ("redundancy.known_duplicates", [["DOC-1b29cde4", "DOC-b2303c69", "DOC-00000000"]]),
@@ -830,6 +880,11 @@ def test_values_outside_the_contract_are_rejected(
         ("experiment.selection.f1.bootstrap_seed", True, "int_type"),
         ("experiment.selection.f1.interval", "0.95", "float_type"),
         ("experiment.acceptance.stability_max_cv", "0.10", "float_type"),
+        ("redundancy.cv_seed", True, "int_type"),
+        ("redundancy.cv_seed", 7.0, "int_type"),
+        ("redundancy.cv_seed", "7", "int_type"),
+        ("redundancy.cv_stratified", "true", "bool_type"),
+        ("redundancy.cv_stratified", 1, "bool_type"),
         ("topic_map.projection.n_neighbors", 15.0, "int_type"),
         ("topic_map.projection.min_dist", "0.0", "float_type"),
     ],
@@ -945,6 +1000,11 @@ def test_the_global_safe_loader_still_reads_plain_exponents_as_text() -> None:
         ("experiment.selection.fallbacks.model", MPNET),
         ("experiment.acceptance.stability_max_cv", 1.0),
         ("redundancy.cv_folds", 2),
+        ("redundancy.cv_seed", 0),
+        ("redundancy.cv_seed", 2**32 - 1),
+        ("redundancy.cv_stratified", False),
+        ("redundancy.f1_tie", "lowest_tau"),
+        ("redundancy.final_tau", "fold_mean"),
         ("redundancy.known_duplicates", []),
         ("recommender.top_k", 1),
         ("recommender.mmr_lambda", 0.0),
