@@ -650,6 +650,65 @@ What the app does not do:
 - It shows no redundancy verdict yet: the query page ranks the theses by similarity, marked
   "pendiente de calibración", until T22 calibrates the threshold τ on the labeled set.
 
+## Temporal split
+
+Evaluate the topic map on a temporal split (T27, O04): T19's winner is fitted on the theses of
+2021 to 2024 alone and the theses of 2025 to 2026 are assigned to it, with the values of
+`temporal` and `proposal` in `config/default.yaml`:
+
+```sh
+uv run python -m thematic_redundancy.topic_map.run_temporal --dry-run
+uv run python -m thematic_redundancy.topic_map.run_temporal
+```
+
+It uses the snapshot harvested last (`--snapshot-id` picks another one). It reads T19's
+`manifest.json`, `selection.json`, `topics.parquet` and the gitignored `labels.parquet`, each
+checked against the SHA-256 that T19's manifest records; T19's inputs through T19's loader,
+whose input manifests must be the ones T19 ran on; the fichas, for each thesis's program, issue
+year and title; and the snapshot's metadata, for the privacy guard. A thesis belongs to the
+earlier period when its issue year is below `temporal.split_year` (2025); the two theses issued
+after the snapshot date (T06) are assigned by their issue year, as every other one.
+
+For each of T19's five seed runs of the winner it fits the winner's configuration, with no new
+sweep (D30 E3), on the earlier theses: one UMAP fit with the run's seed, the run's clustering,
+the c-TF-IDF terms over the earlier theses' share of T15's vocabulary, and the centroids in the
+original space. Each later thesis goes to the topic whose centroid is nearest by cosine (D14) and
+is flagged atypical below the P5 of the map's member-to-own-centroid similarities (O06, scope
+and method from `proposal`). Both periods are then compared with T19's full-map labels of the
+same seed, under D30 E4's two noise handlings (`own_label`, which counts the full map's noise as
+a label, and `exclude_either`, which leaves out the theses that are noise in either map):
+
+- for the later theses, the ARI, the NMI and the **counterpart agreement**: the share whose
+  full-map label is their topic's counterpart, the full-map label of most of the topic's own
+  earlier members;
+- for the earlier theses, the ARI and the NMI of their labels on both maps: how far the map
+  itself moves when the later theses join it.
+
+No pass threshold is applied: O04 declares none. The expert sample draws, from the map of T19's
+medoid run, `temporal.sample.size` later theses (40): `atypical` of them (10) from the theses
+flagged atypical, or all of those when fewer, and the rest from the others, each pool spread over
+the programs in proportion to its theses with at least `program_floor` (2) per program that has
+any, in a seeded presentation order. `--dry-run` computes and prints everything, applies the
+privacy guard and writes nothing; on snapshot `20261002T224412Z` it takes about 2 minutes, most of
+it the first UMAP fit and BERTopic's import. The sample is a one-time draw: a real run refuses an
+earlier temporal split of the snapshot and a dirty git tree outside
+`results/temporal/<snapshot_id>/`, holds that directory's run lock and writes:
+
+| File | Content | In git |
+|---|---|---|
+| `results/temporal/<snapshot_id>/runs.parquet` | One row per seed run: the earlier map's theses, topics, noise and terms, the later theses, how many are atypical and how many are noise in the full map, O06's threshold and the times | Yes |
+| `results/temporal/<snapshot_id>/consistency.parquet` | One row per seed run, period and noise handling: the points compared, ARI, NMI and, for the later theses, the counterpart agreement | Yes |
+| `results/temporal/<snapshot_id>/topics.parquet` | One row per topic of each earlier map: its size, top terms and scores, its counterpart under each noise handling, and the later theses assigned to it and flagged atypical | Yes |
+| `results/temporal/<snapshot_id>/composition.parquet` | The expert sample's candidates and drawn theses per pool and program | Yes |
+| `results/temporal/<snapshot_id>/summary.md` | The periods by year and program, the earlier maps, the metrics per seed with their mean and SD, and the sample's composition | Yes |
+| `results/temporal/<snapshot_id>/manifest.json` | Written last: snapshot, git commit, the SHA-256 of T19's records and of every input, the values used, T19's `provisional` flag, the counts, library versions, CPU, the SHA-256 of every output and the times | Yes |
+| `data/processed/<snapshot_id>/temporal/assignments.parquet` | Every thesis on every seed run's maps: its period, its label on the earlier map, its full-map label and, for a later thesis, its similarity, runner-up, margin, threshold and atypical flag | No |
+| `data/processed/<snapshot_id>/temporal/sample.parquet` | The expert sample in presentation order: doc code, title, program, year, pool, assigned topic with its terms, similarity, threshold, atypical flag and full-map label | No |
+
+While T19's winner is provisional, every row and the summary say so; if T22 changes the winner,
+move the records away and run the split again. Before anything is written, every tracked output
+passes the gap run's privacy guard with the theses' doc codes added.
+
 ## Checks
 
 ```sh
@@ -709,6 +768,10 @@ work offline with `HF_HUB_OFFLINE=1`.
   pair's scores and labels live under the gitignored `data/processed/`. The run refuses to
   write any tracked output that holds a doc code, a pair id, a title, an abstract, a person's
   name or an ORCID iD from the snapshot.
+- The temporal split's tracked records hold counts, metrics and the topics' terms only; which
+  thesis went to which topic, and the expert sample with its doc codes and titles, live under
+  the gitignored `data/processed/`. The split refuses to write any tracked output that holds a
+  doc code, a title, an abstract, a person's name or an ORCID iD from the snapshot.
 - `results/` holds aggregates only. The metadata profile refuses to write an output that holds a
   title, an abstract, a person's name or an ORCID from the snapshot.
 - Extracted page texts live only under the gitignored `data/interim/`. The extraction manifest
