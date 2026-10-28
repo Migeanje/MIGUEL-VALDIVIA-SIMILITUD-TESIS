@@ -187,6 +187,10 @@ across sessions with care.
 | 2026-10-21 | T20a | Labeled-set draw, real run (`draw_pairs`), offline (`HF_HUB_OFFLINE=1`), at commit `2eb3249`, once | 276,396 pairs under 3 representations; 130 pairs drawn (10 pilot, 120 labeled) over 217 theses | 27.97 s for the whole command; 5.3 s in the run (load 1.5 s, universe 3.6 s, draw 0.2 s) | — | 0 | The first run after a session restart. Composition identical to the dry runs; a second real run refused with exit 1 and left the records byte-identical. Privacy guard: 0 hits. Records: 16,602 B tracked, 18,282 B gitignored | plan T20; run output and manifest |
 | 2026-10-27 | all | Test suite (`pytest -q`), in the t12c10 worktree, through the lock | 3,089 tests: 3,087 passed and the worktree's 2 environmental failures; 3 skipped, 36 smoke tests deselected | 123.98 s, 1 run (lock held 126.5 s) | — | 0 | After T12c item 10's follow-up: 1 new test (D: 3,089 − 3,088); the 2 failures are the worktree-junction cases of `test_anonymize.py`, which pass in the main repository | plan T12c (t12c10) |
 | 2026-10-27 | all | Test suite (`pytest -q`), in the main tree after T12c item 10's follow-up | 3,089 passed, 3 skipped; 36 smoke tests deselected | 114.47 s (117 s for the whole command), 1 run | — | 0 | — | plan T12c |
+| 2026-10-27 | T28a | Real run of the Streamlit app (`streamlit run src/thematic_redundancy/app/main.py`, headless, port 8531), driven by AppTest and headless Chrome, offline, read only | Snapshot `20261002T224412Z`: T19's records and map (744 theses), T24a's 24 stable gaps and their members, the fichas | 43.1 s for the whole check (lock held); server healthy after 3.1 s (6.99 s cold); first page run 4.63 s; each headless Chrome visit 3.4 to 19.1 s (12 visits over 3 runs) | — | 0 | Both pages without exception; 0 of 3,196 person strings in 1.95 M rendered characters; port free after; no file written | plan T28 (t28a) |
+| 2026-10-27 | T28a | Mutation check of the app (12 throwaway mutants against `tests/unit/app`) | `app/data.py`, `charts.py`, `ui.py`, `map_view.py` | 135.1 s | — | 0 | 12 of 12 killed, each file restored byte-identical | plan T28 (t28a) |
+| 2026-10-27 | all | Test suite (`pytest -q`) in the t28a worktree, through the lock | 3,166 tests, plus 3 skipped; 36 smoke tests deselected | 182.38 s (lock held 185.3 s) | — | 0 | 3,164 passed; the 2 failures are the worktree-junction cases of `test_anonymize.py`, which pass in the main repository; 78 new tests (D: 3,166 − 3,088) | plan T28 (t28a) |
+| 2026-10-27 | all | Test suite (`pytest -q`), in the main tree after T28a | 3,167 passed, 3 skipped; 36 smoke tests deselected | 105.63 s (lock held 108.7 s), 1 run | — | 0 | After T28a: 78 new tests (D: 3,167 − 3,089) | plan T28 |
 
 ### Notes on the ledger
 
@@ -294,7 +298,9 @@ leaves out the 40-byte `refs/main` file.
   chunk-vector cache (2026-10-16, the user's run).
 - [x] T19 experiment grid: 417.0 s for the whole real run (389.2 s in the manifest), 371 clusterings, 2026-10-20, run by the parent.
 - [ ] T21 labeling workload: annotator hours per pair and in total.
-- [ ] T28 app latency: start-up time and time per query.
+- [ ] T28 app latency: start-up time and time per query. Start-up measured with T28a
+  (2026-10-27): server healthy after 3.1 s (6.99 s on a colder run), the first page run 4.63 s;
+  the time per query waits for the query view.
 - [ ] T29 Docker build: build time and image size.
 - [x] Time the EDA script (T07): 17.4 s and 16.5 s for the whole command, offline, in the
   regeneration after T07a (2026-10-13).

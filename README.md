@@ -531,6 +531,46 @@ theses' doc codes added: an output that holds a doc code, a title, an abstract s
 person's name or an ORCID iD of the snapshot refuses the whole write. To draw again, move the
 earlier draw's records away first.
 
+## Streamlit app
+
+Browse the topic map and the research gaps of a snapshot (T28), in Spanish (O01). Start it from
+the project root:
+
+```sh
+uv run streamlit run src/thematic_redundancy/app/main.py
+uv run streamlit run src/thematic_redundancy/app/main.py -- --snapshot-id 20261002T224412Z
+```
+
+The arguments after `--` are the app's own: `--project-root` (the folder that holds
+`config/default.yaml`; default: the current directory) and `--snapshot-id` (default: the snapshot
+harvested last). Streamlit reads `.streamlit/config.toml` from the folder it starts in, so start
+it from the project root. The app serves `http://localhost:8501/` (the map) and
+`http://localhost:8501/vacios` (the gaps); `--server.port` picks another port.
+
+| Page | What it shows |
+|---|---|
+| Mapa temático | T19's 2-D UMAP map of the winner's representative run (`map.parquet`), each thesis colored by topic, with filters by topic and by program and a switch for the theses without a topic (HDBSCAN's noise); the hover gives a thesis's title, program and year. Below, each topic's size and top terms, and the theses shown with their repository links |
+| Vacíos de investigación | T24a's stable gaps of the reference run, filtered by rule (a) to (d), by program (the programs of a gap's theses, and rule (c)'s source and target) and by rule (c)'s high-confidence group (affinity 2); each with its topics and their terms, its counts and shares, programs, years and stability. Below, the theses of the chosen gap with their repository links |
+
+It reads, and never writes, the saved artifacts of the snapshot, each checked against the SHA-256
+that its manifest records: T19's `manifest.json`, `selection.json`, `topics.parquet` and
+`data/processed/<snapshot_id>/experiments/t19/map.parquet`; the gap run's `manifest.json`,
+`gaps.parquet` and `data/processed/<snapshot_id>/gaps/members.parquet`, which must name the T19
+manifest read; and the fichas, whose manifest must be the one T19 ran on. A missing, changed or
+inconsistent artifact shows a message in Spanish that names the file and the command that writes
+it again, and the page stops there. A notice says that the results are provisional while T19's
+winner waits for T22's labeled-set F1. The results are cached in the server's memory only; the
+sidebar's button reloads them after a new run.
+
+What the app does not do:
+
+- It keeps no query and writes no file: what a user selects lives only in their session.
+- It shows no author or advisor: of each thesis it loads only the doc code, title, program, year
+  and repository link, never the person codes, abstract, objectives or keywords.
+- It sends no usage statistics (`browser.gatherUsageStats = false`), and the server runs headless
+  and listens on `localhost` only; pass `--server.address` to serve another interface.
+- It shows no redundancy verdict yet: the similarity threshold τ waits for T22.
+
 ## Checks
 
 ```sh

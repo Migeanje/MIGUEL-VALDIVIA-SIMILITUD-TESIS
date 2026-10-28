@@ -1,0 +1,21 @@
+# Streamlit settings of the app (T28), read when `streamlit run` starts from the project root.
+# The app sends no usage statistics, opens no browser, asks for nothing on the console, and
+# serves this machine only; pass --server.address to serve another interface, such as in a
+# container. An unexpected error shows its type in the browser, and its traceback only in the
+# server's console.
+
+[browser]
+gatherUsageStats = false
+
+[server]
+headless = true
+address = "localhost"
+runOnSave = false
+fileWatcherType = "none"
+
+[runner]
+magicEnabled = false
+
+[client]
+toolbarMode = "viewer"
+showErrorDetails = "type"
