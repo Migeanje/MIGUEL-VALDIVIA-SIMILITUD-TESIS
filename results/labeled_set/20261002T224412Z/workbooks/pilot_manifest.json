@@ -1,0 +1,51 @@
+{
+  "step": "pilot",
+  "snapshot_id": "20261002T224412Z",
+  "git_commit": "7a9fe304abd75bdb07109a931b65f4181b4e7b6a",
+  "seed": 20261021,
+  "settings": {
+    "seed": 20261021,
+    "annotators": null,
+    "records_dir": "data/labels/labeled_set"
+  },
+  "counts": {
+    "drawn_pairs": 130,
+    "pairs": 10,
+    "theses": 20,
+    "without_abstract": 0,
+    "without_objectives": 0,
+    "without_keywords": 0,
+    "swapped": 5,
+    "redacted_cells": 0,
+    "guard_strings": 3312,
+    "texts_checked": 144
+  },
+  "details": {},
+  "inputs": {
+    "draw/manifest.json": "68e054ee16bf6de1646284582f42bc24728fcca492f1d7ca6c4674c6d9dfd48f",
+    "pairs.parquet": "48768eef65c26279a389ecaced896ccca0dca984275b477aa4011e8d879c5230",
+    "fichas_manifest.json": "cf5926cb80861de76c402c2c8d683b92f51ed0274eb17aab2366dc4aa0368512",
+    "metadata.jsonl": "d88839012df3e6f3bd7ee08f90c8e1f3b6588cf75386127dde52f429b4d9d932",
+    "default.yaml": "27dec213f1b1703d88b9f78493298e946f22ff6c1e49e676049f09a96a950c1a"
+  },
+  "data_files": {
+    "blind_codes.parquet": "40d12260ac52820c332acf11117ae8caaccc94a407d42a1e95b3f51b801c6430",
+    "pilot_layout.parquet": "ac2716ef5031127f2bea357c1c62c0635b3a82a7079e16da20b4eb1020e8b5b3",
+    "workbooks/etiquetado_piloto.xlsx": "edac108f122c11e0e02089e4884a7b8f551c822b6c8bd4cecdc4eca22acad867"
+  },
+  "versions": {
+    "python": "3.13.2",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "scikit-learn": "1.9.1",
+    "umap-learn": "0.5.12",
+    "numba": "0.68.0",
+    "pynndescent": "0.6.0",
+    "hdbscan": "0.8.44",
+    "bertopic": "0.17.4",
+    "pyarrow": "25.0.1"
+  },
+  "started_at": "2026-10-28T21:02:10Z",
+  "finished_at": "2026-10-28T21:02:10Z",
+  "seconds": 0.763
+}

@@ -219,6 +219,7 @@ across sessions with care.
 | 2026-10-27 | all | Test suite (`pytest -q`) in the T20b worktree, through the lock | 3,193 tests: 3,191 passed and the worktree's 2 environmental failures; 3 skipped, 36 deselected | 226.92 s | — | 0 | 105 tests more than the baseline 3,088 | plan T20 (t20b) |
 | 2026-10-27 | all | Test suite (`pytest -q`) run by the independent verifier of T20b | 3,191 passed and 2 environmental failures, plus 3 skipped; 36 smoke tests deselected | 230.73 s, 1 run | — | 0 | No blocker; 9 of 9 checks passed | plan T20 (t20b) |
 | 2026-10-27 | all | Test suite (`pytest -q`), in the main tree after T20b | 3,543 passed, plus 3 skipped; 36 smoke tests deselected | 219.96 s (lock held 223.6 s), 1 run | — | 0 | After T20b: 105 new tests | plan T20 |
+| 2026-10-28 | T20b | Pilot workbook, real step (`pair_workbooks pilot`), offline, at commit `7a9fe30`, 1 run, after 1 dry run; a second run refused | The draw's 10 pilot pairs over 20 theses; 130 blind codes | 0.763 s in the step, 5 s for the whole command (dry run 24 s with the lock) | — | 0 | Workbook 26,226 B, blind codes 3,076 B, layout 2,625 B (gitignored); manifest 1,694 B (tracked); guard 144 texts, 0 hits | plan T20 (T20b) |
 
 ### Notes on the ledger
 
