@@ -302,6 +302,10 @@ gaps:
 # between programs) in proportion to their candidates, with at least stratum_floor per stratum
 # that has candidates. Every random choice derives from seed. The drawn pairs name theses, so
 # they go to records_dir/<snapshot_id>/, which must lie inside paths.data_dir (gitignored).
+# annotators is the number of annotators of the labeling round, 3 or 4 (U3, D34 (8)): null until
+# the user confirms it; the main workbooks (T20b) are not generated while it is null. The labeled
+# pairs are spread evenly over the pairs of annotators (D31), each pair labeled by both of its
+# pair's annotators. It is not a value of the draw.
 labeling:
   seed: 20261021
   sbert_high_per_model: 20
@@ -315,6 +319,7 @@ labeling:
   pilot_size: 10
   pilot_floor: 2
   records_dir: data/labels/labeled_set
+  annotators: null
 
 # A thesis assigned to a topic map by nearest centroid (D14) is atypical when its similarity is
 # below O06's P5 of the member-to-own-centroid similarities, taken over every clustered thesis

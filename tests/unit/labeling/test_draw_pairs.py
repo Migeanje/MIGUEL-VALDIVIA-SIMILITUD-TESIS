@@ -14,7 +14,10 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+import synthetic_files as files
 
+import thematic_redundancy.labeling.draw_pairs as draw_module
+from thematic_redundancy.corpus.profile import sensitive_strings
 from thematic_redundancy.gaps.results_store import PrivacyError
 from thematic_redundancy.labeling.draw_pairs import (
     COMPOSITION_FILE_NAME,
@@ -31,6 +34,7 @@ from thematic_redundancy.labeling.draw_pairs import (
     PairRow,
     RangeRow,
     compute,
+    load_inputs,
     main,
     write_outputs,
 )
@@ -45,7 +49,7 @@ from thematic_redundancy.shared.config import load_config
 from thematic_redundancy.shared.filesystem import exclusive_run
 from thematic_redundancy.shared.storage import ParquetTableStore
 from thematic_redundancy.topic_map.results_store import cpu_record, library_versions
-from thematic_redundancy.topic_map.run_experiment import GitState
+from thematic_redundancy.topic_map.run_experiment import GitState, read_git_state
 
 TRACKED = {COMPOSITION_FILE_NAME, RANGES_FILE_NAME, CUTS_FILE_NAME, SUMMARY_FILE_NAME}
 RESULTS = Path("results") / "labeled_set" / "S1" / "draw"
@@ -265,7 +269,7 @@ def test_the_manifest_records_provenance_values_and_every_digest(
 
     assert (manifest.snapshot_id, manifest.git_commit, manifest.seed) == ("S1", "c" * 40, 20261021)
     assert manifest.settings == {
-        **kit.config.labeling.model_dump(mode="json"),
+        **kit.config.labeling.model_dump(mode="json", exclude={"annotators"}),
         "records_dir": "data/labels/labeled_set",
         "embedding_document_vector": "section_mean",
         "tfidf_document_vector": "section_mean",
@@ -303,6 +307,42 @@ def test_the_manifest_records_provenance_values_and_every_digest(
     assert manifest.started_at == STARTED
     assert set(manifest.timings) == {"load", "universe", "draw"}
     assert manifest.seconds > 0
+
+
+def test_the_draw_records_the_values_of_t20a_only(
+    project_root: Path, inputs: DrawInputs, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The number of annotators is a value of the workbooks (T20b), not of the draw: the draw's
+    # manifest and summary keep T20a's values, as committed with the real draw.
+    config_path = project_root / "config" / "default.yaml"
+    text = config_path.read_text("utf-8")
+    config_path.write_text(text.replace("annotators: null", "annotators: 4"), encoding="utf-8")
+
+    assert run(project_root, inputs) == 0
+
+    manifest = json.loads((project_root / RESULTS / MANIFEST_FILE_NAME).read_text("utf-8"))
+    assert list(manifest["settings"]) == [
+        "seed",
+        "sbert_high_per_model",
+        "tfidf_high",
+        "mid_range",
+        "random",
+        "top_share",
+        "mid_low",
+        "mid_high",
+        "stratum_floor",
+        "pilot_size",
+        "pilot_floor",
+        "records_dir",
+        "embedding_document_vector",
+        "tfidf_document_vector",
+    ]
+    summary = (project_root / RESULTS / SUMMARY_FILE_NAME).read_text("utf-8")
+    assert summary.splitlines()[-1] == (
+        "Declared values: seed 2.0261e+07, sbert_high_per_model 20, tfidf_high 20, mid_range 30, "
+        "random 30, top_share 0.01, mid_low 0.9, mid_high 0.99, stratum_floor 2, pilot_size 10, "
+        "pilot_floor 2."
+    )
 
 
 def test_a_known_duplicate_among_the_drawn_pairs_is_flagged(
@@ -476,6 +516,88 @@ def test_exit_codes_and_the_rerun_hint(
     assert MANIFEST_FILE_NAME not in {Path(p).name for p in written(project_root)}
 
 
+def failing_writes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the text writes of the draw fail, after its tables are stored."""
+    real = draw_module.write_outputs
+
+    def write_text(path: Path, text: str) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(
+        draw_module,
+        "write_outputs",
+        lambda run, **arguments: real(run, **arguments, write_text=write_text),
+    )
+
+
+def test_a_write_failure_after_the_pairs_are_stored_tells_how_to_move_them_away(
+    project_root: Path,
+    inputs: DrawInputs,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    failing_writes(monkeypatch)
+
+    code = run(project_root, inputs)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    last = err.splitlines()[-1]
+    assert last.startswith("error: disk full") and err.count("error:") == 1
+    assert "move the partial records away" in last
+    for name in (PAIRS_FILE_NAME, COMPOSITION_FILE_NAME, RANGES_FILE_NAME):
+        assert name in last
+    partial = {f"data/{PAIRS_FILE_NAME}", f"results/{COMPOSITION_FILE_NAME}"}
+    partial.add(f"results/{RANGES_FILE_NAME}")
+    assert written(project_root) == {*partial, "results/.lock"}
+    # The partial draw refuses the next run until its records are moved away.
+    assert run(project_root, inputs) == 1
+    assert "already exists" in capsys.readouterr().err
+
+
+def test_a_privacy_hit_on_the_final_manifest_tells_how_to_move_the_records_away(
+    project_root: Path, kit: SimpleNamespace, corpus: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Only the final manifest names the tracked files, so only its check finds this string.
+    leaky = kit.make_inputs(corpus, sensitive=frozenset({COMPOSITION_FILE_NAME}))
+
+    code = run(project_root, leaky)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert f"{MANIFEST_FILE_NAME} (1)" in err and "move the partial records away" in err
+    assert MANIFEST_FILE_NAME not in {Path(p).name for p in written(project_root)}
+    assert f"data/{PAIRS_FILE_NAME}" in written(project_root)
+
+
+def test_the_dry_run_outside_a_repository_says_git_is_not_readable_here(
+    project_root: Path, inputs: DrawInputs, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The real git reader, in pytest's temporary directory, which no repository holds.
+    with pytest.raises(OSError):
+        read_git_state(project_root, RESULTS.as_posix())
+
+    code = run(project_root, inputs, "--dry-run", git=read_git_state)
+
+    assert code == 0
+    assert "Git: not readable here" in capsys.readouterr().out
+    assert written(project_root) == set()
+
+
+def test_the_dry_run_says_git_is_not_readable_when_its_output_does_not_decode(
+    project_root: Path, inputs: DrawInputs, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # read_git_state decodes git's output as UTF-8, which raises this on other bytes (on POSIX;
+    # on Windows, subprocess decodes in reader threads and the error does not reach the caller).
+    def undecodable(root: Path, path: str) -> GitState:
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+    code = run(project_root, inputs, "--dry-run", git=undecodable)
+
+    assert code == 0
+    assert "Git: not readable here" in capsys.readouterr().out
+
+
 def computed(root: Path, inputs: DrawInputs) -> Any:
     config = load_config(root / "config" / "default.yaml")
     return compute(config, root, "S1", load=loader(inputs), report=lambda _: None, timer=timer())
@@ -558,3 +680,76 @@ def test_the_help_names_the_outputs(capsys: pytest.CaptureFixture[str]) -> None:
         "once",
     ):
         assert text in out
+
+
+# The real loader, on synthetic files
+
+
+def test_load_inputs_reads_the_fichas_vectors_and_snapshot_through_their_own_loaders(
+    project_root: Path, kit: SimpleNamespace
+) -> None:
+    config = kit.config
+    names = {program.key: program.name for program in config.snapshot.programs}
+    theses = [
+        files.Thesis(1, "sistemas", "Planta textil y su proceso", "Se mide el proceso.", "Medir."),
+        files.Thesis(2, "industrial", "Proceso de una planta", "Se mide la planta.", None),
+        files.Thesis(3, "minas", "Ventilación de una mina", "Se estudia la mina.", "Ventilar."),
+        files.Thesis(4, "industrial", "Costos de la planta", "Se reduce el costo.", "Reducir."),
+        files.Thesis(
+            5, "sistemas", "Excluida por prueba", "Se excluye.", "Excluir.", include=False
+        ),
+        files.Thesis(
+            6, "minas", "Mina y proceso", "Se mide la mina.", "Medir.", authors=("Ficticio, Ana",)
+        ),
+    ]
+    fichas = [files.ficha(thesis, names) for thesis in theses]
+    records = [files.snapshot_record(thesis, config) for thesis in theses]
+    files.write_test_snapshot(project_root, records, config)
+    files.write_fichas_outputs(files.interim(project_root), fichas)
+    built = files.build_representations(project_root, config, fichas)
+
+    inputs = load_inputs(built, project_root, files.SNAPSHOT_ID)
+
+    included = [(f.doc_code, f.program_key) for f in fichas if f.include]
+    assert inputs.theses == tuple(included)
+    assert [vectors.name for vectors in inputs.semantic] == list(kit.models)
+    for vectors, dimension in zip(inputs.semantic, files.DIMENSIONS, strict=True):
+        assert vectors.doc_codes == tuple(code for code, _ in included)
+        assert vectors.vectors.shape == (len(included), dimension)
+    assert inputs.tfidf.name == "tfidf"
+    assert inputs.tfidf.doc_codes == tuple(code for code, _ in included)
+    assert inputs.tfidf.vectors.shape[0] == len(included)
+    assert inputs.sensitive == sensitive_strings(records)
+    interim = files.interim(project_root)
+    assert inputs.input_sha256 == {
+        "fichas_manifest.json": files.sha256(interim / "fichas_manifest.json"),
+        "embeddings_manifest.json": files.sha256(
+            interim / "embeddings" / "embeddings_manifest.json"
+        ),
+        "tfidf_manifest.json": files.sha256(interim / "tfidf" / "tfidf_manifest.json"),
+        "metadata.jsonl": files.sha256(
+            project_root / "data" / "raw" / files.SNAPSHOT_ID / "metadata.jsonl"
+        ),
+    }
+
+
+def test_load_inputs_refuses_document_vectors_that_differ_from_their_manifest(
+    project_root: Path, kit: SimpleNamespace
+) -> None:
+    config = kit.config
+    names = {program.key: program.name for program in config.snapshot.programs}
+    theses = [
+        files.Thesis(number, program, f"Proceso {number} de la planta", "Se mide.", "Medir.")
+        for number, program in enumerate(("sistemas", "industrial", "minas"), start=1)
+    ]
+    fichas = [files.ficha(thesis, names) for thesis in theses]
+    files.write_test_snapshot(
+        project_root, [files.snapshot_record(t, config) for t in theses], config
+    )
+    files.write_fichas_outputs(files.interim(project_root), fichas)
+    built = files.build_representations(project_root, config, fichas)
+    damaged = next((files.interim(project_root) / "embeddings").rglob("documents_section_mean.npy"))
+    damaged.write_bytes(damaged.read_bytes()[:-4] + b"\x00\x00\x00\x00")
+
+    with pytest.raises(ValueError, match="manifest"):
+        load_inputs(built, project_root, files.SNAPSHOT_ID)

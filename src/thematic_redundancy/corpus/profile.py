@@ -7,7 +7,9 @@ place names, which are short public terms.
 
 Token counts come from an injected :data:`TokenCounter`, so this module needs no model. The
 experiment script passes the tokenizer of the embedding model. :func:`sensitive_strings` and
-:func:`leaked_strings` let a caller check its outputs before it writes them.
+:func:`leaked_strings` let a caller check its outputs before it writes them;
+:func:`person_name_forms` and :func:`person_strings` give the people's names and ORCID iDs alone,
+for a text that may show titles and abstracts.
 """
 
 import math
@@ -973,10 +975,39 @@ def sensitive_strings(
         for key in PERSON_KEYS:
             for name in _values(metadata, key):
                 found.update(_name_forms(name))
-        for key in metadata:
-            if key.casefold().endswith(".orcid"):
-                for value in _values(metadata, key):
-                    found.update((value, _orcid_key(value)))
+        found.update(_orcid_strings(metadata))
+    return frozenset(folded for text in found if (folded := _fold(text)))
+
+
+def person_name_forms(records: Iterable[SnapshotRecord]) -> frozenset[str]:
+    """Return the ways in which each author, advisor and juror name of ``records`` may be
+    written, in its own letter case: as in the metadata (``Family, Given``) with its whitespace
+    collapsed, as ``Given Family``, and its family part when that has two words or more.
+
+    The name redactor of the objectives workbook (T10b) replaces these forms, and the name guard
+    of the labeled set's workbooks (T20b, D34 (1)) looks for them, through
+    :func:`person_strings`.
+    """
+    forms: set[str] = set()
+    for record in records:
+        for key in PERSON_KEYS:
+            for name in _values(record.metadata, key):
+                forms.update(_written_forms(name))
+    return frozenset(forms)
+
+
+def person_strings(records: Iterable[SnapshotRecord]) -> frozenset[str]:
+    """Return the forms of :func:`person_name_forms` and every ORCID value of ``records``, as
+    stored and as a bare iD, case folded: the strings that the name guard of the labeled set's
+    workbooks looks for (D34 (1)), with :func:`leaked_strings`.
+
+    Unlike :func:`sensitive_strings`, it leaves out the titles and the abstracts, which those
+    workbooks show.
+    """
+    records = tuple(records)
+    found = set(person_name_forms(records))
+    for record in records:
+        found.update(_orcid_strings(record.metadata))
     return frozenset(folded for text in found if (folded := _fold(text)))
 
 
@@ -994,15 +1025,33 @@ def leaked_strings(text: str, sensitive: Iterable[str]) -> list[str]:
 
 
 def _name_forms(name: str) -> set[str]:
-    """Return the ways in which a name written ``Family, Given`` may appear in a text."""
+    """Return the ways in which a name written ``Family, Given`` may appear in a text: as it is
+    stored, and its :func:`_written_forms`."""
+    return {name} | _written_forms(name)
+
+
+def _written_forms(name: str) -> set[str]:
+    """Return a name with its whitespace collapsed, as ``Given Family``, and its family part when
+    that has two words or more (:func:`person_name_forms`)."""
     flat = normalize_text(name)
     family, comma, given = (part.strip() for part in flat.partition(","))
-    forms = {name, flat}
+    forms = {flat}
     if comma and given and family:
         forms.add(f"{given} {family}")
     if comma and len(family.split()) >= 2:
         forms.add(family)
     return forms
+
+
+def _orcid_strings(metadata: Metadata) -> set[str]:
+    """Return every value of the metadata fields whose key ends in ``.orcid``, as stored and as a
+    bare iD."""
+    found: set[str] = set()
+    for key in metadata:
+        if key.casefold().endswith(".orcid"):
+            for value in _values(metadata, key):
+                found.update((value, _orcid_key(value)))
+    return found
 
 
 def _fold(text: str) -> str:

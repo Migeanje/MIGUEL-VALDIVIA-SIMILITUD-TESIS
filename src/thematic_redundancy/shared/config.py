@@ -832,12 +832,15 @@ class GapsConfig(_FrozenModel):
 _RECORDS_DIR_SETTING = "labeling.records_dir"
 LABELING_POOLS = 4
 """The labeled set's pools (D34 (5)): SBERT-high, TF-IDF-high, mid-range and random."""
+AnnotatorCount = Annotated[StrictInt, Field(ge=3, le=4)]
+"""The number of annotators of the labeling round (U3, D34 (8)): 3 or 4."""
 
 
 class LabelingConfig(_FrozenModel):
     """The labeled set's sampler (T20, D34): its seed, the pools' sizes, the share of the pairs
     that forms a representation's top, the mid-range band of mean percentile ranks, the strata's
-    floor, the pilot, and where the drawn pairs go."""
+    floor, the pilot, and where the drawn pairs go; and the number of annotators that its
+    workbooks (T20b) are made for."""
 
     seed: Seed
     sbert_high_per_model: PositiveInt
@@ -861,6 +864,9 @@ class LabelingConfig(_FrozenModel):
     records_dir: Path
     """Directory, relative to the project root, that holds one directory per snapshot with the
     drawn pairs. They name theses, so it must lie inside ``paths.data_dir``."""
+    annotators: AnnotatorCount | None
+    """The number of annotators, 3 or 4 (U3, D34 (8)), or ``None`` (``null``) until the user
+    confirms it; the main workbooks are not generated before. It is not a value of the draw."""
 
     @field_validator("records_dir")
     @classmethod

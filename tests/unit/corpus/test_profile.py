@@ -33,6 +33,8 @@ from thematic_redundancy.corpus.profile import (
     ocde_profile,
     other_items_profile,
     pack_sentences,
+    person_name_forms,
+    person_strings,
     profile_metadata,
     rights_profile,
     sensitive_strings,
@@ -823,3 +825,85 @@ def test_leaked_strings_ignores_keywords_places_and_short_sentences() -> None:
     sensitive = sensitive_strings(corpus())
 
     assert leaked_strings("calidad · ventilación · Arequipa 2023 · 2.11.04 · spa", sensitive) == []
+
+
+# The name guard's strings (T20b, D34 (1))
+
+
+def people() -> list[SnapshotRecord]:
+    """Two theses whose people are written in every shape that the name forms tell apart."""
+    return [
+        record(
+            1,
+            {
+                "dc.title": "Título sintético de la prueba de nombres",
+                "dc.description.abstract": (
+                    "Primera oración sintética larga del resumen de prueba, con coma. Corta."
+                ),
+                "dc.contributor.author": ["Inventado  Ficticio,  Ana   Lucía", "Plantado, Pedro"],
+                "dc.contributor.advisor": "Inventán Pruebas, José",
+                "renati.advisor.orcid": "https://orcid.org/0000-0002-1825-0097",
+            },
+        ),
+        record(
+            2,
+            {
+                "dc.contributor.author": "Lucía Ficticia Ejemplar",
+                "renati.juror": ["   ", "de la Prueba Inventada, María"],
+                "renati.author.orcid": "0000-0001-5109-3700",
+            },
+        ),
+    ]
+
+
+def test_person_name_forms_are_each_name_given_then_family_and_a_family_of_two_words() -> None:
+    assert person_name_forms(people()) == {
+        "Inventado Ficticio, Ana Lucía",
+        "Ana Lucía Inventado Ficticio",
+        "Inventado Ficticio",
+        "Plantado, Pedro",
+        "Pedro Plantado",
+        "Inventán Pruebas, José",
+        "José Inventán Pruebas",
+        "Inventán Pruebas",
+        "Lucía Ficticia Ejemplar",
+        "de la Prueba Inventada, María",
+        "María de la Prueba Inventada",
+        "de la Prueba Inventada",
+    }
+
+
+def test_person_strings_are_the_name_forms_and_orcids_folded_without_titles_or_abstracts() -> None:
+    records = people()
+
+    strings = person_strings(records)
+
+    assert strings == {form.casefold() for form in person_name_forms(records)} | {
+        "https://orcid.org/0000-0002-1825-0097",
+        "0000-0002-1825-0097",
+        "0000-0001-5109-3700",
+    }
+    assert strings < sensitive_strings(records)
+    assert not any("sintético" in text or "sintética" in text for text in strings)
+
+
+def test_sensitive_strings_keep_the_names_as_written_titles_sentences_and_orcids() -> None:
+    # The refactor that shares the name forms with person_name_forms keeps this set.
+    records = people()[:1]
+
+    assert sensitive_strings(records) == {
+        "título sintético de la prueba de nombres",
+        "primera oración sintética larga del resumen de prueba, con coma. corta.",
+        "primera oración sintética larga del resumen de prueba, con coma.",
+        "inventado  ficticio,  ana   lucía",
+        "inventado ficticio, ana lucía",
+        "ana lucía inventado ficticio",
+        "inventado ficticio",
+        "plantado, pedro",
+        "pedro plantado",
+        "inventán pruebas, josé",
+        "josé inventán pruebas",
+        "inventán pruebas",
+        "https://orcid.org/0000-0002-1825-0097",
+        "0000-0002-1825-0097",
+    }

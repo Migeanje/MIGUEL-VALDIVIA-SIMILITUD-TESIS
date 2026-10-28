@@ -100,10 +100,17 @@ SUMMARY_FILE_NAME = "summary.md"
 MANIFEST_FILE_NAME = "manifest.json"
 MEAN = "mean"
 """The name of the mean percentile rank over the representations, in ``ranges.parquet``."""
+WORKBOOK_SETTINGS = frozenset({"annotators"})
+"""The values of ``labeling`` that belong to the workbooks (T20b), not to the draw: neither the
+manifest nor the summary of a draw records them."""
 
 
 class DrawError(ValueError):
     """The draw cannot go on: an input disagrees with the configuration or the git tree."""
+
+
+class PartialDrawError(DrawError):
+    """Writing the draw stopped after some of its records were written, before its manifest."""
 
 
 def results_dir(results_root: Path, snapshot_id: str) -> Path:
@@ -690,7 +697,7 @@ def _rule(columns: int) -> str:
 
 
 def _settings_text(settings: LabelingConfig) -> str:
-    values = settings.model_dump(exclude={"records_dir"})
+    values = settings.model_dump(exclude={"records_dir", *WORKBOOK_SETTINGS})
     return ", ".join(f"{name} {value:g}" for name, value in values.items())
 
 
@@ -722,10 +729,15 @@ def write_outputs(
     pairs first, then the tracked tables, ``cuts.json`` and ``summary.md``, then
     ``manifest.json`` last, and return the manifest with the SHA-256 of every file written.
 
+    The guard reads every tracked output and the manifest without its files' digests before
+    anything is written, then the final manifest once more, after the other records are written
+    and before it is.
+
     Raises:
-        PrivacyError: if a tracked output, the manifest included, holds a string of the snapshot
-            or a doc code; nothing is written then.
-        OSError: if writing fails.
+        PrivacyError: if a tracked output or the manifest holds a string of the snapshot or a
+            doc code; nothing is written then. If only the final manifest does, every record
+            but the manifest is written already, a partial draw (:func:`partial_records`).
+        OSError: if writing fails; the records written before stay, a partial draw.
     """
     store = store or ParquetTableStore()
     texts = tracked_texts(run, summary)
@@ -749,6 +761,14 @@ def write_outputs(
     # The commit point: without it, the draw is not complete.
     write_text(results / MANIFEST_FILE_NAME, text)
     return final
+
+
+def partial_records(results: Path, records: Path) -> tuple[Path, ...]:
+    """Return the records of a draw that stopped before its manifest was written, if any: the
+    files that :func:`write_outputs` writes, but the manifest, that are there."""
+    names = (COMPOSITION_FILE_NAME, RANGES_FILE_NAME, CUTS_FILE_NAME, SUMMARY_FILE_NAME)
+    candidates = (records / PAIRS_FILE_NAME, *(results / name for name in names))
+    return tuple(path for path in candidates if path.exists())
 
 
 def existing_draw(results: Path, records: Path) -> Path | None:
@@ -837,19 +857,25 @@ def main(
             summary = render_summary(run, git_commit=state.commit)
             _progress(f"writing the records, {MANIFEST_FILE_NAME} last")
             finished_at, seconds = clock(), timer() - started
-            manifest = write_outputs(
-                run,
-                results=results,
-                records=records,
-                summary=summary,
-                manifest=_manifest(
+            try:
+                manifest = write_outputs(
                     run,
-                    git_commit=state.commit,
-                    started_at=started_at,
-                    finished_at=finished_at,
-                    seconds=seconds,
-                ),
-            )
+                    results=results,
+                    records=records,
+                    summary=summary,
+                    manifest=_manifest(
+                        run,
+                        git_commit=state.commit,
+                        started_at=started_at,
+                        finished_at=finished_at,
+                        seconds=seconds,
+                    ),
+                )
+            except (OSError, ValueError) as error:
+                partial = partial_records(results, records)
+                if not partial:
+                    raise
+                raise PartialDrawError(f"{error}; {_partial_hint(partial)}") from error
     except KeyboardInterrupt:
         print(
             f"interrupted: a draw is complete only once {MANIFEST_FILE_NAME} is written; move the "
@@ -864,6 +890,17 @@ def main(
     print(describe(run, seconds=manifest.seconds))
     print(f"Wrote {relative}/ and the gitignored {PAIRS_FILE_NAME}, {MANIFEST_FILE_NAME} last")
     return 0
+
+
+def _partial_hint(partial: Sequence[Path]) -> str:
+    names = [path.name for path in partial]
+    listed = ", ".join(names[:-1]) + f" and {names[-1]}" if len(names) > 1 else names[0]
+    folders = ", ".join(dict.fromkeys(str(path.parent) for path in partial))
+    return (
+        f"the draw stopped after writing {listed}, and a draw is complete only once "
+        f"{MANIFEST_FILE_NAME} is written: move the partial records away ({folders}) and run "
+        "the command again"
+    )
 
 
 def _refuse_an_earlier_draw(snapshot_id: str, results: Path, records: Path) -> None:
@@ -889,7 +926,7 @@ def _dry_run(
     relative = results.relative_to(root).as_posix()
     try:
         state: GitState | None = git(root, relative)
-    except OSError:
+    except (OSError, UnicodeError):  # what read_git_state raises when git cannot tell
         state = None
     started = timer()
     run = compute(config, root, snapshot_id, load=load, report=_progress, timer=timer)
@@ -943,7 +980,7 @@ def _manifest(
         git_commit=git_commit,
         seed=settings.seed,
         settings={
-            **settings.model_dump(mode="json"),
+            **settings.model_dump(mode="json", exclude=set(WORKBOOK_SETTINGS)),
             "records_dir": settings.records_dir.as_posix(),
             "embedding_document_vector": run.config.embedding.document_vector,
             "tfidf_document_vector": run.config.tfidf.document_vector,

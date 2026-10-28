@@ -3,6 +3,7 @@
 Every record here is synthetic: made-up uuids, handles, titles, objectives and names.
 """
 
+import hashlib
 import io
 import json
 import math
@@ -446,6 +447,85 @@ def test_the_sample_file_records_the_draw_without_text(tmp_path: Path) -> None:
     assert len(content["items"]) == 4
     assert "Determinar" not in json.dumps(content)
     assert made.sample.items[0].n == 1
+
+
+def color(value: Any) -> str | None:
+    """Return a color as text: its RGB value, or its theme index."""
+    if value is None:
+        return None
+    return value.rgb if isinstance(value.rgb, str) else f"theme {value.theme}"
+
+
+def canonical(path: Path) -> str:
+    """Return every value, style, link, merge and drop-down list of the workbook at ``path`` as
+    JSON, so a test can pin the whole workbook."""
+    workbook = openpyxl.load_workbook(path)
+    sheets = []
+    for sheet in workbook.worksheets:
+        cells = [
+            [
+                cell.coordinate,
+                cell.value,
+                cell.data_type,
+                cell.font.b,
+                cell.font.sz,
+                color(cell.font.color),
+                cell.font.u,
+                color(cell.fill.fgColor) if cell.fill.fill_type else None,
+                cell.border.top.style,
+                cell.alignment.wrap_text,
+                cell.alignment.vertical,
+                cell.hyperlink.target if cell.hyperlink else None,
+            ]
+            for row in sheet.iter_rows()
+            for cell in row
+            if cell.value is not None or cell.has_style
+        ]
+        sheets.append(
+            {
+                "title": sheet.title,
+                "cells": cells,
+                "widths": {key: dim.width for key, dim in sorted(sheet.column_dimensions.items())},
+                "freeze": sheet.freeze_panes,
+                "merged": sorted(str(merged) for merged in sheet.merged_cells.ranges),
+                "lists": [
+                    [
+                        str(rule.sqref),
+                        rule.type,
+                        rule.formula1,
+                        rule.allow_blank,
+                        rule.showErrorMessage,
+                        rule.errorTitle,
+                        rule.error,
+                    ]
+                    for rule in sheet.data_validations.dataValidation
+                ],
+            }
+        )
+    return json.dumps(
+        {"sheets": sheets, "active": workbook.active.title}, ensure_ascii=False, sort_keys=True
+    )
+
+
+T10B_WORKBOOK_SHA256 = "52e149c769bf8cd662e9cb4bce85324ac333f78681dfd175a506eb550c1575eb"
+"""The canonical content of the workbook below, before T20b shared its helpers (90fedf2)."""
+
+
+def test_the_workbook_is_unchanged_by_the_helpers_that_the_labeled_set_shares(
+    tmp_path: Path,
+) -> None:
+    # A redacted name, a formula kept as text and a not_found row, in every sheet and column.
+    named = "Aplicar el método de Personaejemplo Sintética Inventadoapellido Ficticiosegundo."
+    made = make(
+        tmp_path,
+        {"sistemas": (2, 1), "minas": (1, 0)},
+        generals={1: named, 2: '=HYPERLINK("https://example.org")'},
+    )
+
+    digest = hashlib.sha256(canonical(made.workbook_path).encode()).hexdigest()
+
+    assert made.redacted == 1
+    assert digest == T10B_WORKBOOK_SHA256
 
 
 def test_an_existing_workbook_is_never_overwritten(tmp_path: Path) -> None:

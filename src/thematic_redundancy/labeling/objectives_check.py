@@ -39,7 +39,7 @@ import re
 import sys
 import zipfile
 from collections import Counter
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -56,7 +56,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError
 
 from thematic_redundancy.corpus.pdf_manifest import PDF_DIR_NAME, pdf_file_name
-from thematic_redundancy.corpus.profile import ABSTRACT_KEY, PERSON_KEYS, TITLE_KEY
+from thematic_redundancy.corpus.profile import ABSTRACT_KEY, TITLE_KEY, person_name_forms
 from thematic_redundancy.corpus.snapshot import (
     RAW_DIR_NAME,
     Count,
@@ -358,7 +358,7 @@ def make_verification_workbook(
     data_dir = config.paths.resolve_against(project_root).data_dir
     pdf_dir = data_dir / RAW_DIR_NAME / snapshot_id / PDF_DIR_NAME
     by_item = {record.item_uuid: record for record in objectives}
-    redactor = _NameRedactor(_person_names(snapshot_records))
+    redactor = _NameRedactor(person_name_forms(snapshot_records))
     workbook = _build_workbook(
         sample,
         by_item,
@@ -390,7 +390,8 @@ digits such as ``²``; this class leaves them out."""
 
 
 class _NameRedactor:
-    """Replaces every form of the given person names in a text, ignoring letter case.
+    """Replaces every form of the given person names in a text, ignoring letter case. The
+    workbook gives it the forms of :func:`~thematic_redundancy.corpus.profile.person_name_forms`.
 
     A form is replaced only where it stands as whole words: a letter right before or after it
     means it is part of a longer word. A digit, such as a footnote number, or punctuation
@@ -415,27 +416,6 @@ class _NameRedactor:
         return redacted
 
 
-def _person_names(records: Iterable[SnapshotRecord]) -> set[str]:
-    """Return the ways in which each author, advisor and juror name may be written: as in
-    the metadata (``Family, Given``), as ``Given Family``, and its family part when that has
-    two words or more."""
-    forms: set[str] = set()
-    for record in records:
-        for key in PERSON_KEYS:
-            for entry in record.metadata.get(key, ()):
-                name = entry.get("value")
-                if not isinstance(name, str) or not name.strip():
-                    continue
-                flat = normalize_text(name)
-                family, comma, given = (part.strip() for part in flat.partition(","))
-                forms.add(flat)
-                if comma and given and family:
-                    forms.add(f"{given} {family}")
-                if comma and len(family.split()) >= 2:
-                    forms.add(family)
-    return forms
-
-
 def _build_workbook(
     sample: VerificationSample,
     by_item: Mapping[UUID, ObjectivesRecord],
@@ -451,12 +431,7 @@ def _build_workbook(
     guide.title = _GUIDE_SHEET
     _write_guide(guide, sample)
     sheet = workbook.create_sheet(_CHECK_SHEET)
-    for column, (name, width) in enumerate(zip(COLUMNS, _WIDTHS, strict=True), start=1):
-        cell = sheet.cell(1, column, name)
-        cell.font = Font(bold=True)
-        cell.fill = PatternFill("solid", fgColor="DDE4EE")
-        cell.alignment = Alignment(wrap_text=True, vertical="top")
-        sheet.column_dimensions[cell.column_letter].width = width
+    _write_header(sheet, COLUMNS, _WIDTHS)
     verdict_fill = PatternFill("solid", fgColor="FFF6D5")
     for row, item in enumerate(sample.items, start=2):
         record = by_item[item.item_uuid]
@@ -482,20 +457,39 @@ def _build_workbook(
         ("Veredicto objetivo general", GENERAL_VERDICTS),
         ("Veredicto objetivos específicos", SPECIFIC_VERDICTS),
     ):
-        validation = DataValidation(
-            type="list",
-            formula1='"' + ",".join(labels) + '"',
-            allow_blank=True,
-            showErrorMessage=True,
-            errorTitle="Valor no permitido",
-            error="Elija un valor de la lista.",
-        )
-        letter = sheet.cell(1, COLUMNS.index(name) + 1).column_letter
-        validation.add(f"{letter}2:{letter}{last}")
-        sheet.add_data_validation(validation)
+        _add_list_validation(sheet, COLUMNS.index(name) + 1, labels, 2, last)
     sheet.freeze_panes = "A2"
     workbook.active = 1
     return workbook
+
+
+def _write_header(sheet: Worksheet, columns: Sequence[str], widths: Sequence[float]) -> None:
+    """Write the bold, shaded header row of a sheet and set its columns' widths. The labeled
+    set's workbooks (:mod:`.workbook`) share it."""
+    for column, (name, width) in enumerate(zip(columns, widths, strict=True), start=1):
+        cell = sheet.cell(1, column, name)
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill("solid", fgColor="DDE4EE")
+        cell.alignment = Alignment(wrap_text=True, vertical="top")
+        sheet.column_dimensions[cell.column_letter].width = width
+
+
+def _add_list_validation(
+    sheet: Worksheet, column: int, labels: Iterable[str], first: int, last: int
+) -> None:
+    """Offer the drop-down list of ``labels`` in ``column`` from row ``first`` to ``last``,
+    refusing any other value. The labeled set's workbooks (:mod:`.workbook`) share it."""
+    validation = DataValidation(
+        type="list",
+        formula1='"' + ",".join(labels) + '"',
+        allow_blank=True,
+        showErrorMessage=True,
+        errorTitle="Valor no permitido",
+        error="Elija un valor de la lista.",
+    )
+    letter = sheet.cell(1, column).column_letter
+    validation.add(f"{letter}{first}:{letter}{last}")
+    sheet.add_data_validation(validation)
 
 
 def _text_cell(sheet: Worksheet, row: int, column: int, value: object) -> Cell:
@@ -605,10 +599,20 @@ def _write_guide(sheet: Worksheet, sample: VerificationSample) -> None:
             f"personas aparecen como «{_REDACTED}».",
         ),
     ]
-    sheet.column_dimensions["A"].width = 34
-    sheet.column_dimensions["B"].width = 100
     sections = {"Cómo trabajar", "Veredicto del objetivo general"}
     sections.add("Veredicto de los objetivos específicos")
+    _write_guide_lines(sheet, lines, sections)
+
+
+def _write_guide_lines(
+    sheet: Worksheet, lines: Sequence[tuple[str, str]], sections: Collection[str]
+) -> None:
+    """Write a guide sheet: one ``(label, text)`` pair per row, the first row its title in large
+    bold type, and in bold the labels of ``sections`` and every label with a text that does not
+    end in a period (a numbered step does). The labeled set's workbooks (:mod:`.workbook`) share
+    it."""
+    sheet.column_dimensions["A"].width = 34
+    sheet.column_dimensions["B"].width = 100
     for row, (label, text) in enumerate(lines, start=1):
         label_cell = _text_cell(sheet, row, 1, label)
         text_cell = _text_cell(sheet, row, 2, text or None)

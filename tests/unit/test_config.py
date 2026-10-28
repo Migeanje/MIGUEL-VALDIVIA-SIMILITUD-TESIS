@@ -292,7 +292,36 @@ def test_the_labeling_block_declares_d34s_values() -> None:
         "pilot_size": 10,
         "pilot_floor": 2,
         "records_dir": Path("data/labels/labeled_set"),
+        "annotators": None,
     }
+
+
+@pytest.mark.parametrize("annotators", [3, 4])
+def test_the_number_of_annotators_is_3_or_4_once_the_user_confirms_it(
+    raw_default: dict[str, Any], tmp_path: Path, annotators: int
+) -> None:
+    raw_default["labeling"]["annotators"] = annotators
+
+    assert load_variant(tmp_path, raw_default).labeling.annotators == annotators
+
+
+@pytest.mark.parametrize("annotators", [2, 5, 0, "3", 3.0, True])
+def test_another_number_of_annotators_is_rejected(
+    raw_default: dict[str, Any], tmp_path: Path, annotators: Any
+) -> None:
+    raw_default["labeling"]["annotators"] = annotators
+
+    with pytest.raises(ValidationError, match="labeling.annotators"):
+        load_variant(tmp_path, raw_default)
+
+
+def test_the_number_of_annotators_must_be_declared_even_while_unset(
+    raw_default: dict[str, Any], tmp_path: Path
+) -> None:
+    del raw_default["labeling"]["annotators"]
+
+    with pytest.raises(ValidationError, match=r"labeling.annotators\s+Field required"):
+        load_variant(tmp_path, raw_default)
 
 
 @pytest.mark.parametrize(
