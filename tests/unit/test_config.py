@@ -20,6 +20,7 @@ from thematic_redundancy.shared.config import (
     SnapshotConfig,
     load_config,
 )
+from thematic_redundancy.topic_map.assignment import PERCENTILE_METHODS, THRESHOLD_SCOPES
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "default.yaml"
 
@@ -403,6 +404,94 @@ def test_the_threshold_calibration_is_outside_the_experiment_declaration(
     assert load_variant(tmp_path, raw_default).experiment_declaration_sha256() == declared
 
 
+def test_the_temporal_block_declares_t27s_values() -> None:
+    config = load_config(DEFAULT_CONFIG_PATH)
+
+    assert config.temporal.model_dump() == {
+        "split_year": 2025,
+        "sample": {"seed": 20261027, "size": 40, "atypical": 10, "program_floor": 2},
+    }
+
+
+def test_the_proposal_block_declares_the_atypical_flag_confirmed_for_t23() -> None:
+    proposal = load_config(DEFAULT_CONFIG_PATH).proposal
+
+    assert proposal.model_dump() == {"atypical_scope": "global", "atypical_method": "linear"}
+
+
+def test_the_atypical_options_are_those_of_the_assignment() -> None:
+    # As for the NPMI units: the configuration names the options itself, and they must stay
+    # the ones that the assignment accepts.
+    assert get_args(config_module.AtypicalScope) == THRESHOLD_SCOPES
+    assert get_args(config_module.PercentileMethod) == PERCENTILE_METHODS
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"split_year": 2021}, r"temporal.split_year \(2021\) must be after snapshot.year_start"),
+        ({"split_year": 2020}, r"temporal.split_year \(2020\) must be after snapshot.year_start"),
+        ({"split_year": 2027}, r"not after snapshot.year_end \(2026\)"),
+        ({"sample": {"seed": 1, "size": 40, "atypical": 41, "program_floor": 0}}, "atypical"),
+        (
+            {"sample": {"seed": 1, "size": 40, "atypical": 10, "program_floor": 3}},
+            r"program_floor \(3\) over the 5 programs exceeds the atypical quota \(10\)",
+        ),
+        (
+            {"sample": {"seed": 1, "size": 18, "atypical": 10, "program_floor": 2}},
+            r"program_floor \(2\) over the 5 programs exceeds the typical quota \(8\)",
+        ),
+    ],
+)
+def test_a_temporal_block_that_cannot_hold_is_rejected(
+    raw_default: dict[str, Any], tmp_path: Path, changes: dict[str, Any], message: str
+) -> None:
+    raw_default["temporal"].update(changes)
+
+    with pytest.raises(ValidationError, match=message):
+        load_variant(tmp_path, raw_default)
+
+
+@pytest.mark.parametrize(
+    "sample",
+    [
+        {"seed": 0, "size": 40, "atypical": 0, "program_floor": 8},
+        {"seed": 0, "size": 10, "atypical": 10, "program_floor": 2},
+        {"seed": 0, "size": 20, "atypical": 10, "program_floor": 2},
+    ],
+    ids=["no-atypical-quota", "no-typical-quota", "floors-filling-both-pools"],
+)
+def test_an_empty_pool_needs_no_floor_and_floors_may_fill_a_pool(
+    raw_default: dict[str, Any], tmp_path: Path, sample: dict[str, int]
+) -> None:
+    raw_default["temporal"]["sample"] = sample
+
+    assert load_variant(tmp_path, raw_default).temporal.sample.model_dump() == sample
+
+
+def test_the_temporal_and_proposal_blocks_are_outside_the_experiment_declaration(
+    raw_default: dict[str, Any], tmp_path: Path
+) -> None:
+    declared = load_config(DEFAULT_CONFIG_PATH).experiment_declaration_sha256()
+    raw_default["temporal"]["split_year"] = 2024
+    raw_default["temporal"]["sample"]["seed"] = 1
+    raw_default["proposal"]["atypical_scope"] = "per_topic"
+
+    assert load_variant(tmp_path, raw_default).experiment_declaration_sha256() == declared
+
+
+def test_the_temporal_split_year_leaves_the_gap_rules_split_year_alone(
+    raw_default: dict[str, Any], tmp_path: Path
+) -> None:
+    # Two different splits: gap rule (d) compares 2021-2023 with 2024-2026 (T24), the temporal
+    # evaluation fits 2021-2024 and assigns 2025-2026 (O04).
+    raw_default["temporal"]["split_year"] = 2022
+
+    config = load_variant(tmp_path, raw_default)
+
+    assert (config.gaps.temporal_split_year, config.temporal.split_year) == (2024, 2022)
+
+
 def test_a_rare_share_not_below_the_present_share_is_rejected(
     raw_default: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -465,6 +554,9 @@ def test_kmeans_sweep_with_bounds_outside_the_contract_is_rejected(
         "topic_map.projection.unexpected_key",
         "labeling.unexpected_key",
         "redundancy.unexpected_key",
+        "temporal.unexpected_key",
+        "temporal.sample.unexpected_key",
+        "proposal.unexpected_key",
     ],
 )
 def test_unknown_keys_are_rejected(
@@ -829,6 +921,17 @@ def test_harvest_settings_take_their_defaults_when_omitted(
         ("labeling.pilot_floor", 0),
         ("labeling.top_share", "0.01"),
         ("labeling.random", 30.0),
+        ("temporal.split_year", "2025"),
+        ("temporal.split_year", 2025.0),
+        ("temporal.sample.seed", -1),
+        ("temporal.sample.seed", 2**32),
+        ("temporal.sample.size", 0),
+        ("temporal.sample.atypical", -1),
+        ("temporal.sample.program_floor", -1),
+        ("temporal.sample.size", 40.0),
+        ("proposal.atypical_scope", "local"),
+        ("proposal.atypical_method", "mean"),
+        ("proposal.atypical_method", None),
     ],
 )
 def test_values_outside_the_contract_are_rejected(

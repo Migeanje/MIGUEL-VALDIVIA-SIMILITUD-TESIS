@@ -897,6 +897,68 @@ class LabelingConfig(_FrozenModel):
         )
 
 
+AtypicalScope = Literal["global", "per_topic"]
+"""Where O06's threshold is taken: over every clustered thesis of the map, or per topic; the
+options of :func:`~thematic_redundancy.topic_map.assignment.atypical_threshold`."""
+PercentileMethod = Literal[
+    "inverted_cdf",
+    "averaged_inverted_cdf",
+    "closest_observation",
+    "interpolated_inverted_cdf",
+    "hazen",
+    "weibull",
+    "linear",
+    "median_unbiased",
+    "normal_unbiased",
+    "lower",
+    "higher",
+    "midpoint",
+    "nearest",
+]
+"""The methods of :func:`numpy.percentile`, as the assignment accepts them."""
+
+
+class ProposalConfig(_FrozenModel):
+    """How a thesis assigned to a topic map is flagged atypical (O06, T23): below O06's
+    percentile of the member-to-own-centroid similarities, taken with this scope and method.
+    The user confirmed ``global`` and ``linear`` on 2026-10-20 for every caller (T26 to T28)."""
+
+    atypical_scope: AtypicalScope
+    atypical_method: PercentileMethod
+
+
+class TemporalSampleConfig(_FrozenModel):
+    """The expert sample of the temporal split (O04): ``size`` theses of the later period with
+    their assigned topic, ``atypical`` of them drawn from the theses flagged atypical (or all of
+    those, when fewer) and the rest from the others, each pool spread over the programs in
+    proportion to its theses with at least ``program_floor`` per program that has any."""
+
+    seed: Seed
+    size: PositiveInt
+    atypical: NonNegativeInt
+    """The sample's theses drawn from the atypical ones; the shortfall goes to the others."""
+    program_floor: NonNegativeInt
+
+    @model_validator(mode="after")
+    def _require_atypical_within_the_size(self) -> Self:
+        if self.atypical > self.size:
+            raise ValueError(
+                f"temporal.sample.atypical ({self.atypical}) must not exceed "
+                f"temporal.sample.size ({self.size})"
+            )
+        return self
+
+
+class TemporalConfig(_FrozenModel):
+    """The temporal-split evaluation (T27, O04): the winner's map is fitted on the theses
+    issued from ``snapshot.year_start`` to ``split_year - 1`` and the theses issued from
+    ``split_year`` to ``snapshot.year_end`` are assigned to it."""
+
+    split_year: StrictInt
+    """First year of the later period, whose theses are assigned to the earlier period's map."""
+    sample: TemporalSampleConfig
+
+
 class AppConfig(_FrozenModel):
     """Complete, validated configuration of one analysis run."""
 
@@ -920,6 +982,8 @@ class AppConfig(_FrozenModel):
     recommender: RecommenderConfig
     gaps: GapsConfig
     labeling: LabelingConfig
+    proposal: ProposalConfig
+    temporal: TemporalConfig
 
     @field_validator("seeds")
     @classmethod
@@ -963,7 +1027,28 @@ class AppConfig(_FrozenModel):
                 f"(each program and the pairs between programs) exceeds the smallest stratified "
                 f"pool ({smallest})"
             )
+        self._check_temporal_split()
         return self
+
+    def _check_temporal_split(self) -> None:
+        split_year = self.temporal.split_year
+        if not self.snapshot.year_start < split_year <= self.snapshot.year_end:
+            raise ValueError(
+                f"temporal.split_year ({split_year}) must be after snapshot.year_start "
+                f"({self.snapshot.year_start}) and not after snapshot.year_end "
+                f"({self.snapshot.year_end}), so that both periods hold years"
+            )
+        sample, programs = self.temporal.sample, len(self.snapshot.programs)
+        floors = sample.program_floor * programs
+        for pool, quota in (
+            ("atypical", sample.atypical),
+            ("typical", sample.size - sample.atypical),
+        ):
+            if quota and floors > quota:
+                raise ValueError(
+                    f"temporal.sample.program_floor ({sample.program_floor}) over the {programs} "
+                    f"programs exceeds the {pool} quota ({quota})"
+                )
 
     def experiment_declaration(self) -> dict[str, Any]:
         """Return the experiment declaration (D30) as plain JSON data: the whole ``experiment``

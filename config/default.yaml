@@ -315,3 +315,27 @@ labeling:
   pilot_size: 10
   pilot_floor: 2
   records_dir: data/labels/labeled_set
+
+# A thesis assigned to a topic map by nearest centroid (D14) is atypical when its similarity is
+# below O06's P5 of the member-to-own-centroid similarities, taken over every clustered thesis
+# of the map (global) with numpy's linear percentile: the values the user confirmed for T23 on
+# 2026-10-20, for every caller (the temporal split, the recommender and the app).
+proposal:
+  atypical_scope: global
+  atypical_method: linear
+
+# Temporal split (T27, O04). The winner's configuration is fitted, with no new sweep (D30 E3),
+# on the theses issued from snapshot.year_start to split_year - 1 (2021-2024), and the theses
+# issued from split_year to snapshot.year_end (2025-2026) are assigned to its topics and
+# compared with their labels in the full map (T19). This split is not the one of gap rule (d),
+# gaps.temporal_split_year. The expert sample draws size theses of the later period from the
+# medoid run's map: atypical of them from the theses flagged atypical (all of them when fewer),
+# the rest from the others, each pool spread over the programs in proportion to its theses with
+# at least program_floor per program that has any. Every random choice derives from seed.
+temporal:
+  split_year: 2025
+  sample:
+    seed: 20261027
+    size: 40
+    atypical: 10
+    program_floor: 2
