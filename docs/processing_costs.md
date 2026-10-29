@@ -233,6 +233,7 @@ across sessions with care.
 | 2026-10-27 | T31 | Expert-samples dry run by the independent verifier, with T27's split computed in memory | Snapshot `20261002T224412Z` | 80.1 s | — | 0 | A 10, B 5, C 6 of 17, D 7 of 24; 0 hits for names, ORCIDs, identifiers and links in the rendered samples | plan T31 (t31b) |
 | 2026-10-27 | all | Test suite (`pytest -q`) run by the independent verifier of T31's samples builder | 3,294 passed and 2 environmental failures, plus 3 skipped; 36 smoke tests deselected | 129.58 s, 1 run | — | 0 | No blocker; 8 of 8 checks passed | plan T31 (t31b) |
 | 2026-10-29 | all | Test suite (`pytest -q`), in the main tree after T31's samples builder | 3,694 passed, plus 3 skipped; 36 smoke tests deselected | 261.62 s (lock held 264.4 s), 1 run | — | 0 | After the command: 28 new tests | plan T31 |
+| 2026-10-29 | all | Test suite (`pytest -q`), in the main tree after the gap tests' invented names | 3,694 passed, plus 3 skipped; 36 smoke tests deselected | 253.23 s (lock held 255.7 s), 1 run | — | 0 | Test data only: no new tests | plan Progress log (tnames) |
 
 ### Notes on the ledger
 

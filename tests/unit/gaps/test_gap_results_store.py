@@ -182,16 +182,16 @@ def test_member_rows_name_the_theses_of_each_gap_by_part(kit: SimpleNamespace) -
 
 
 def test_the_privacy_guard_names_the_file_and_never_the_string() -> None:
-    sensitive = frozenset({"pérez quispe", "un título de tesis"})
+    sensitive = frozenset({"pérez inventado", "un título de tesis"})
 
     check_privacy({"summary.md": "no leak here", "gaps.parquet": "{}"}, sensitive)
     with pytest.raises(PrivacyError) as caught:
-        check_privacy({"summary.md": "Terms: PÉREZ   Quispe", "cuts.json": "{}"}, sensitive)
+        check_privacy({"summary.md": "Terms: PÉREZ   Inventado", "cuts.json": "{}"}, sensitive)
 
     message = str(caught.value)
     assert "summary.md" in message and "1" in message
     assert "cuts.json" not in message
-    assert "quispe" not in message.casefold()
+    assert "inventado" not in message.casefold()
 
 
 # Writing
@@ -270,7 +270,7 @@ def write(
         cuts={"size_cut": 17.25},
         summary=summary,
         manifest=manifest_draft(),
-        sensitive=frozenset({"pérez quispe"}),
+        sensitive=frozenset({"pérez inventado"}),
         store=RecordingStore(log),
         write_text=write_text,
     )
@@ -314,8 +314,8 @@ def test_outputs_are_written_members_first_and_the_manifest_last(
 @pytest.mark.parametrize(
     ("summary", "setting", "named"),
     [
-        ("# Gaps\nterms: pérez quispe\n", "declared values", "summary.md"),
-        ("# Gaps\n", "a setting naming Pérez Quispe", "sensitivity.parquet"),
+        ("# Gaps\nterms: pérez inventado\n", "declared values", "summary.md"),
+        ("# Gaps\n", "a setting naming Pérez Inventado", "sensitivity.parquet"),
     ],
 )
 def test_a_leak_in_any_tracked_output_refuses_every_write(

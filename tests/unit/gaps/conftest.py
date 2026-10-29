@@ -294,7 +294,7 @@ def make_corpus(scenario: Scenario, *, sensitive: frozenset[str] = frozenset()) 
             input_sha256=dict(T19_INPUTS),
         ),
         metadata=scenario.metadata,
-        sensitive=sensitive or frozenset({"un título que no aparece", "quispe mamani"}),
+        sensitive=sensitive or frozenset({"un título que no aparece", "nombre inventado plantado"}),
         input_sha256={"metadata.jsonl": "m" * 64},
     )
 
