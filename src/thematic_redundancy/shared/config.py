@@ -965,6 +965,52 @@ class TemporalConfig(_FrozenModel):
     sample: TemporalSampleConfig
 
 
+QuartileBoundary = Literal["lower", "upper"]
+"""Where a topic size equal to a quartile cut goes; the options of
+:func:`~thematic_redundancy.redundancy.saturation.saturation_quartiles`."""
+
+
+class ExpertSamplesConfig(_FrozenModel):
+    """The anonymized result samples of the expert session (T31,
+    ``docs/expert_session/muestras_anonimizadas.md``): how many cases each sample draws and how
+    many theses and terms each case shows. Every random choice derives from ``seed``."""
+
+    seed: Seed
+    assignments_per_program: PositiveInt
+    """Sample A: the theses of T27's expert sample drawn per program, at most."""
+    group_examples: PositiveInt
+    """Sample A: the theses of the assigned group (2021-2024) shown per case."""
+    queries_per_program: PositiveInt
+    """Sample B: the simulated queries per program, drawn from sample A's cases."""
+    ranking_size: PositiveInt
+    """Sample B: the most similar earlier theses shown per query."""
+    topics: PositiveInt
+    """Sample C: the topics of the reference run drawn."""
+    topic_examples: PositiveInt
+    """Sample C: the members shown per topic."""
+    gaps_per_rule: PositiveInt
+    """Sample D: the stable gaps drawn per rule, at most."""
+    gap_examples: PositiveInt
+    """Sample D: the theses shown per gap."""
+    terms: PositiveInt
+    """The representative terms shown per group: its first ones, or all it has when fewer
+    (a topic keeps ``experiment.npmi.top_n``)."""
+    saturation_method: PercentileMethod
+    """Sample A's saturation quartiles (T23): the percentile method of the size cuts..."""
+    saturation_boundary: QuartileBoundary
+    """...and where a size equal to a cut goes."""
+
+    @model_validator(mode="after")
+    def _require_queries_within_the_assignments(self) -> Self:
+        if self.queries_per_program > self.assignments_per_program:
+            raise ValueError(
+                f"expert_samples.queries_per_program ({self.queries_per_program}) must not "
+                f"exceed expert_samples.assignments_per_program ({self.assignments_per_program}), "
+                "since sample B is drawn from sample A"
+            )
+        return self
+
+
 class AppConfig(_FrozenModel):
     """Complete, validated configuration of one analysis run."""
 
@@ -990,6 +1036,7 @@ class AppConfig(_FrozenModel):
     labeling: LabelingConfig
     proposal: ProposalConfig
     temporal: TemporalConfig
+    expert_samples: ExpertSamplesConfig
 
     @field_validator("seeds")
     @classmethod

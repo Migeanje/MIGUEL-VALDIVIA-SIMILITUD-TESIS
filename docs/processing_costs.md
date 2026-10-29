@@ -225,6 +225,7 @@ across sessions with care.
 | 2026-10-27 | all | Test suite (`pytest -q`) in the t20c worktree, through the lock | 3,246 tests: 3,244 passed and the worktree's 2 environmental failures; 3 skipped, 36 deselected | 275.94 s | — | 0 | 53 more than T20b's 3,193 | plan T20 (t20c) |
 | 2026-10-27 | all | Test suite (`pytest -q`) run by the independent verifier of T20c | 3,244 passed and 2 environmental failures, plus 3 skipped; 36 smoke tests deselected | 234 s, 1 run | — | 0 | No blocker; 9 of 9 checks passed | plan T20 (t20c) |
 | 2026-10-27 | all | Test suite (`pytest -q`), in the main tree after T20c | 3,596 passed, plus 3 skipped; 36 smoke tests deselected | 268.59 s (lock held 272.9 s), 1 run | — | 0 | After T20c: 53 new tests | plan T20 |
+| 2026-10-28 | all | Test suite (`pytest -q`), in the main tree after the first slice of T31's samples builder | 3,666 passed, plus 3 skipped; 36 smoke tests deselected | 292.27 s (lock held 295.1 s), 1 run | — | 0 | After the configuration block and the samples module: 70 new tests | plan T31 |
 
 ### Notes on the ledger
 

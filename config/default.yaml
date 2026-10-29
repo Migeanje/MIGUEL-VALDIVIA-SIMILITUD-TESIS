@@ -344,3 +344,25 @@ temporal:
     size: 40
     atypical: 10
     program_floor: 2
+
+# Anonymized result samples of the expert session (T31, docs/expert_session/
+# muestras_anonimizadas.md). A: up to assignments_per_program theses of 2025-2026 per program,
+# drawn from T27's expert sample, each with group_examples theses of its group on the 2021-2024
+# map and its saturation quartile (T23: saturation_method, saturation_boundary). B:
+# queries_per_program cases per program, drawn from A, each with the ranking_size most similar
+# theses of 2021-2024. C: topics groups of T19's reference run, each with topic_examples random
+# members. D: up to gaps_per_rule stable gaps of T24a per rule, each with gap_examples theses.
+# Every group shows its first terms terms. Every random choice derives from seed.
+expert_samples:
+  seed: 20261031
+  assignments_per_program: 2
+  group_examples: 3
+  queries_per_program: 1
+  ranking_size: 5
+  topics: 6
+  topic_examples: 5
+  gaps_per_rule: 2
+  gap_examples: 3
+  terms: 10
+  saturation_method: linear
+  saturation_boundary: lower

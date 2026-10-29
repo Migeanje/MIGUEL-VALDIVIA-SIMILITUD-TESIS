@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from thematic_redundancy.evaluation.coherence import UNITS
 from thematic_redundancy.evaluation.stability import NOISE_HANDLINGS
+from thematic_redundancy.redundancy.saturation import QUARTILE_BOUNDARIES
 from thematic_redundancy.redundancy.threshold import F1_TIES, FINAL_TAUS
 from thematic_redundancy.shared import config as config_module
 from thematic_redundancy.shared.config import (
@@ -521,6 +522,78 @@ def test_the_temporal_split_year_leaves_the_gap_rules_split_year_alone(
     assert (config.gaps.temporal_split_year, config.temporal.split_year) == (2024, 2022)
 
 
+def test_the_expert_samples_block_declares_t31s_defaults() -> None:
+    samples = load_config(DEFAULT_CONFIG_PATH).expert_samples
+
+    assert samples.model_dump() == {
+        "seed": 20261031,
+        "assignments_per_program": 2,
+        "group_examples": 3,
+        "queries_per_program": 1,
+        "ranking_size": 5,
+        "topics": 6,
+        "topic_examples": 5,
+        "gaps_per_rule": 2,
+        "gap_examples": 3,
+        "terms": 10,
+        "saturation_method": "linear",
+        "saturation_boundary": "lower",
+    }
+
+
+def test_the_saturation_boundaries_are_those_of_the_quartiles() -> None:
+    assert get_args(config_module.QuartileBoundary) == QUARTILE_BOUNDARIES
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        (
+            {"assignments_per_program": 1, "queries_per_program": 2},
+            r"expert_samples.queries_per_program \(2\) must not exceed "
+            r"expert_samples.assignments_per_program \(1\)",
+        ),
+    ],
+)
+def test_an_expert_samples_block_that_cannot_hold_is_rejected(
+    raw_default: dict[str, Any], tmp_path: Path, changes: dict[str, Any], message: str
+) -> None:
+    raw_default["expert_samples"].update(changes)
+
+    with pytest.raises(ValidationError, match=message):
+        load_variant(tmp_path, raw_default)
+
+
+def test_queries_may_take_every_assignment(raw_default: dict[str, Any], tmp_path: Path) -> None:
+    raw_default["expert_samples"].update({"assignments_per_program": 3, "queries_per_program": 3})
+
+    samples = load_variant(tmp_path, raw_default).expert_samples
+
+    assert (samples.assignments_per_program, samples.queries_per_program) == (3, 3)
+
+
+def test_the_samples_terms_leave_the_npmi_top_n_free(
+    raw_default: dict[str, Any], tmp_path: Path
+) -> None:
+    # The samples show a topic's first terms, or all it keeps when fewer: no cross-check, so a
+    # top_n below the samples' terms still loads, as it did before the block existed.
+    set_value(raw_default, "experiment.npmi.top_n", 2)
+
+    config = load_variant(tmp_path, raw_default)
+
+    assert (config.experiment.npmi.top_n, config.expert_samples.terms) == (2, 10)
+
+
+def test_the_expert_samples_block_is_outside_the_experiment_declaration(
+    raw_default: dict[str, Any], tmp_path: Path
+) -> None:
+    declared = load_config(DEFAULT_CONFIG_PATH).experiment_declaration_sha256()
+    raw_default["expert_samples"]["seed"] = 1
+    raw_default["expert_samples"]["terms"] = 5
+
+    assert load_variant(tmp_path, raw_default).experiment_declaration_sha256() == declared
+
+
 def test_a_rare_share_not_below_the_present_share_is_rejected(
     raw_default: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -586,6 +659,7 @@ def test_kmeans_sweep_with_bounds_outside_the_contract_is_rejected(
         "temporal.unexpected_key",
         "temporal.sample.unexpected_key",
         "proposal.unexpected_key",
+        "expert_samples.unexpected_key",
     ],
 )
 def test_unknown_keys_are_rejected(
@@ -961,6 +1035,22 @@ def test_harvest_settings_take_their_defaults_when_omitted(
         ("proposal.atypical_scope", "local"),
         ("proposal.atypical_method", "mean"),
         ("proposal.atypical_method", None),
+        ("expert_samples.seed", -1),
+        ("expert_samples.seed", 2**32),
+        ("expert_samples.seed", "20261031"),
+        ("expert_samples.assignments_per_program", 0),
+        ("expert_samples.group_examples", 0),
+        ("expert_samples.queries_per_program", 0),
+        ("expert_samples.ranking_size", 0),
+        ("expert_samples.topics", 0),
+        ("expert_samples.topic_examples", 0),
+        ("expert_samples.gaps_per_rule", 0),
+        ("expert_samples.gap_examples", 0),
+        ("expert_samples.terms", 0),
+        ("expert_samples.ranking_size", 5.0),
+        ("expert_samples.saturation_method", "mean"),
+        ("expert_samples.saturation_boundary", "middle"),
+        ("expert_samples.saturation_boundary", None),
     ],
 )
 def test_values_outside_the_contract_are_rejected(
