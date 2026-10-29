@@ -1,9 +1,14 @@
 # Muestras anonimizadas: especificación
 
-> **Estado: especificación, sin muestras todavía.** Las muestras las genera la segunda parte del
-> T31, cuando existan la partición temporal y su muestra para expertos (T27, O04) y la vista de
-> consulta (T28), y después de que T22 confirme la configuración ganadora. Ese trabajo reemplaza
-> cada marcador `{{…}}` con datos; los campos `[completar: …]` los llena el investigador a mano.
+> **Cómo se generan.** Las muestras las genera el comando
+> `uv run python -m thematic_redundancy.evaluation.run_expert_samples`, que lee los registros
+> guardados del mapa temático (T19), de la partición temporal con su muestra para expertos (T27,
+> O04) y de la corrida de vacíos (T24a), reemplaza cada marcador `{{…}}` con datos, aplica la
+> guarda de nombres y escribe las muestras, su clave y su composición en
+> `data/expert_session/<snapshot_id>/muestras/`. No corre mientras no exista la partición
+> temporal; con `--dry-run` calcula y verifica todo sin escribir nada. Mientras la configuración
+> ganadora sea provisional, cada muestra lo indica, y cuando T22 la confirme se generan de nuevo.
+> Los campos `[completar: …]` los llena el investigador a mano.
 
 Las muestras son la "muestra representativa de sus resultados sobre el corpus institucional" que
 se presenta a cada experto (plan de tesis, §3.8.3), "con los datos personales anonimizados
@@ -52,7 +57,7 @@ Así la muestra es representativa e incluye los errores del sistema, que tambié
 | Términos de los grupos | Sí | Ya están en los registros versionados de T19 |
 | Similitud coseno y posición | En B | Es el resultado de la consulta |
 | Veredicto de redundancia | No, mientras τ no exista | T22 aún no calibra el umbral |
-| Un nombre de persona dentro de un texto | Se reemplaza por `[nombre omitido]` | Como en el libro de verificación de objetivos |
+| Un nombre de persona, un ORCID, un código de tesis, un handle o un enlace dentro de un texto | La generación se detiene y no escribe ninguna muestra; el aviso no repite el texto encontrado | Como el candado de nombres de los libros de etiquetado (D34 (1)) |
 
 **Los títulos se muestran.** El etiquetado del conjunto evaluado (D34 (2)) muestra título,
 resumen, objetivos y palabras clave, sin autores, asesores ni enlaces, porque un asesor puede

@@ -11,7 +11,7 @@ are in neutral Spanish, and this index is for developers.
 | 1 | [formulario_jueces.md](formulario_jueces.md) | The judges' content-validity form (Aiken's V): clarity and relevance per item, sufficiency per dimension; part B maps its sheets to `aiken_validity` | Judges, researcher | Draft; the rating scale is a blank (N6) |
 | 2 | [consentimiento_informado.md](consentimiento_informado.md) | The informed-consent template, for judges and panel experts | Participants | Draft template with `[completar: …]` blanks |
 | 3 | [guion_sesion.md](guion_sesion.md) | The session script: timing, what the facilitator says and must not say, the three views' demo, materials, session log | Facilitator | Draft; its defaults are listed at its end |
-| 4 | [muestras_anonimizadas.md](muestras_anonimizadas.md) | The specification of the result samples (A temporal-split assignments, B simulated queries, C topics, D gaps), their anonymization and their `{{…}}` placeholders | Researcher, samples unit | Specification; no sample yet |
+| 4 | [muestras_anonimizadas.md](muestras_anonimizadas.md) | The specification of the result samples (A temporal-split assignments, B simulated queries, C topics, D gaps), their anonymization and their `{{…}}` placeholders | Researcher | Specification; the samples come from `run_expert_samples` (below) |
 | 5 | [cuestionario.md](cuestionario.md) | A faithful transcription of the thesis plan's Anexo A questionnaire; part B maps the answer sheet to `likert_analysis` | Panel, researcher | Draft pending the judges' validation (T30) |
 | 6 | [protocolo_datos.md](protocolo_datos.md) | How answers are coded, stored under the gitignored `data/` tree, transcribed, withdrawn and analyzed | Researcher | Draft; no command reads the sheets yet |
 | — | [plantillas/](plantillas/) | Header-only CSV templates of the six answer sheets | Researcher | Fixed by the layouts above |
@@ -21,7 +21,7 @@ are in neutral Spanish, and this index is for developers.
 | Marker | Filled by | Example |
 |---|---|---|
 | `[completar: …]` | The researcher, by hand, before use: contact data, dates, retention periods, institutional facts, the judges' scale | `[completar: nombre completo]` |
-| `{{…}}` | The samples unit, from data | `{{TITULO}}` |
+| `{{…}}` | The samples command, from data | `{{TITULO}}` |
 
 No document states an institutional fact (a committee, an approval number, a date) that the plan
 does not record. The consent says only that the institutional authorization was requested.
@@ -46,9 +46,12 @@ and T32 turns it into a tested command. The sheets live under
 
 - **U6:** the panel (six to eight teachers), the judges and their consent.
 - **N6:** the judges' rating scale and its anchors; the form leaves it as a blank.
-- **The samples:** the second part of T31 generates them once T27 (the temporal split and its
-  expert sample) and T28 (the query view) exist and T22 confirms the winner; it also runs the name
-  guard of D34 (1) and `check_privacy` on any tracked output.
+- **The samples:** `uv run python -m thematic_redundancy.evaluation.run_expert_samples`
+  generates them under `data/expert_session/<snapshot_id>/muestras/` from T19's, T27's and T24a's
+  records (see the repository README, "Expert samples"). It refuses to run until T27's temporal
+  split exists, stops on any hit of the name guard of D34 (1), and marks every sample
+  provisional while T19's winner is; once T22 confirms the winner, move the samples away and
+  generate them again.
 - **τ:** while T22 has not calibrated the redundancy threshold, the query view and sample B show
   similarity rankings without a verdict, and the script says so.
 - **Decisions for the user** recorded with this kit: item 11 while τ does not exist, a per-case

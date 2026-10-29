@@ -825,6 +825,64 @@ While T19's winner is provisional, every row and the summary say so; if T22 chan
 move the records away and run the split again. Before anything is written, every tracked output
 passes the gap run's privacy guard with the theses' doc codes added.
 
+## Expert samples
+
+Generate the anonymized result samples of the expert session (T31), as
+`docs/expert_session/muestras_anonimizadas.md` specifies them, with the values of
+`expert_samples` and `recommender` in `config/default.yaml`:
+
+```sh
+uv run python -m thematic_redundancy.evaluation.run_expert_samples --dry-run
+uv run python -m thematic_redundancy.evaluation.run_expert_samples
+```
+
+It uses the snapshot harvested last (`--snapshot-id` picks another one) and refits nothing. It
+reads T19's records (checked against T19's manifest), T27's temporal split (its manifest,
+`topics.parquet`, and the gitignored `sample.parquet` and `assignments.parquet`, each checked
+against T27's manifest, which must name the same T19 records), T24a's gap run (its manifest,
+`gaps.parquet` and the gitignored `members.parquet`, checked the same way), T19's inputs through
+T19's loader, the fichas and the snapshot's metadata. Samples A and B come from T27's expert
+sample, so the command refuses to run, the dry run included, until the temporal split exists.
+
+- **A**, assignments: up to `assignments_per_program` (2) theses of 2025-2026 per program from
+  T27's expert sample, each with its group on the 2021-2024 map, the group's first `terms` (10)
+  terms, `group_examples` (3) random theses of the group, O06's atypical flag and the group's
+  saturation quartile (T23, with `saturation_method` and `saturation_boundary`).
+- **B**, simulated queries: `queries_per_program` (1) of A's cases per program, a thesis without
+  an abstract being replaced by the next one drawn. Each thesis's existing document vector is
+  the query, so no encoder runs: T22's cosine search ranks the 2021-2024 theses only, so the
+  query never meets itself, and shows the `ranking_size` (5) most similar; T23's assignment
+  (through T26) must give the group T27 recorded; T26 gives the antecedents (top-k with MMR)
+  and the neighbor groups on the 2021-2024 map, and the nearby stable gaps of T24a, which T26
+  needs as objects, so the gap rules are computed again on T19's records and must equal T24a's
+  recorded reference run. No redundancy verdict is shown: "No disponible: el umbral de
+  redundancia aún no está calibrado."
+- **C**, groups: `topics` (6) random groups of T19's reference map, noise left out, each with
+  its size per program, its terms and `topic_examples` (5) random members.
+- **D**, gaps: up to `gaps_per_rule` (2) random stable gaps of T24a's reference run per rule,
+  each with the rule's plain-language sentence, its programs and years, its groups' terms, its
+  theses and `gap_examples` (3) of them.
+
+Every random choice derives from `expert_samples.seed`: sample k (A to D) draws from its own
+generator, each case code (`A01`, `B03`, ...) comes from a random permutation, and the cases are
+printed in code order. Each sample shows titles, keywords (A and B) and, in B's proposals only,
+the abstract and the objectives; never a person, a doc code, a uuid, a handle or a link. Before
+anything is written, a name guard searches every sample, without word boundaries, for every
+author, advisor and juror name form and ORCID iD of the snapshot (`sensitive_strings` of
+`corpus/profile.py` on the person and ORCID fields only), and for every thesis's doc code, uuid
+and handle and any link; a hit stops the command. While T19's winner is provisional, every
+sample says so. `--dry-run` computes and guards everything and writes nothing. A real run
+refuses a dirty git tree and earlier samples of the snapshot (a draw is a one-time event), holds
+the run lock of its directory and writes, all under the gitignored
+`data/expert_session/<snapshot_id>/muestras/` and nowhere else:
+
+| File | Content |
+|---|---|
+| `muestra_a.md` to `muestra_d.md` | The printable samples, in Spanish, with a set number to fill in by hand |
+| `clave.csv` | The key: each case's code, its thesis, group or gap, the source case of a B case, the doc codes of every thesis it shows, and the replaced candidates with the reason |
+| `composicion.json` | Cases per sample, program and rule, and the replacements, counts only; it passes the privacy guard as a tracked output would |
+| `manifest.json` | Written last: snapshot, git commit, the SHA-256 of T19's, T27's and T24a's records and of every input and output, the values used, the guard's counts, `provisional`, library versions and the times |
+
 ## Checks
 
 ```sh
@@ -894,6 +952,10 @@ work offline with `HF_HUB_OFFLINE=1`.
   thesis went to which topic, and the expert sample with its doc codes and titles, live under
   the gitignored `data/processed/`. The split refuses to write any tracked output that holds a
   doc code, a title, an abstract, a person's name or an ORCID iD from the snapshot.
+- The expert samples show titles, and in sample B abstracts and objectives, but never a person,
+  a doc code, a uuid, a handle or a link, so they and their key live only under the gitignored
+  `data/expert_session/`; the command writes nothing elsewhere and stops on any person's name
+  form or ORCID iD of the snapshot in a sample, searched without word boundaries.
 - `results/` holds aggregates only. The metadata profile refuses to write an output that holds a
   title, an abstract, a person's name or an ORCID from the snapshot.
 - Extracted page texts live only under the gitignored `data/interim/`. The extraction manifest
