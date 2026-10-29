@@ -531,6 +531,8 @@ theses' doc codes added: an output that holds a doc code, a title, an abstract s
 person's name or an ORCID iD of the snapshot refuses the whole write. To draw again, move the
 earlier draw's records away first. If a run stops after some records are written and before
 `manifest.json`, the error names the partial records to move away before running it again.
+`summary.md` prints the integer values exactly; the committed summary of snapshot
+`20261002T224412Z` shows its seed as `2.0261e+07`, which a new draw would print as `20261021`.
 
 ## Labeled-set workbooks
 
@@ -600,6 +602,50 @@ nothing. A real run refuses its earlier records and a dirty git tree outside
 The manifests pass the privacy guard with the theses' doc codes, the pair ids and the blind
 codes added. A workbook is never overwritten; to make one again, move its step's records away
 first.
+
+## Labeled-set import and adjudication
+
+Once the annotators return their workbooks, saved under their names in their folder, import them
+(T20c, D31, D34 (9)) with three more steps of the same command:
+
+```sh
+uv run python -m thematic_redundancy.labeling.pair_workbooks import-main --dry-run
+uv run python -m thematic_redundancy.labeling.pair_workbooks import-main
+# when some pair is disputed:
+uv run python -m thematic_redundancy.labeling.pair_workbooks adjudication
+# the adjudicators fill their workbooks, saved under their names in their folder
+uv run python -m thematic_redundancy.labeling.pair_workbooks import-adjudication
+```
+
+- **`import-main`** reads every annotator's workbook and refuses them all, listing every problem
+  of every workbook after its file name, unless each holds its pairs unchanged and a label on
+  every pair: a missing or unreadable file (a damaged compressed part included), a changed
+  header, a pair lost, repeated or added, an edited `N.º`, `Código` or `Campo` cell, and a blank
+  label (an incomplete workbook, T21 N4) or one outside the scale. On any refusal nothing is
+  written. It stores one row per pair and annotator, with the 3-level label and the binary one
+  (1 for `Redundante` only), and each pair's Fleiss' kappa inputs, and reports the agreement on
+  the first two labels (D31, D34 (9)): Fleiss' kappa over all the labeled pairs on the binary
+  labels, checked against D15's target of 0.6; Fleiss' kappa on the 3 levels; and Cohen's kappa
+  per pair of annotators, over the pairs they share, as a diagnostic. A pair is disputed when its
+  two levels differ. With no disputed pair, it also writes the consensus labels.
+- **`adjudication`** gives each disputed pair to an annotator who did not label it: with 3
+  annotators, the only one; with 4, one of the two others, in turn by load. It makes one short
+  workbook per adjudicator, `desempate_anotador_<k>.xlsx`, with the same layout, blind codes,
+  sides, examples and name guard, and without the earlier labels.
+- **`import-adjudication`** reads those workbooks as `import-main` reads the annotators', stores
+  the third labels and writes the consensus labels: the agreed level, or the majority of a
+  disputed pair's three labels. When all three differ, the final level is the middle one on the
+  scale (`Relacionado`), which is the majority whenever there is one and always agrees with the
+  majority of the three binary labels.
+
+| File | Content | In git |
+|---|---|---|
+| `data/labels/labeled_set/<snapshot_id>/labels/labels.parquet` | Each annotator's label of each pair: annotator, pair id, code, 3-level label, binary label, note | No |
+| `data/labels/labeled_set/<snapshot_id>/labels/fleiss_inputs.parquet` | Each pair's counts of its first two labels per level and per binary label | No |
+| `data/labels/labeled_set/<snapshot_id>/adjudication_layout.parquet`, `workbooks/desempate_anotador_<k>.xlsx` | The adjudication workbooks and their pairs | No |
+| `data/labels/labeled_set/<snapshot_id>/labels/adjudication_labels.parquet` | The third label of each disputed pair | No |
+| `data/labels/labeled_set/<snapshot_id>/labels/consensus.parquet` | T22's input, one row per pair of the labeled set: `pair_id`, `label_3` (`Redundante`, `Relacionado` or `No relacionado`), `label` (1 for `Redundante`), `source` (`agreement` or `adjudication`); written only when every pair has a final label | No |
+| `results/labeled_set/<snapshot_id>/workbooks/main_labels_manifest.json`, `adjudication_manifest.json`, `adjudication_labels_manifest.json` | Each step's manifest: the kappas with their parts, how many pairs got each combination of two labels (from which Fleiss' kappa can be computed again), the confusion tables per pair of annotators, the disputed and adjudicated counts and the final levels; the SHA-256 of every input, returned workbook and record | Yes |
 
 ## Redundancy threshold and stage 2 of the winner
 
@@ -837,8 +883,9 @@ work offline with `HF_HUB_OFFLINE=1`.
 - The labeled set's workbooks and their records name theses, so they live only under the
   gitignored `data/labels/`; a pair is shown under a random blind code kept there, never under
   its pair id, and with no author, advisor or link. A workbook that holds a person's name or an
-  ORCID iD of the snapshot, even glued to another word, is never written. The workbooks' tracked
-  manifests hold counts and digests only.
+  ORCID iD of the snapshot, even glued to another word, is never written. The annotators' labels
+  and the consensus labels live there too. The tracked manifests hold counts, kappas and digests
+  only, never a pair id or a blind code.
 - The redundancy run's tracked records hold counts, thresholds and F1 values only; each labeled
   pair's scores and labels live under the gitignored `data/processed/`. The run refuses to
   write any tracked output that holds a doc code, a pair id, a title, an abstract, a person's

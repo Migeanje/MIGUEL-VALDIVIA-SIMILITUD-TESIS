@@ -37,7 +37,7 @@ MODELS = CONFIG.embedding.models
 PROGRAMS = tuple(program.key for program in CONFIG.snapshot.programs)
 SIZES = {"sistemas": 20, "industrial": 50, "electronica": 15, "mecanica": 25, "minas": 20}
 SNAPSHOT = "S1"
-SENSITIVE = frozenset({"un título que no aparece", "quispe mamani"})
+SENSITIVE = frozenset({"un título que no aparece", "inventadoapellido ficticiosegundo"})
 INPUT_SHA256 = {
     "embeddings_manifest.json": "e" * 64,
     "tfidf_manifest.json": "t" * 64,

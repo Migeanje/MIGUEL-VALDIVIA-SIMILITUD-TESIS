@@ -49,7 +49,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict
 
 from thematic_redundancy.corpus.build_fichas import FICHAS_MANIFEST_FILE_NAME, load_fichas
-from thematic_redundancy.corpus.profile import sensitive_strings
+from thematic_redundancy.corpus.profile import leaked_strings, sensitive_strings
 from thematic_redundancy.corpus.snapshot import (
     METADATA_FILE_NAME,
     RAW_DIR_NAME,
@@ -58,7 +58,7 @@ from thematic_redundancy.corpus.snapshot import (
     read_snapshot,
 )
 from thematic_redundancy.extraction.text_manifest import INTERIM_DIR_NAME
-from thematic_redundancy.gaps.results_store import check_privacy
+from thematic_redundancy.gaps.results_store import PrivacyError, check_privacy
 from thematic_redundancy.labeling.pairs import (
     LABELED,
     PILOT,
@@ -697,8 +697,13 @@ def _rule(columns: int) -> str:
 
 
 def _settings_text(settings: LabelingConfig) -> str:
+    """Return the declared values of the draw: an integer exactly, a share as ``:g`` gives it.
+    (T20a's committed summary printed the seed as ``2.0261e+07``.)"""
     values = settings.model_dump(exclude={"records_dir", *WORKBOOK_SETTINGS})
-    return ", ".join(f"{name} {value:g}" for name, value in values.items())
+    return ", ".join(
+        f"{name} {value if isinstance(value, int) else f'{value:g}'}"
+        for name, value in values.items()
+    )
 
 
 # --- Writing --------------------------------------------------------------------------------
@@ -736,7 +741,8 @@ def write_outputs(
     Raises:
         PrivacyError: if a tracked output or the manifest holds a string of the snapshot or a
             doc code; nothing is written then. If only the final manifest does, every record
-            but the manifest is written already, a partial draw (:func:`partial_records`).
+            but the manifest is written already, a partial draw (:func:`partial_records`), and
+            the message says so (:func:`check_final_manifest`).
         OSError: if writing fails; the records written before stay, a partial draw.
     """
     store = store or ParquetTableStore()
@@ -757,10 +763,27 @@ def write_outputs(
         }
     )
     text = final.model_dump_json(indent=2)
-    check_privacy({MANIFEST_FILE_NAME: text}, run.guarded)
+    check_final_manifest(MANIFEST_FILE_NAME, text, run.guarded)
     # The commit point: without it, the draw is not complete.
     write_text(results / MANIFEST_FILE_NAME, text)
     return final
+
+
+def check_final_manifest(name: str, text: str, guarded: frozenset[str]) -> None:
+    """Refuse the final manifest, the commit point, if it holds a string of ``guarded``. Unlike
+    the first check, the other records are written by then, and the message says so; it names
+    how many strings, never which.
+
+    Raises:
+        PrivacyError: if ``text`` holds a string of ``guarded``.
+    """
+    found = len(leaked_strings(text, guarded))
+    if found:
+        raise PrivacyError(
+            f"{name} would hold {found} string{'s' if found != 1 else ''} taken from the snapshot "
+            "(titles, abstracts, names, ORCID iDs or codes), so it was not written, though the "
+            "records before it were"
+        )
 
 
 def partial_records(results: Path, records: Path) -> tuple[Path, ...]:

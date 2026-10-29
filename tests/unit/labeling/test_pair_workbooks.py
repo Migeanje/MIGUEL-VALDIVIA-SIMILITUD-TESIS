@@ -563,6 +563,27 @@ def test_a_string_of_the_snapshot_in_the_manifest_refuses_every_write(
     assert written(project.root) == {"results/.lock"}
 
 
+def test_a_privacy_hit_on_the_final_manifest_says_what_was_written(
+    project: files.LabelingProject, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Only the final manifest names the records it vouches for, so only its check finds this.
+    def leaky(config: AppConfig, root: Path, snapshot_id: str) -> Any:
+        inputs = load_workbook_inputs(config, root, snapshot_id)
+        return command.WorkbookInputs(
+            **{**inputs.__dict__, "sensitive": inputs.sensitive | {PILOT_LAYOUT_FILE_NAME}}
+        )
+
+    code = run(project.root, "pilot", load=leaky)
+
+    last = capsys.readouterr().err.splitlines()[-1]
+    assert code == 1
+    assert last.startswith(f"error: {PILOT_MANIFEST_FILE_NAME} would hold 1 string taken")
+    assert "so it was not written, though the records before it were" in last
+    assert "move the partial records away" in last and "nothing was written" not in last
+    assert f"results/{PILOT_MANIFEST_FILE_NAME}" not in written(project.root)
+    assert f"data/{PILOT_LAYOUT_FILE_NAME}" in written(project.root)
+
+
 # The pilot's agreed labels
 
 
@@ -609,6 +630,46 @@ def test_the_import_stores_the_agreed_labels_and_justifications(
         ).hexdigest()
     }
     assert "Pilot labels: 10 pairs" in out
+
+
+@pytest.mark.parametrize(
+    "justification",
+    ["Lo aplica deInventadoapellido Ficticiosegundo en la planta.", "Ver 0000-0002-1825-0097."],
+    ids=["glued-name", "orcid"],
+)
+def test_a_justification_with_a_name_the_redactor_leaves_is_refused_without_echo(
+    project: files.LabelingProject, justification: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run(project.root, "pilot")
+    fill_pilot(project.root, {2: ("Relacionado", justification)})
+    code_of_2 = read(LayoutRow, project.root, PILOT_LAYOUT_FILE_NAME)[1].code
+    capsys.readouterr()
+
+    code = run(project.root, "import-pilot")
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert (
+        f"the 'Justificación' of pair {code_of_2} holds a person's name or an ORCID iD of the "
+        "snapshot" in err
+    )
+    assert "inventadoapellido" not in err.casefold() and "0000-0002" not in err
+    assert not (project.root / RECORDS / PILOT_LABELS_FILE_NAME).exists()
+
+
+def test_a_justification_with_a_whole_word_name_is_stored_redacted(
+    project: files.LabelingProject,
+) -> None:
+    run(project.root, "pilot")
+    fill_pilot(
+        project.root, {3: ("Relacionado", "Como propone Inventadoapellido Ficticiosegundo.")}
+    )
+
+    assert run(project.root, "import-pilot") == 0
+
+    labels = read(PilotLabelRow, project.root, PILOT_LABELS_FILE_NAME)
+    assert labels[2].justification == "Como propone [nombre omitido]."
+    assert manifest_of(project.root, PILOT_LABELS_MANIFEST_FILE_NAME).counts["redacted_notes"] == 1
 
 
 def test_the_import_lists_every_problem_and_stores_nothing(

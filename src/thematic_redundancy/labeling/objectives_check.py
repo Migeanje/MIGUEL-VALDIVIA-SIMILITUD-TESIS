@@ -38,6 +38,7 @@ import random
 import re
 import sys
 import zipfile
+import zlib
 from collections import Counter
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -713,18 +714,36 @@ def import_verification(path: Path, sample: VerificationSample) -> tuple[Judgeme
     return tuple(judgements)
 
 
-_UNREADABLE = (zipfile.BadZipFile, InvalidFileException, KeyError, SyntaxError, TypeError)
+_UNREADABLE = (
+    zipfile.BadZipFile,
+    InvalidFileException,
+    KeyError,
+    SyntaxError,
+    TypeError,
+    zlib.error,
+    EOFError,
+)
 """What openpyxl raises for a file that is not a readable xlsx workbook: no zip archive, an
-extension it does not support, an archive without the workbook parts, broken XML (whose
-``ParseError`` is a ``SyntaxError``), or a value of the wrong type in a part."""
+extension it does not support, an archive without the workbook parts (``KeyError``), broken XML
+(whose ``ParseError`` is a ``SyntaxError``), a value of the wrong type in a part
+(``TypeError``), a damaged compressed part (``zlib.error``), or a part that ends early, as when
+another program is still saving the file (``EOFError``; T10c)."""
 
 
 def _load_workbook(path: Path) -> openpyxl.Workbook:
+    """Open the workbook at ``path`` with its values as last saved: the safe reader that the
+    labeled set's workbooks (:mod:`.workbook`) share.
+
+    Raises:
+        FileNotFoundError: if there is no file at ``path``.
+        ValueError: if it is not a readable xlsx workbook, in one line.
+    """
     try:
         return openpyxl.load_workbook(path, data_only=True)
     except _UNREADABLE as error:
+        reason = " ".join(str(error).split())
         raise ValueError(
-            f"{path} is not a readable xlsx workbook ({type(error).__name__}: {error})"
+            f"{path} is not a readable xlsx workbook ({type(error).__name__}: {reason})"
         ) from error
 
 

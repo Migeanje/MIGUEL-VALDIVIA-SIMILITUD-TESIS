@@ -339,10 +339,56 @@ def test_the_draw_records_the_values_of_t20a_only(
     ]
     summary = (project_root / RESULTS / SUMMARY_FILE_NAME).read_text("utf-8")
     assert summary.splitlines()[-1] == (
-        "Declared values: seed 2.0261e+07, sbert_high_per_model 20, tfidf_high 20, mid_range 30, "
+        "Declared values: seed 20261021, sbert_high_per_model 20, tfidf_high 20, mid_range 30, "
         "random 30, top_share 0.01, mid_low 0.9, mid_high 0.99, stratum_floor 2, pilot_size 10, "
         "pilot_floor 2."
     )
+
+
+COMMITTED_SUMMARY = (
+    Path(__file__).resolve().parents[3]
+    / "results"
+    / "labeled_set"
+    / "20261002T224412Z"
+    / "draw"
+    / "summary.md"
+)
+"""T20a's committed summary of the real draw: aggregates only."""
+
+
+def old_settings_text(settings: Any) -> str:
+    """The values as T20a's draw printed them, every number with ``:g``."""
+    values = settings.model_dump(exclude={"records_dir", "annotators"})
+    return ", ".join(f"{name} {value:g}" for name, value in values.items())
+
+
+def test_integer_values_are_printed_exactly_and_only_that_line_changes(
+    project_root: Path, inputs: DrawInputs, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = computed(project_root, inputs)
+
+    new = draw_module.render_summary(run, git_commit="c" * 40).splitlines()
+    monkeypatch.setattr(draw_module, "_settings_text", old_settings_text)
+    old = draw_module.render_summary(run, git_commit="c" * 40).splitlines()
+
+    assert len(old) == len(new)
+    assert [i for i, (a, b) in enumerate(zip(old, new, strict=True)) if a != b] == [len(new) - 1]
+    assert new[-1] == old[-1].replace("seed 2.0261e+07", "seed 20261021")
+
+
+@pytest.mark.skipif(not COMMITTED_SUMMARY.is_file(), reason="T20a's committed summary is absent")
+def test_the_committed_summary_would_only_change_its_seed_if_drawn_again(
+    kit: SimpleNamespace,
+) -> None:
+    # Only the last line of the summary reads the declared values (render_summary), so this
+    # line is all a new draw of the same pairs would change, and only in its seed.
+    committed = COMMITTED_SUMMARY.read_text("utf-8").splitlines()
+    settings = kit.config.labeling
+
+    assert committed[-1] == f"Declared values: {old_settings_text(settings)}."
+    regenerated = f"Declared values: {draw_module._settings_text(settings)}."
+    assert regenerated == committed[-1].replace("seed 2.0261e+07", "seed 20261021")
+    assert regenerated != committed[-1]
 
 
 def test_a_known_duplicate_among_the_drawn_pairs_is_flagged(
@@ -565,7 +611,12 @@ def test_a_privacy_hit_on_the_final_manifest_tells_how_to_move_the_records_away(
 
     err = capsys.readouterr().err
     assert code == 1
-    assert f"{MANIFEST_FILE_NAME} (1)" in err and "move the partial records away" in err
+    last = err.splitlines()[-1]
+    assert last.startswith(
+        f"error: {MANIFEST_FILE_NAME} would hold 1 string taken from the snapshot"
+    )
+    assert "so it was not written, though the records before it were" in last
+    assert "move the partial records away" in last and "nothing was written" not in err
     assert MANIFEST_FILE_NAME not in {Path(p).name for p in written(project_root)}
     assert f"data/{PAIRS_FILE_NAME}" in written(project_root)
 

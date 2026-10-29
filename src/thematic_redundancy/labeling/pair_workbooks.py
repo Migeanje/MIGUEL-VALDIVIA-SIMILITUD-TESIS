@@ -64,6 +64,7 @@ from thematic_redundancy.labeling.draw_pairs import (
     PAIRS_FILE_NAME,
     DrawManifest,
     PairRow,
+    check_final_manifest,
 )
 from thematic_redundancy.labeling.draw_pairs import records_dir as draw_records_dir
 from thematic_redundancy.labeling.draw_pairs import results_dir as draw_results_dir
@@ -93,6 +94,7 @@ from thematic_redundancy.labeling.workbook import (
     new_blind_codes,
     read_labels,
     save_workbook,
+    screen_notes,
     shuffled,
     swapped,
 )
@@ -768,7 +770,8 @@ def write_records(
 
     Raises:
         PrivacyError: if the manifest holds a string of ``guarded``; nothing is written then. If
-            only the final manifest does, every record but the manifest is written already.
+            only the final manifest does, every record but the manifest is written already, and
+            the message says so (:func:`~.draw_pairs.check_final_manifest`).
         OSError: if writing fails; the records written before stay.
     """
     check_privacy({manifest_name: manifest.model_dump_json(indent=2)}, guarded)
@@ -785,7 +788,7 @@ def write_records(
         update={"data_files": {name: _sha256(places.records / name) for name in names}}
     )
     text = final.model_dump_json(indent=2)
-    check_privacy({manifest_name: text}, guarded)
+    check_final_manifest(manifest_name, text, guarded)
     places.results.mkdir(parents=True, exist_ok=True)
     # The commit point: without it, the step is not complete.
     write_text(places.results / manifest_name, text)
@@ -881,11 +884,13 @@ def pilot_labels(places: Places) -> tuple[PilotLabelRow, ...]:
 
 
 def prepare_import(run: "Run", inputs: WorkbookInputs) -> Prepared:
-    """Read the returned pilot workbook, check it, and turn its labels into records.
+    """Read the returned pilot workbook, check it, and turn its labels into records; each
+    justification goes through the name redactor and the name guard (:func:`~.workbook.
+    screen_notes`).
 
     Raises:
-        LabelingWorkbookError: listing every problem of the workbook, a level without a pair
-            included.
+        LabelingWorkbookError: listing every problem of the workbook, a level without a pair and
+            a justification with a name the redactor leaves included.
     """
     places = run.places
     layout, codes = pilot_records(places)
@@ -893,16 +898,19 @@ def prepare_import(run: "Run", inputs: WorkbookInputs) -> Prepared:
     if {row.pair_id for row in layout} != pilot:
         raise WorkbooksError("the pilot workbook's pairs are not the draw's pilot pairs")
     path = places.pilot_workbook
-    labels = read_labels(path, PILOT_LAYOUT, {row.code: row.n for row in layout})
-    lacking = missing_levels(labels)
-    if lacking:
-        raise LabelingWorkbookError(
-            [
-                f"no pair is labeled '{label}'; the pilot needs at least one pair of each level "
-                "(D34 (7))"
-                for label in lacking
-            ]
-        )
+    redactor = _NameRedactor(inputs.names)
+    labels, problems = screen_notes(
+        read_labels(path, PILOT_LAYOUT, {row.code: row.n for row in layout}),
+        redactor,
+        inputs.guard,
+        column=PILOT_LAYOUT.note_column,
+    )
+    problems += [
+        f"no pair is labeled '{label}'; the pilot needs at least one pair of each level (D34 (7))"
+        for label in missing_levels(labels)
+    ]
+    if problems:
+        raise LabelingWorkbookError(problems)
     by_code = {row.code: row for row in layout}
     rows = tuple(
         PilotLabelRow(
@@ -922,6 +930,7 @@ def prepare_import(run: "Run", inputs: WorkbookInputs) -> Prepared:
         **{f"level_{level}": levels[level] for level in LEVEL_DEFINITIONS},
         "binary_redundant": sum(row.binary for row in rows),
         "with_justification": sum(row.justification is not None for row in rows),
+        "redacted_notes": redactor.redacted,
     }
     lines = [
         f"Pilot labels: {len(rows)} pairs; "
@@ -1020,6 +1029,8 @@ class Step:
     exists: str
     """The refusal's start, with ``{snapshot}`` and ``{path}``."""
     prepare: Callable[["Run", WorkbookInputs], Prepared]
+    wait: Callable[["Run"], None] | None = None
+    """Refuses the step, before anything else, while what it needs is missing."""
 
 
 def _main_outputs(run: "Run") -> tuple[Path, ...]:
@@ -1062,9 +1073,18 @@ STEPS = {
         exists="the main workbooks of snapshot {snapshot} already exist ({path}) and may hold "
         "labels",
         prepare=prepare_main,
+        wait=lambda run: _wait_for_the_main_workbooks(run),
     ),
 }
-"""The command's steps, in the order they run."""
+"""The workbooks' steps (T20b), in the order they run; :func:`all_steps` adds the importer's."""
+
+
+def all_steps() -> dict[str, Step]:
+    """Return every step of the command, in the order they run: the workbooks' (T20b) and the
+    importer's (T20c, :mod:`.label_import`, imported here because it builds on this module)."""
+    from thematic_redundancy.labeling.label_import import IMPORT_STEPS
+
+    return {**STEPS, **IMPORT_STEPS}
 
 
 @dataclass(frozen=True)
@@ -1098,12 +1118,13 @@ def _parse_arguments(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="python -m thematic_redundancy.labeling.pair_workbooks",
         description=(
-            "Make the labeled set's workbooks of a snapshot (T20b, D34) from its draw, and import "
-            "the pilot's agreed labels, in three steps run in this order: pilot, import-pilot, "
-            "main. Each step happens once: its workbooks and records, which name theses, go under "
-            "labeling.records_dir/<snapshot>/ (gitignored), and its manifest, counts and digests "
-            "only, under results/labeled_set/<snapshot>/workbooks/ (tracked by git). Nothing is "
-            "ever overwritten."
+            "Make the labeled set's workbooks of a snapshot from its draw and import them back "
+            "(T20b, T20c, D34), in steps run in this order: pilot, import-pilot, main, "
+            "import-main, then, when some pair is disputed, adjudication and import-adjudication. "
+            "Each step happens once: its workbooks and records, which name theses, go under "
+            "labeling.records_dir/<snapshot>/ (gitignored), and its manifest, counts, agreement "
+            "and digests only, under results/labeled_set/<snapshot>/workbooks/ (tracked by git). "
+            "Nothing is ever overwritten."
         ),
     )
     steps = parser.add_subparsers(dest="step", required=True, metavar="STEP")
@@ -1136,6 +1157,41 @@ def _parse_arguments(argv: Sequence[str] | None) -> argparse.Namespace:
             "annotator's pairs of annotators, spread evenly (D34 (8)), and the pilot's agreed "
             "labels as examples. It refuses until labeling.annotators (3 or 4) is set and the "
             "pilot's labels are imported."
+        ),
+    )
+    steps.add_parser(
+        "import-main",
+        parents=[common],
+        help="import the annotators' workbooks: their labels, the kappas and the disputed pairs",
+        description=(
+            "Read every annotator's workbook back, saved under its name in its folder, and refuse "
+            "them all, listing every problem, unless each holds its pairs unchanged and a label "
+            "on every pair (an incomplete workbook is refused). Store each annotator's labels "
+            "(labels/labels.parquet, 3 levels and binary) and Fleiss' kappa inputs, and report "
+            "Fleiss' kappa on the binary labels (target 0.6) and on the 3 levels, and Cohen's "
+            "kappa per pair of annotators (D31). With no disputed pair, also write the consensus "
+            "labels (labels/consensus.parquet)."
+        ),
+    )
+    steps.add_parser(
+        "adjudication",
+        parents=[common],
+        help="make the adjudication workbooks of the disputed pairs",
+        description=(
+            "Give each pair whose two levels differ to an annotator who did not label it (with 3 "
+            "annotators, the only one; with 4, the less loaded of the two) and make one "
+            "adjudication workbook per adjudicator (desempate_anotador_<k>.xlsx), without the "
+            "earlier labels (D34 (9))."
+        ),
+    )
+    steps.add_parser(
+        "import-adjudication",
+        parents=[common],
+        help="import the adjudication workbooks and write the consensus labels",
+        description=(
+            "Read the adjudication workbooks back as import-main reads the annotators', store the "
+            "third labels, and write the consensus labels (labels/consensus.parquet): the agreed "
+            "level, or the majority of the three labels of a disputed pair (D34 (9))."
         ),
     )
     return parser.parse_args(argv)
@@ -1178,7 +1234,7 @@ def main(
             timer=timer,
             choice=choice,
         )
-        lines = _run_step(run, STEPS[arguments.step])
+        lines = _run_step(run, all_steps()[arguments.step])
     except KeyboardInterrupt:
         print(
             "interrupted: a step is complete only once its manifest is written; move its partial "
@@ -1202,8 +1258,8 @@ def _run_step(run: Run, step: Step) -> list[str]:
     run)."""
     places = run.places
     relative = places.relative(places.results)
-    if step.name == "main":
-        _wait_for_the_main_workbooks(run)
+    if step.wait is not None:
+        step.wait(run)
     outputs = step.outputs(run)
     if run.dry_run:
         try:

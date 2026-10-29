@@ -805,3 +805,85 @@ def test_the_import_command_reports_an_unreadable_workbook_in_one_line(
     error = capsys.readouterr().err
     assert error.startswith("error: ") and error.count("\n") == 1
     assert "objectives_check.xlsx is not a readable xlsx workbook" in error
+
+
+def member_start_and_end(path: Path, name: str) -> tuple[int, int]:
+    """Return where the stored bytes of the archive member ``name`` start and end."""
+    raw = path.read_bytes()
+    with zipfile.ZipFile(path) as archive:
+        info = archive.getinfo(name)
+    lengths = raw[info.header_offset + 26 : info.header_offset + 30]
+    start = (
+        info.header_offset + 30 + sum(int.from_bytes(lengths[i : i + 2], "little") for i in (0, 2))
+    )
+    return start, start + info.compress_size
+
+
+def test_the_import_refuses_a_damaged_compressed_part_in_one_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # T10c: a reserved deflate block type makes zlib raise zlib.error while openpyxl reads.
+    root = project(tmp_path)
+    made = make(root, {"sistemas": (2, 0)})
+    fill(made.workbook_path)
+    start, _ = member_start_and_end(made.workbook_path, "xl/worksheets/sheet2.xml")
+    raw = bytearray(made.workbook_path.read_bytes())
+    raw[start] = 0xFF
+    made.workbook_path.write_bytes(bytes(raw))
+
+    code = main(["--project-root", str(root), "--snapshot-id", SNAPSHOT_ID])
+
+    error = capsys.readouterr().err
+    assert code == 1
+    assert error.startswith("error: ") and error.count("\n") == 1
+    assert "objectives_check.xlsx is not a readable xlsx workbook (error: Error -3" in error
+
+
+def test_the_import_refuses_a_workbook_cut_short_while_it_is_read(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # T10c: as when another program is still saving it, a part ends early and zipfile raises
+    # EOFError.
+    root = project(tmp_path)
+    made = make(root, {"sistemas": (2, 0)})
+    fill(made.workbook_path)
+    start, end = member_start_and_end(made.workbook_path, "xl/worksheets/sheet2.xml")
+    shared = zipfile._SharedFile  # type: ignore[attr-defined]
+    read = shared.read
+    monkeypatch.setattr(
+        shared, "read", lambda self, n=-1: b"" if start <= self._pos < end else read(self, n)
+    )
+
+    code = main(["--project-root", str(root), "--snapshot-id", SNAPSHOT_ID])
+
+    error = capsys.readouterr().err
+    assert code == 1
+    assert error.startswith("error: ") and error.count("\n") == 1
+    assert "objectives_check.xlsx is not a readable xlsx workbook (EOFError" in error
+
+
+@pytest.mark.parametrize(
+    ("damage", "raised"),
+    [
+        (write_garbage, zipfile.BadZipFile),
+        (write_zip_without_workbook, KeyError),
+        (break_sheet_xml, SyntaxError),
+        (give_an_invalid_value, TypeError),
+    ],
+    ids=["garbage", "zip-without-workbook", "broken-xml", "invalid-value"],
+)
+def test_the_broad_catches_are_what_openpyxl_raises_for_a_damaged_file(
+    tmp_path: Path, damage: Callable[[Path], None], raised: type[Exception]
+) -> None:
+    # T10c: KeyError and TypeError are broad, so this pins which files raise them: a zip
+    # without the workbook's parts, and a part with a value of the wrong type.
+    made = make(tmp_path, {"sistemas": (1, 0)})
+    fill(made.workbook_path)
+    damage(made.workbook_path)
+
+    with pytest.raises(ValueError, match="is not a readable xlsx workbook") as refused:
+        import_verification(made.workbook_path, made.sample)
+
+    assert type(refused.value.__cause__) is raised or (
+        raised is SyntaxError and isinstance(refused.value.__cause__, SyntaxError)
+    )

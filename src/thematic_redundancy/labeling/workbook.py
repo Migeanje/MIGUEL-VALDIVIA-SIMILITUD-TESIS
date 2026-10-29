@@ -33,10 +33,9 @@ workbooks with :func:`read_labels`.
 import random
 import re
 import secrets
-import zlib
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -49,6 +48,7 @@ from thematic_redundancy.corpus.profile import leaked_strings
 from thematic_redundancy.labeling.objectives_check import (
     _UNREADABLE,
     _add_list_validation,
+    _load_workbook,
     _save_atomically,
     _text,
     _text_cell,
@@ -95,10 +95,9 @@ CODE_DIGITS = "23456789"
 """The digits of a blind code, without 0 and 1."""
 CODE_PATTERN = re.compile(rf"[{CODE_LETTERS}]{{2}}[{CODE_DIGITS}]{{3}}")
 
-UNREADABLE = (*_UNREADABLE, zlib.error, EOFError)
-"""What reading a file that is not a readable xlsx workbook raises: what the objectives
-workbook's import catches, plus the ``zlib.error`` and ``EOFError`` of a damaged or truncated
-compressed part (T10c)."""
+UNREADABLE = _UNREADABLE
+"""What reading a file that is not a readable xlsx workbook raises, as the objectives workbook's
+safe reader catches it, ``zlib.error`` and ``EOFError`` included (T10c)."""
 
 _BLOCK = len(FIELDS)
 _WIDTHS = (6, 9, 15, 70, 70, 18, 40)
@@ -424,19 +423,14 @@ class ReadLabel:
 
 
 def load_workbook(path: Path) -> openpyxl.Workbook:
-    """Open the workbook at ``path`` with its values as last saved.
+    """Open the workbook at ``path`` with its values as last saved, through the objectives
+    workbook's safe reader, which this module shares.
 
     Raises:
         FileNotFoundError: if there is no file at ``path``.
         ValueError: if it is not a readable xlsx workbook, in one line.
     """
-    try:
-        return openpyxl.load_workbook(path, data_only=True)
-    except UNREADABLE as error:
-        reason = " ".join(str(error).split())
-        raise ValueError(
-            f"{path} is not a readable xlsx workbook ({type(error).__name__}: {reason})"
-        ) from error
+    return _load_workbook(path)
 
 
 def read_labels(
@@ -528,6 +522,31 @@ def _blocks(
         elif any(row):
             problems.append(f"row {number} belongs to no pair")
     return blocks
+
+
+def screen_notes(
+    labels: Sequence[ReadLabel],
+    redact: Callable[[str], str],
+    guard: frozenset[str],
+    *,
+    column: str,
+) -> tuple[tuple[ReadLabel, ...], list[str]]:
+    """Return ``labels`` with each note passed through ``redact`` (the name redactor of every
+    displayed text), and a problem for each note that still holds a string of ``guard`` (a name
+    glued to another word, or an ORCID iD), naming the pair and the ``column``, never the
+    string. A note may be shown again, as a justification on the ``Ejemplos`` sheet, so it gets
+    the same name guard as every text of a workbook (D34 (1))."""
+    checker = _Guard(guard)
+    screened, problems = [], []
+    for label in labels:
+        note = None if label.note is None else redact(label.note)
+        if note is not None and checker.holds(note):
+            problems.append(
+                f"the '{column}' of pair {label.code} holds a person's name or an ORCID iD of the "
+                "snapshot; write it without them"
+            )
+        screened.append(replace(label, note=note))
+    return tuple(screened), problems
 
 
 def missing_levels(labels: Iterable[ReadLabel]) -> tuple[str, ...]:
