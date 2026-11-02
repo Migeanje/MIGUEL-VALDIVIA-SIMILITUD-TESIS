@@ -201,6 +201,34 @@ def test_the_atypical_threshold_and_saturation_are_t23s_with_the_confirmed_value
     assert [entry.level for entry in index.saturation.topics] == ["Q4", "Q2", "Q1"]
 
 
+def test_the_atypical_flag_follows_the_proposal_block_and_saturation_stays_t23s(
+    project: Project,
+) -> None:
+    path = project.root / "config" / "default.yaml"
+    text = path.read_text(encoding="utf-8")
+    block = "proposal:\n  atypical_scope: global\n  atypical_method: linear\n"
+    assert text.count(block) == 1
+    changed = "proposal:\n  atypical_scope: per_topic\n  atypical_method: lower\n"
+    path.write_text(text.replace(block, changed), encoding="utf-8", newline="\n")
+
+    index = index_of(project)
+    labels = index.topic_map.labels
+
+    def threshold(method: str, scope: str):
+        return atypical_threshold(
+            index.vectors,
+            labels,
+            index.centroids,
+            percentile=ATYPICAL_PERCENTILE,
+            method=method,
+            scope=scope,
+        )
+
+    assert threshold("lower", "per_topic") != threshold("linear", "global")
+    assert index.threshold == threshold("lower", "per_topic")
+    assert index.saturation == saturation_quartiles(labels, method="linear", boundary="lower")
+
+
 def test_the_stable_gaps_are_rebuilt_with_t24s_stability_filter(project: Project) -> None:
     index = index_of(project)
 

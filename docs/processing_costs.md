@@ -249,6 +249,11 @@ across sessions with care.
 | 2026-11-02 | T31 | `pytest` on `tests/unit/evaluation/test_run_expert_samples.py` | 33 passed | 10.55 s (11.8 s for the whole command), 1 run | — | 0 | 5 new tests | plan T31 (t31fu) |
 | 2026-11-02 | all | Test suite (`pytest -q`), in the main tree with unit `t31fu` | 3,719 passed, plus 3 skipped; 36 smoke tests deselected | 258.14 s (lock held 261.5 s; 261.6 s for the whole command), 1 run | — | 0 | 5 new tests in `tests/unit/evaluation` | plan Progress log (t31fu) |
 | 2026-11-02 | all | Test collection of `tests/unit/evaluation` (`pytest --collect-only -q`) | 373 tests collected | 4.57 s (7.1 s for the whole command), 1 run | — | 0 | Recount for the plan's Next step | plan Next step (t31fu) |
+| 2026-11-02 | T33 | Focused tests of T33's note 7 before the fix (`pytest -k` on `tests/unit/app/test_app_query.py`), in the main tree | 1 failed, 1 passed (RED) | 1.04 s, 1 run | — | 0 | The new test failed as expected; the existing one, on the confirmed values, passed | plan T33 (t33n7) |
+| 2026-11-02 | T33 | The same focused tests after the fix | 2 passed (GREEN) | 1.22 s (7.1 s for the whole command), 1 run | — | 0 | — | plan T33 (t33n7) |
+| 2026-11-02 | T33 | `pytest` on `tests/unit/app` and `tests/unit/test_reproducibility_docs.py` | 133 passed | 37.21 s (42.5 s for the whole command), 1 run | — | 0 | 1 new test | plan T33 (t33n7) |
+| 2026-11-02 | all | Test suite (`pytest -q`), in the main tree with unit `t33n7` | 3,720 passed, plus 3 skipped; 36 smoke tests deselected | 277.23 s (lock held 280.4 s; 280.5 s for the whole command), 1 run | — | 0 | 1 new test in `tests/unit/app` | plan Progress log (t33n7) |
+| 2026-11-02 | all | Test collection of `tests/unit/app` (`pytest --collect-only -q`) | 113 tests collected | 0.12 s (8.1 s for the whole command), 1 run | — | 0 | Recount for the plan's Next step | plan Next step (t33n7) |
 
 ### Notes on the ledger
 

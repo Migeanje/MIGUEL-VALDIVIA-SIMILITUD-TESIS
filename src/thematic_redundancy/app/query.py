@@ -16,8 +16,9 @@ records. No chunk vector is cached: the proposal's texts are encoded in memory a
 **The index (saved artifacts).** The winner's document vectors (T14, through ``load_embeddings``,
 whose manifest must be the one T19 ran on), the map run's labels (``map.parquet``), its topics
 (``topics.parquet``), its centroids recomputed from those vectors and labels (D30 E5, as the gap
-run does), and from them O06's atypical threshold and the saturation quartiles (T23, with the
-values the user confirmed on 2026-10-20), and the stable gaps of :mod:`.gap_supports`.
+run does), and from them O06's atypical threshold, with the scope and method of the
+configuration's ``proposal`` block, and the saturation quartiles (T23, with the values the user
+confirmed on 2026-10-20), and the stable gaps of :mod:`.gap_supports`.
 
 **The answer.** T23's assignment with O06's flag and the topic's saturation quartile, through
 T26's :func:`~thematic_redundancy.recommendation.alternatives.alternative_lines`, which also gives
@@ -93,7 +94,6 @@ from thematic_redundancy.topic_map.assignment import (
     AtypicalCheck,
     AtypicalThreshold,
     PercentileMethod,
-    ThresholdScope,
     TopicCentroids,
     atypical_threshold,
     check_atypical,
@@ -104,10 +104,10 @@ from thematic_redundancy.topic_map.run_experiment import RUN_COMMAND as T19_COMM
 
 SIMILAR_THESES = 10
 """How many of the most similar theses the view lists (T22's top-k)."""
-ATYPICAL_SCOPE: ThresholdScope = "global"
-PERCENTILE_METHOD: PercentileMethod = "linear"
+SATURATION_METHOD: PercentileMethod = "linear"
 SATURATION_BOUNDARY: QuartileBoundary = "lower"
-"""T23's values, confirmed by the user on 2026-10-20 for T26, T27 and T28."""
+"""T23's saturation values, confirmed by the user on 2026-10-20 for T26, T27 and T28. O06's
+atypical flag takes its scope and method from the configuration's ``proposal`` block."""
 NEIGHBOR_REFERENCE: NeighborReference = "proposal"
 PAIR_ANCHOR: PairAnchor = "midpoint"
 MAX_GAP_DISTANCE: float | None = None
@@ -297,11 +297,11 @@ def load_query_index(
             labels,
             targets,
             percentile=ATYPICAL_PERCENTILE,
-            method=PERCENTILE_METHOD,
-            scope=ATYPICAL_SCOPE,
+            method=config.proposal.atypical_method,
+            scope=config.proposal.atypical_scope,
         ),
         saturation=saturation_quartiles(
-            labels, method=PERCENTILE_METHOD, boundary=SATURATION_BOUNDARY
+            labels, method=SATURATION_METHOD, boundary=SATURATION_BOUNDARY
         ),
         supports=supports,
         tokenizers=tuple((t.model_id, t.tokenizer_sha256) for t in chunks.tokenizers),
