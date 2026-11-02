@@ -330,6 +330,14 @@ class TemporalRecords:
         )
 
 
+def _year(settings: Mapping[str, int | float | str], key: str) -> int:
+    """Return T27's ``key`` setting, refusing one that is missing or not a whole number."""
+    value = settings.get(key)
+    if not isinstance(value, int):
+        raise SamplesRunError(f"T27's manifest gives no whole year as its {key} setting")
+    return value
+
+
 def read_temporal(
     config: AppConfig,
     project_root: Path,
@@ -342,8 +350,8 @@ def read_temporal(
 
     Raises:
         FileNotFoundError: if T27's temporal split, or a record of it, is missing.
-        SamplesRunError: if T27 ran on other T19 records, or a record differs from the SHA-256
-            in T27's manifest.
+        SamplesRunError: if T27 ran on other T19 records, a record differs from the SHA-256
+            in T27's manifest, or the manifest gives no whole year for a year setting.
         ValueError: if a record is damaged.
     """
     store = store or ParquetTableStore()
@@ -382,9 +390,9 @@ def read_temporal(
         provisional=manifest.provisional,
         run_id=reference,
         temporal_run_id=temporal_run,
-        first_year=int(settings["first_year"]),
-        split_year=int(settings["split_year"]),
-        last_year=int(settings["last_year"]),
+        first_year=_year(settings, "first_year"),
+        split_year=_year(settings, "split_year"),
+        last_year=_year(settings, "last_year"),
         sample=sample,
         assignments=assignments,
         topics=topics,

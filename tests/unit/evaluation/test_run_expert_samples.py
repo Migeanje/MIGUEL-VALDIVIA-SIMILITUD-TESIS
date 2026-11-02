@@ -54,7 +54,9 @@ from thematic_redundancy.evaluation.run_expert_samples import (
     main,
     read_temporal,
 )
+from thematic_redundancy.gaps.results_store import MANIFEST_FILE_NAME as GAPS_MANIFEST
 from thematic_redundancy.gaps.results_store import GapRow, MemberRow
+from thematic_redundancy.gaps.results_store import results_dir as gaps_results_dir
 from thematic_redundancy.gaps.rules import ThesisMetadata
 from thematic_redundancy.gaps.run_gaps import CorpusInputs, read_experiment
 from thematic_redundancy.gaps.run_gaps import main as run_gaps
@@ -1055,6 +1057,60 @@ def test_a_changed_temporal_record_is_refused(
 
     assert run_main(project, "--dry-run") == 1
     assert ASSIGNMENTS_FILE_NAME in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [("split_year", None), ("last_year", "late"), ("first_year", 2021.5)],
+    ids=["missing", "not-a-number", "not-whole"],
+)
+def test_a_temporal_manifest_without_a_whole_year_setting_is_refused(
+    project: Path, capsys: pytest.CaptureFixture[str], key: str, value: Any
+) -> None:
+    path = temporal_results_dir(project / "results", SNAPSHOT) / "manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    if value is None:
+        del manifest["settings"][key]
+    else:
+        manifest["settings"][key] = value
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    for extra in ((), ("--dry-run",)):
+        assert run_main(project, *extra) == 1
+        error = capsys.readouterr().err
+        assert f"T27's manifest gives no whole year as its {key} setting" in error
+    assert not any((project / SAMPLES_DIR / name).exists() for name in OUTPUTS)
+
+
+def _edit_gap_manifest(project: Path, key: str, value: Any) -> None:
+    path = gaps_results_dir(project / "results", SNAPSHOT) / GAPS_MANIFEST
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(value, tuple):
+        manifest[key][value[0]] = value[1]
+    else:
+        manifest[key] = value
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def test_a_gap_run_of_other_t19_records_is_refused(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _edit_gap_manifest(project, "experiment", (SELECTION_FILE_NAME, "0" * 64))
+
+    assert run_main(project, "--dry-run") == 1
+    assert "T24a's gap run ran on other T19 records" in capsys.readouterr().err
+    assert not any((project / SAMPLES_DIR / name).exists() for name in OUTPUTS)
+
+
+def test_a_gap_run_on_another_reference_run_is_refused(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _edit_gap_manifest(project, "reference_run", "seed-other")
+
+    assert run_main(project, "--dry-run") == 1
+    error = capsys.readouterr().err
+    assert f"T24a's reference run is not T19's medoid run {REFERENCE_RUN}" in error
+    assert not any((project / SAMPLES_DIR / name).exists() for name in OUTPUTS)
 
 
 def test_gap_records_that_the_gap_rules_no_longer_give_are_refused(

@@ -243,6 +243,12 @@ across sessions with care.
 | 2026-10-29 | T33 | Delivery scan of the 7 package files, through the lock | Attribution patterns, 11,981 sensitive strings, 766 doc codes | 3.2 s (lock held) | — | 0 | 0 hits | plan T33 |
 | 2026-11-02 | all | Test collection (`pytest --collect-only -q`), in the main tree at `2e8f9df` with the samples' real-run record not yet committed | 3,697 tests collected, 36 deselected | 71.08 s (77.3 s for the whole command), 1 run | — | 0 | Collection only, no test run: 3,694 passed plus 3 skipped, as expected | plan Progress log (t33) |
 | 2026-11-02 | all | Test suite (`pytest -q`), in the main tree with T33's package | 3,714 passed, plus 3 skipped; 36 smoke tests deselected | 285.86 s (lock held 290.0 s; 290.3 s for the whole command), 1 run | — | 0 | 20 new tests in `tests/unit/test_reproducibility_docs.py` | plan Progress log (t33) |
+| 2026-11-02 | T31 | Focused tests of T31's R3-001 and R3-002 before the fix (`pytest -k` on `tests/unit/evaluation/test_run_expert_samples.py`), in the main tree | 3 failed, 2 passed (RED) | 23.98 s, 1 run | — | 0 | The 3 cases of T27's year settings failed as expected; the 2 gap refusals pin existing behavior | plan T31 (t31fu) |
+| 2026-11-02 | T31 | The same focused tests after the fix | 5 passed (GREEN) | 12.91 s, 1 run | — | 0 | — | plan T31 (t31fu) |
+| 2026-11-02 | T31 | Mutants of `read_gap_records`' two refusals (each check removed in turn, then the file restored byte-identical) | 2 of 2 killed (1 failed, 1 passed in each) | 4.44 s and 4.48 s, 2 runs | — | 0 | — | plan T31 (t31fu) |
+| 2026-11-02 | T31 | `pytest` on `tests/unit/evaluation/test_run_expert_samples.py` | 33 passed | 10.55 s (11.8 s for the whole command), 1 run | — | 0 | 5 new tests | plan T31 (t31fu) |
+| 2026-11-02 | all | Test suite (`pytest -q`), in the main tree with unit `t31fu` | 3,719 passed, plus 3 skipped; 36 smoke tests deselected | 258.14 s (lock held 261.5 s; 261.6 s for the whole command), 1 run | — | 0 | 5 new tests in `tests/unit/evaluation` | plan Progress log (t31fu) |
+| 2026-11-02 | all | Test collection of `tests/unit/evaluation` (`pytest --collect-only -q`) | 373 tests collected | 4.57 s (7.1 s for the whole command), 1 run | — | 0 | Recount for the plan's Next step | plan Next step (t31fu) |
 
 ### Notes on the ledger
 
