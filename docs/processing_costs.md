@@ -254,6 +254,12 @@ across sessions with care.
 | 2026-11-02 | T33 | `pytest` on `tests/unit/app` and `tests/unit/test_reproducibility_docs.py` | 133 passed | 37.21 s (42.5 s for the whole command), 1 run | — | 0 | 1 new test | plan T33 (t33n7) |
 | 2026-11-02 | all | Test suite (`pytest -q`), in the main tree with unit `t33n7` | 3,720 passed, plus 3 skipped; 36 smoke tests deselected | 277.23 s (lock held 280.4 s; 280.5 s for the whole command), 1 run | — | 0 | 1 new test in `tests/unit/app` | plan Progress log (t33n7) |
 | 2026-11-02 | all | Test collection of `tests/unit/app` (`pytest --collect-only -q`) | 113 tests collected | 0.12 s (8.1 s for the whole command), 1 run | — | 0 | Recount for the plan's Next step | plan Next step (t33n7) |
+| 2026-11-02 | T22 | Focused tests of T22's check of T20c's labels manifest before the fix (`pytest -k` on `tests/unit/redundancy/test_run_redundancy.py`), in the main tree | 6 failed, 6 passed (RED) | 3.33 s (9.7 s for the whole command), 1 run | — | 0 | The 5 new tests and the updated `labeled_set` test failed as expected; the 6 existing labels tests passed with the kit's manifest | plan T20c (t22man) |
+| 2026-11-02 | T22 | The same focused tests after the fix | 12 passed (GREEN) | 3.18 s (8.6 s for the whole command), 1 run | — | 0 | — | plan T20c (t22man) |
+| 2026-11-02 | T22 | Mutant: the labels read without the manifest's digest, then the file restored byte-identical | Killed (1 failed) | 5.15 s, 1 run | — | 0 | — | plan T20c (t22man) |
+| 2026-11-02 | T22 | `pytest` on `tests/unit/redundancy`, `tests/unit/labeling` and `tests/unit/test_reproducibility_docs.py` | 528 passed | 77.50 s (81.6 s for the whole command), 1 run | — | 0 | 5 new tests | plan T20c (t22man) |
+| 2026-11-02 | all | Test suite (`pytest -q`), in the main tree with unit `t22man` | 3,725 passed, plus 3 skipped; 36 smoke tests deselected | 255.87 s (lock held 258.7 s; 258.8 s for the whole command), 1 run | — | 0 | 5 new tests in `tests/unit/redundancy` | plan Progress log (t22man) |
+| 2026-11-02 | all | Test collection of `tests/unit/redundancy` (`pytest --collect-only -q`) | 263 tests collected | 0.13 s (5.6 s for the whole command), 1 run | — | 0 | Recount for the plan's Next step | plan Next step (t22man) |
 
 ### Notes on the ledger
 

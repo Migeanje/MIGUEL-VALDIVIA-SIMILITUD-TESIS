@@ -28,8 +28,11 @@ from typing import Any
 
 import pytest
 
-from thematic_redundancy.labeling import draw_pairs
+from thematic_redundancy.labeling import draw_pairs, pair_workbooks
+from thematic_redundancy.labeling.consensus import CONSENSUS_FILE_NAME
 from thematic_redundancy.labeling.draw_pairs import DrawInputs, PairRow
+from thematic_redundancy.labeling.label_import import MAIN_LABELS_MANIFEST_FILE_NAME, in_labels
+from thematic_redundancy.labeling.pair_workbooks import WorkbookManifest
 from thematic_redundancy.labeling.pairs import LABELED
 from thematic_redundancy.redundancy.labels import (
     ADJUDICATION,
@@ -292,8 +295,37 @@ def labels_path(root: Path) -> Path:
 
 
 def write_labels(root: Path, rows: list[ConsensusLabel], *, path: Path | None = None) -> Path:
+    """Write ``rows`` at ``path``, or at the contract's path with the T20c manifest that vouches
+    for them, as T20c's import-main does when no pair is disputed."""
     target = path or labels_path(root)
     ParquetTableStore().write(rows, target, model_cls=ConsensusLabel)
+    if path is None:
+        vouch(root)
+    return target
+
+
+def vouch(root: Path, name: str = MAIN_LABELS_MANIFEST_FILE_NAME, *, digest: bool = True) -> Path:
+    """Write T20c's manifest ``name``, recording the SHA-256 of the labels at the contract's path
+    when ``digest``, as import-main does when no pair is disputed and import-adjudication does."""
+    target = pair_workbooks.Places.of(CONFIG, root, SNAPSHOT).results / name
+    when = datetime(2026, 11, 2, tzinfo=UTC)
+    manifest = WorkbookManifest(
+        step="import-main" if name == MAIN_LABELS_MANIFEST_FILE_NAME else "import-adjudication",
+        snapshot_id=SNAPSHOT,
+        git_commit="c" * 40,
+        seed=0,
+        settings={},
+        counts={},
+        details={},
+        inputs={},
+        data_files={in_labels(CONSENSUS_FILE_NAME): sha256_of(labels_path(root))} if digest else {},
+        versions={},
+        started_at=when,
+        finished_at=when,
+        seconds=0.0,
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
     return target
 
 
@@ -351,6 +383,7 @@ def kit() -> SimpleNamespace:
         timer=timer,
         loader=loader,
         sha256_of=sha256_of,
+        vouch=vouch,
         files_under=files_under,
         candidate=candidate,
         candidates=candidates,

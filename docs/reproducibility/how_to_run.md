@@ -232,7 +232,7 @@ uv run python -m thematic_redundancy.redundancy.run_redundancy
 
 | Step | Inputs | Outputs | Nature | Time |
 |---|---|---|---|---|
-| 30. `run_redundancy` (T22) | The draw and its `pairs.parquet`; the consensus labels of step 26 or 29; T19's manifest and selection; both models' document vectors and the TF-IDF matrix through T20a's loader; `redundancy`, `experiment.selection.f1` | `results/experiments/<id>/t22/`, `data/processed/<id>/experiments/t22/pair_scores.parquet` | One-time; `--dry-run` writes nothing, and `--labels PATH` reads another labels file in a dry run only | Real run not measured (not run: it waits for the labels and SR-T22-1). Dry run with synthetic labels 1.77 s for `main` |
+| 30. `run_redundancy` (T22) | The draw and its `pairs.parquet`; the consensus labels of step 26 or 29, checked against the SHA-256 that its manifest records; T19's manifest and selection; both models' document vectors and the TF-IDF matrix through T20a's loader; `redundancy`, `experiment.selection.f1` | `results/experiments/<id>/t22/`, `data/processed/<id>/experiments/t22/pair_scores.parquet` | One-time; `--dry-run` writes nothing, and `--labels PATH` reads another labels file in a dry run only | Real run not measured (not run: it waits for the labels and SR-T22-1). Dry run with synthetic labels 1.77 s for `main` |
 
 Stage 2 confirms T19's provisional winner, changes it, or is undefined. If it changes, the
 records of steps 16 and 18 are moved away and those steps run again by the same rules (README,

@@ -18,8 +18,12 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from thematic_redundancy.labeling import draw_pairs
+from thematic_redundancy.labeling import draw_pairs, pair_workbooks
 from thematic_redundancy.labeling.draw_pairs import DrawInputs, PairRow
+from thematic_redundancy.labeling.label_import import (
+    ADJUDICATION_LABELS_MANIFEST_FILE_NAME,
+    MAIN_LABELS_MANIFEST_FILE_NAME,
+)
 from thematic_redundancy.labeling.pairs import PILOT, TFIDF
 from thematic_redundancy.redundancy.comparison import (
     BootstrapSettings,
@@ -125,6 +129,11 @@ def manifest_of(root: Path) -> RedundancyManifest:
     return RedundancyManifest.model_validate_json(content)
 
 
+def workbooks(root: Path) -> Path:
+    """T20c's tracked records: the labels manifests that vouch for the consensus labels."""
+    return pair_workbooks.Places.of(CONFIG, root, SNAPSHOT).results
+
+
 def tracked_text(root: Path) -> str:
     """Every tracked output as text, a table as the JSON of its rows."""
     parts = []
@@ -192,6 +201,9 @@ def test_a_real_run_writes_the_tracked_aggregates_and_the_gitignored_pair_scores
         "manifest.json": kit.sha256_of(draw / "manifest.json"),
         "pairs.parquet": kit.sha256_of(records / "pairs.parquet"),
         "consensus.parquet": kit.sha256_of(kit.labels_path(project)),
+        MAIN_LABELS_MANIFEST_FILE_NAME: kit.sha256_of(
+            workbooks(project) / MAIN_LABELS_MANIFEST_FILE_NAME
+        ),
     }
     assert manifest.experiment == {
         "manifest.json": kit.sha256_of(t19 / "manifest.json"),
@@ -628,6 +640,7 @@ def test_a_labels_file_with_other_columns_is_refused(
             table[name] = column
     kit.labels_path(project).parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(pa.table(table), kit.labels_path(project))
+    kit.vouch(project)
 
     assert run(kit, project, inputs) == 1
 
@@ -644,6 +657,79 @@ def test_missing_labels_refuse_the_run(
     assert "the consensus labels are missing" in err
     assert "labels/consensus.parquet" in err.replace("\\", "/")
     assert not (project / RESULTS / MANIFEST_FILE_NAME).exists()
+
+
+@pytest.mark.parametrize(
+    ("case", "message"),
+    [
+        (
+            "main-missing",
+            f"T20c's {MAIN_LABELS_MANIFEST_FILE_NAME}, which records their SHA-256, is missing",
+        ),
+        (
+            "adjudication-missing",
+            f"T20c's {ADJUDICATION_LABELS_MANIFEST_FILE_NAME}, which records their SHA-256, "
+            "is missing",
+        ),
+        (
+            "no-digest",
+            f"T20c's {ADJUDICATION_LABELS_MANIFEST_FILE_NAME} records no SHA-256 for them",
+        ),
+    ],
+)
+def test_labels_that_no_t20c_manifest_vouches_for_refuse_the_run(
+    kit: Any,
+    project: Path,
+    inputs: DrawInputs,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+    message: str,
+) -> None:
+    kit.write_labels(project, label_by(kit, project, "mpnet"))
+    if case == "main-missing":  # an import-main that stopped before its manifest
+        (workbooks(project) / MAIN_LABELS_MANIFEST_FILE_NAME).unlink()
+    else:  # disputed pairs: import-main wrote no labels, and import-adjudication did
+        kit.vouch(project, digest=False)
+        if case == "no-digest":
+            kit.vouch(project, ADJUDICATION_LABELS_MANIFEST_FILE_NAME, digest=False)
+
+    for extra in ((), ("--dry-run",)):
+        assert run(kit, project, inputs, *extra) == 1
+        err = capsys.readouterr().err
+        assert "the consensus labels are not used" in err
+        assert message in err
+    assert not (project / RESULTS / MANIFEST_FILE_NAME).exists()
+
+
+def test_labels_that_differ_from_the_sha256_t20c_recorded_refuse_the_run(
+    kit: Any, project: Path, inputs: DrawInputs, capsys: pytest.CaptureFixture[str]
+) -> None:
+    labels = label_by(kit, project, "mpnet")
+    kit.write_labels(project, labels)
+    kit.write_labels(project, labels[::-1], path=kit.labels_path(project))  # unvouched bytes
+
+    assert run(kit, project, inputs) == 1
+
+    err = capsys.readouterr().err
+    assert (
+        f"the consensus labels differ from the SHA-256 that T20c's "
+        f"{MAIN_LABELS_MANIFEST_FILE_NAME} records, so they are not used"
+    ) in err
+    assert not (project / RESULTS / MANIFEST_FILE_NAME).exists()
+
+
+def test_labels_vouched_for_by_the_adjudication_manifest_are_used_and_recorded(
+    kit: Any, project: Path, inputs: DrawInputs
+) -> None:
+    kit.write_labels(project, label_by(kit, project, "mpnet"))
+    kit.vouch(project, digest=False)
+    adjudication = kit.vouch(project, ADJUDICATION_LABELS_MANIFEST_FILE_NAME)
+
+    assert run(kit, project, inputs) == 0
+
+    labeled_set = manifest_of(project).labeled_set
+    assert labeled_set[ADJUDICATION_LABELS_MANIFEST_FILE_NAME] == kit.sha256_of(adjudication)
+    assert MAIN_LABELS_MANIFEST_FILE_NAME not in labeled_set
 
 
 # --- Refusals of the other inputs --------------------------------------------------------------

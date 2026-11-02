@@ -667,16 +667,21 @@ checked before use:
   (`labeling.records_dir`), one row per labeled pair with exactly these columns: `pair_id`
   (T20a's `L-` id), `label_3` (`Redundante`, `Relacionado` or `No relacionado`), `label` (1 for
   `Redundante`, else 0) and `source` (`agreement` or `adjudication`). The contract, its path and
-  its row model live in `src/thematic_redundancy/redundancy/labels.py`.
+  its row model live in `src/thematic_redundancy/redundancy/labels.py`. The labels must have the
+  SHA-256 that T20c's manifest records: `main_labels_manifest.json` when `import-main` wrote
+  them (no pair was disputed), otherwise `adjudication_labels_manifest.json`, both under
+  `results/labeled_set/<snapshot_id>/workbooks/`. A labels file given with `--labels` in a dry
+  run is checked against no manifest.
 - T19's `manifest.json` and `selection.json`, under the configuration's experiment declaration.
 - The document vectors of both models and the TF-IDF matrix (`section_mean`), through T20a's
   loader; their input manifests must be those T20a drew from and T19 ran on, and each labeled
   pair's cosine must equal the score T20a stored, exactly.
 
-The run refuses, writing nothing, missing labels; labels that are not exactly one per labeled
-pair (a pair without a label, a pair id given twice, an id that is not of the labeled set, a
-pilot pair); a `label` that does not follow `label_3`; a value outside the domains; a labels
-file with other columns; scores that differ from T20a's; records that differ from their
+The run refuses, writing nothing, missing labels; labels without the T20c manifest that
+records them, or with another SHA-256 than it records; labels that are not exactly one per
+labeled pair (a pair without a label, a pair id given twice, an id that is not of the labeled
+set, a pilot pair); a `label` that does not follow `label_3`; a value outside the domains; a
+labels file with other columns; scores that differ from T20a's; records that differ from their
 manifests; and labels with too few redundant pairs for every training split of the
 cross-validation to hold one.
 

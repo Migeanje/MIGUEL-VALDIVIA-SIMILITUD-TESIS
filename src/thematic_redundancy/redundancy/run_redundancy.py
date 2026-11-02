@@ -10,7 +10,8 @@ The command reads, and checks before any use:
   gitignored ``pairs.parquet``, which must have the SHA-256 that the manifest records. The
   labeled set's pairs (phase ``labeled``), in draw order, are the pairs of the run.
 - The consensus labels of :mod:`.labels`, at the contract's path, one per labeled pair and no
-  pilot pair. ``--labels`` reads another file, and only with ``--dry-run``.
+  pilot pair, which must have the SHA-256 that T20c's labels manifest records (see
+  :func:`read_labels`). ``--labels`` reads another file, unchecked, and only with ``--dry-run``.
 - T19's ``manifest.json`` and ``selection.json``, which must have the SHA-256 that T19's
   manifest records and the configuration's experiment declaration. The two models' stage-1
   configurations are rebuilt from ``selection.json``, and T19's provisional stage 2 must be
@@ -55,7 +56,7 @@ import yaml
 
 from thematic_redundancy.corpus.snapshot import RAW_DIR_NAME, check_snapshot_id, latest_snapshot_id
 from thematic_redundancy.gaps.results_store import check_privacy
-from thematic_redundancy.labeling import draw_pairs
+from thematic_redundancy.labeling import draw_pairs, pair_workbooks
 from thematic_redundancy.labeling.draw_pairs import (
     PAIRS_FILE_NAME,
     DrawInputs,
@@ -63,6 +64,12 @@ from thematic_redundancy.labeling.draw_pairs import (
     PairRow,
     load_inputs,
 )
+from thematic_redundancy.labeling.label_import import (
+    ADJUDICATION_LABELS_MANIFEST_FILE_NAME,
+    MAIN_LABELS_MANIFEST_FILE_NAME,
+    in_labels,
+)
+from thematic_redundancy.labeling.pair_workbooks import WorkbookManifest
 from thematic_redundancy.labeling.pairs import LABELED, PILOT, TFIDF
 from thematic_redundancy.redundancy.comparison import (
     BootstrapSettings,
@@ -74,6 +81,7 @@ from thematic_redundancy.redundancy.comparison import (
 from thematic_redundancy.redundancy.labels import (
     ADJUDICATION,
     AGREEMENT,
+    CONSENSUS_FILE_NAME,
     REDUNDANT,
     RELATED,
     UNRELATED,
@@ -215,6 +223,54 @@ def read_draw(
         pair_ids=frozenset(row.pair_id for row in rows),
         sha256={MANIFEST_FILE_NAME: _digest(content), PAIRS_FILE_NAME: expected},
     )
+
+
+def read_labels(
+    config: AppConfig, project_root: Path, snapshot_id: str, path: Path
+) -> tuple[tuple[ConsensusLabel, ...], dict[str, str]]:
+    """Read the consensus labels at ``path``; the contract's file is first checked against the
+    SHA-256 that T20c's labels manifest records: :data:`MAIN_LABELS_MANIFEST_FILE_NAME` when
+    import-main wrote the labels (no pair was disputed), otherwise
+    :data:`ADJUDICATION_LABELS_MANIFEST_FILE_NAME`. A dry run's ``--labels`` file from another
+    path is vouched for by no import, so it is read unchecked.
+
+    Return the labels and the SHA-256 of the manifest that vouched for them, by its name.
+
+    Raises:
+        FileNotFoundError: if there is no file at ``path``.
+        RedundancyRunError: if the manifest that must vouch for the labels is missing, records
+            no SHA-256 for them, or records another.
+        ValueError: if a manifest or the labels are damaged.
+    """
+    contract = consensus_labels_path(draw_pairs.records_dir(config, project_root, snapshot_id))
+    if path != contract or not path.is_file():  # the reader refuses a missing file itself
+        return read_consensus_labels(path), {}
+    results = pair_workbooks.Places.of(config, project_root, snapshot_id).results
+    key = in_labels(CONSENSUS_FILE_NAME)
+    for name in (MAIN_LABELS_MANIFEST_FILE_NAME, ADJUDICATION_LABELS_MANIFEST_FILE_NAME):
+        if not (results / name).is_file():
+            raise RedundancyRunError(
+                f"the consensus labels are not used: T20c's {name}, which records their "
+                "SHA-256, is missing; an import that stopped before writing it leaves the labels "
+                "behind, so move them away and run that import step again"
+            )
+        content = (results / name).read_bytes()
+        expected = WorkbookManifest.model_validate_json(content).data_files.get(key)
+        if expected is not None:
+            break
+    else:
+        raise RedundancyRunError(
+            f"the consensus labels are not used: T20c's {ADJUDICATION_LABELS_MANIFEST_FILE_NAME} "
+            "records no SHA-256 for them"
+        )
+    try:
+        labels = read_consensus_labels(path, sha256=expected)
+    except ChecksumMismatchError as error:
+        raise RedundancyRunError(
+            f"the consensus labels differ from the SHA-256 that T20c's {name} records, so they "
+            "are not used"
+        ) from error
+    return labels, {name: _digest(content)}
 
 
 @dataclass(frozen=True)
@@ -371,6 +427,9 @@ class RedundancyRun:
     experiment: ExperimentRecords
     labels: tuple[ConsensusLabel, ...]
     """One per labeled pair, in draw order."""
+    vouched_by: Mapping[str, str]
+    """The SHA-256 of T20c's labels manifest that vouched for the labels, by its name; empty
+    for a dry run's labels from another path."""
     cv: CvSettings
     bootstrap: BootstrapSettings
     representations: tuple[Representation, ...]
@@ -439,9 +498,8 @@ def compute(
     settings = ExperimentSettings.from_config(config)
     report("reading T20a's draw, the consensus labels and T19's records")
     draw = read_draw(config, project_root, snapshot_id)
-    labels = labels_for_pairs(
-        read_consensus_labels(labels_path), [pair.pair_id for pair in draw.pairs]
-    )
+    consensus, vouched_by = read_labels(config, project_root, snapshot_id, labels_path)
+    labels = labels_for_pairs(consensus, [pair.pair_id for pair in draw.pairs])
     experiment = read_experiment(config, project_root, snapshot_id, settings)
     report("loading the document vectors through T20a's loader")
     inputs = load(config, project_root, snapshot_id)
@@ -489,6 +547,7 @@ def compute(
         draw=draw,
         experiment=experiment,
         labels=labels,
+        vouched_by=vouched_by,
         cv=cv,
         bootstrap=bootstrap,
         representations=representations,
@@ -1122,7 +1181,8 @@ def _parse_arguments(argv: Sequence[str] | None) -> argparse.Namespace:
         description=(
             "Run T22 on the labeled set of a snapshot once: read T20a's drawn pairs, their "
             "consensus labels (labeling.records_dir/<snapshot>/labels/consensus.parquet, one per "
-            "labeled pair) and T19's records; calibrate tau by cross-validation and bootstrap "
+            "labeled pair, with the SHA-256 that T20c's labels manifest records) and T19's "
+            "records; calibrate tau by cross-validation and bootstrap "
             "the F1 of each representation; compare SBERT with TF-IDF; and close stage 2 of the "
             "winner by D30's full rule, confirming or changing T19's provisional winner. It "
             "writes the aggregates under results/experiments/<snapshot>/t22/ (tracked by git) "
@@ -1368,6 +1428,7 @@ def _manifest(
         labeled_set={
             **run.draw.sha256,
             run.labels_path.name: _sha256(run.labels_path),
+            **run.vouched_by,
         },
         experiment=dict(run.experiment.sha256),
         inputs=run.input_sha256,

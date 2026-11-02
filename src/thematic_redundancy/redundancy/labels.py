@@ -18,8 +18,9 @@ these, in this order (:data:`COLUMNS`):
 No column is nullable. :class:`ConsensusLabel` refuses a row outside these domains, so a writer
 that builds its rows with it cannot break the contract.
 
-**Reading** (:func:`read_consensus_labels`) refuses a missing file, a file whose columns are not
-exactly these, and a row that breaks the contract. **Matching** (:func:`labels_for_pairs`)
+**Reading** (:func:`read_consensus_labels`) refuses a missing file, a file whose SHA-256 is not
+the one given (the one T20c's labels manifest records), a file whose columns are not exactly
+these, and a row that breaks the contract. **Matching** (:func:`labels_for_pairs`)
 refuses labels that are not exactly one per labeled pair of the draw: a pilot pair, a pair id
 that is not one of the labeled set's, a pair id given twice, or a labeled pair without a label.
 The messages give counts, never pair ids.
@@ -40,7 +41,7 @@ from pydantic import (
     model_validator,
 )
 
-from thematic_redundancy.shared.storage import ParquetTableStore, TableStore
+from thematic_redundancy.shared.storage import ChecksumMismatchError, ParquetTableStore, TableStore
 
 LABELS_DIR_NAME = "labels"
 CONSENSUS_FILE_NAME = "consensus.parquet"
@@ -102,12 +103,14 @@ def consensus_labels_path(records: Path) -> Path:
 
 
 def read_consensus_labels(
-    path: Path, *, store: TableStore | None = None
+    path: Path, *, sha256: str | None = None, store: TableStore | None = None
 ) -> tuple[ConsensusLabel, ...]:
-    """Return the rows of the consensus labels at ``path``, each checked against the contract.
+    """Return the rows of the consensus labels at ``path``, each checked against the contract,
+    once the file's SHA-256 is ``sha256`` when one is given.
 
     Raises:
         FileNotFoundError: if there is no file at ``path``.
+        ChecksumMismatchError: if ``sha256`` is given and the file's differs.
         LabelsError: if its columns are not exactly :data:`COLUMNS` with their types, it is
             not Parquet, or a row breaks the contract.
     """
@@ -118,7 +121,11 @@ def read_consensus_labels(
         )
     store = store or ParquetTableStore()
     try:
-        return store.read(ConsensusLabel, path)
+        if sha256 is None:
+            return store.read(ConsensusLabel, path)
+        return store.read_verified(ConsensusLabel, path, sha256=sha256)
+    except ChecksumMismatchError:
+        raise
     except ValueError as error:  # the store's schema and row errors, and pyarrow's
         raise LabelsError(f"{_described(error)} breaks the labels contract{_fields(error)}") from (
             error
