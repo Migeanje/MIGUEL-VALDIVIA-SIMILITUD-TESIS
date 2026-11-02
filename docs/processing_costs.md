@@ -234,6 +234,8 @@ across sessions with care.
 | 2026-10-27 | all | Test suite (`pytest -q`) run by the independent verifier of T31's samples builder | 3,294 passed and 2 environmental failures, plus 3 skipped; 36 smoke tests deselected | 129.58 s, 1 run | — | 0 | No blocker; 8 of 8 checks passed | plan T31 (t31b) |
 | 2026-10-29 | all | Test suite (`pytest -q`), in the main tree after T31's samples builder | 3,694 passed, plus 3 skipped; 36 smoke tests deselected | 261.62 s (lock held 264.4 s), 1 run | — | 0 | After the command: 28 new tests | plan T31 |
 | 2026-10-29 | all | Test suite (`pytest -q`), in the main tree after the gap tests' invented names | 3,694 passed, plus 3 skipped; 36 smoke tests deselected | 253.23 s (lock held 255.7 s), 1 run | — | 0 | Test data only: no new tests | plan Progress log (tnames) |
+| 2026-10-29 | T31 | Expert samples' real run (`run_expert_samples --snapshot-id 20261002T224412Z`), offline, in the main tree at `2e8f9df`, through the lock | 744 theses, mpnet 768 dimensions; T19's, T27's and T24a's records; samples A to D (10, 5, 6 and 7 cases) | 2.4 s in the command (lock held 6.4 s; 6.66 s for the whole command), 1 run | — | 0 | Writes only the gitignored samples directory; provisional with the winner | plan T31 |
+| 2026-10-29 | T31 | Privacy checks of the written samples, by the parent | The 7 files written | 2.5 s lock held (delivery scan); the per-category count not timed | — | 0 | No person name, ORCID or identifier in the samples; titles and abstracts present, as specified; the key holds the doc codes | plan T31 |
 
 ### Notes on the ledger
 
