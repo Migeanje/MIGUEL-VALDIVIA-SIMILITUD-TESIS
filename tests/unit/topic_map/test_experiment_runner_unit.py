@@ -819,16 +819,21 @@ def test_sections_are_grouped_into_theses_in_row_order() -> None:
         documents_by_row(sections[:1], ("A", "B"))
 
 
-def test_the_git_state_leaves_out_the_results_directory(tmp_path: Path) -> None:
-    def git(*arguments: str) -> None:
-        settings = ("-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false")
-        command = ["git", "-C", str(tmp_path), *settings, *arguments]
-        subprocess.run(command, check=True, capture_output=True)
+def _git(root: Path, *arguments: str, given: bytes | None = None) -> bytes:
+    settings = ("-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false")
+    command = ["git", "-C", str(root), *settings, *arguments]
+    return subprocess.run(command, check=True, capture_output=True, input=given).stdout
 
-    git("init", "-q")
-    (tmp_path / "a.txt").write_bytes(b"a")
-    git("add", "a.txt")
-    git("commit", "-q", "--no-verify", "-m", "first")
+
+def _repository_with_one_commit(root: Path) -> None:
+    _git(root, "init", "-q")
+    (root / "a.txt").write_bytes(b"a")
+    _git(root, "add", "a.txt")
+    _git(root, "commit", "-q", "--no-verify", "-m", "first")
+
+
+def test_the_git_state_leaves_out_the_results_directory(tmp_path: Path) -> None:
+    _repository_with_one_commit(tmp_path)
     results = tmp_path / "results" / "experiments" / "S1" / "t19"
     results.mkdir(parents=True)
     (results / "runs.parquet").write_bytes(b"x")
@@ -841,3 +846,17 @@ def test_the_git_state_leaves_out_the_results_directory(tmp_path: Path) -> None:
     assert len(state.commit) == 40
     with pytest.raises(OSError):
         read_git_state(tmp_path / "missing", "results")
+
+
+def test_a_path_that_git_gives_in_another_encoding_still_counts_as_a_change(
+    tmp_path: Path,
+) -> None:
+    _repository_with_one_commit(tmp_path)
+    blob = _git(tmp_path, "hash-object", "-w", "a.txt").strip()
+    # A Latin-1 file name, which is not UTF-8, staged straight into the index.
+    _git(tmp_path, "update-index", "--index-info", given=b"100644 " + blob + b"\tcaf\xe9.txt\n")
+
+    state = read_git_state(tmp_path, "results")
+
+    assert state.dirty == ("caf\N{REPLACEMENT CHARACTER}.txt",)
+    assert len(state.commit) == 40

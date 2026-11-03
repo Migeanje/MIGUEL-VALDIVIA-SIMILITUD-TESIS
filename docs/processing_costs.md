@@ -265,6 +265,12 @@ across sessions with care.
 | 2026-11-02 | T20c | `pytest` on `tests/unit/labeling`, `tests/unit/redundancy` and `tests/unit/test_reproducibility_docs.py` | 529 passed | 83.66 s (88.0 s for the whole command), 1 run | — | 0 | 1 new test | plan T20c (contract1) |
 | 2026-11-02 | all | Test suite (`pytest -q`), in the main tree with unit `contract1` | 3,726 passed, plus 3 skipped; 36 smoke tests deselected | 265.32 s (lock held 269.2 s; 269.4 s for the whole command), 1 run | — | 0 | 1 new test in `tests/unit/labeling` | plan Progress log (contract1) |
 | 2026-11-02 | all | Test collection of `tests/unit/labeling` (`pytest --collect-only -q`) | 246 tests collected | 0.30 s (7.4 s for the whole command), 1 run | — | 0 | Recount for the plan's Next step | plan Next step (contract1) |
+| 2026-11-02 | T20b | Focused tests of `read_git_state` before the fix (`pytest -k` on `tests/unit/topic_map/test_experiment_runner_unit.py`), in the main tree | 1 failed, 1 passed (RED) | 1.96 s (6.7 s for the whole command), 1 run | — | 0 | The new test failed with Windows' `AttributeError`, as expected | plan T20b (gitstate) |
+| 2026-11-02 | T20b | The same tests after the fix | 2 passed (GREEN) | 3.32 s (8.0 s for the whole command), 1 run | — | 0 | — | plan T20b (gitstate) |
+| 2026-11-02 | T20b | Mutant: git's output decoded strictly, then the file restored byte-identical | Killed (1 failed) | 5.92 s (9.8 s for the whole command), 1 run | — | 0 | — | plan T20b (gitstate) |
+| 2026-11-02 | T20b | `pytest` on `tests/unit/topic_map`, `tests/unit/labeling/test_draw_pairs.py`, `tests/unit/labeling/test_pair_workbooks.py` and `tests/unit/test_reproducibility_docs.py` | 411 passed | 72.76 s (80.7 s for the whole command), 1 run | — | 0 | 1 new test | plan T20b (gitstate) |
+| 2026-11-02 | all | Test suite (`pytest -q`), in the main tree with unit `gitstate` | 3,727 passed, plus 3 skipped; 36 smoke tests deselected | 513.36 s (lock held 517.5 s; 517.8 s for the whole command), 1 run | — | 0 | 1 new test in `tests/unit/topic_map` | plan Progress log (gitstate) |
+| 2026-11-02 | all | Test collection of `tests/unit/topic_map` (`pytest --collect-only -q`) | 320 tests collected | 1.19 s (4.4 s for the whole command), 1 run | — | 0 | Recount for the plan's Next step | plan Next step (gitstate) |
 
 ### Notes on the ledger
 

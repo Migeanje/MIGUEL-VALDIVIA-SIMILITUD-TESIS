@@ -82,23 +82,23 @@ class GitState:
 
 def read_git_state(project_root: Path, results_path: str) -> GitState:
     """Return the commit of ``project_root`` and its changed paths, ``results_path`` (relative,
-    with ``/``) left out.
+    with ``/``) left out. Git's output is read as UTF-8 with any other byte replaced by U+FFFD, so
+    a path in another encoding still counts as a change.
 
     Raises:
         OSError: if git cannot tell, such as outside a repository with a commit.
     """
 
     def git(*arguments: str) -> str:
+        # Bytes, decoded here: in text mode an undecodable output fails, and on Windows the
+        # reader threads swallow the error and leave the output None.
         done = subprocess.run(
-            ["git", "-C", str(project_root), *arguments],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=False,
+            ["git", "-C", str(project_root), *arguments], capture_output=True, check=False
         )
         if done.returncode != 0:
-            raise OSError(f"git {arguments[0]} failed in {project_root}: {done.stderr.strip()}")
-        return done.stdout
+            message = done.stderr.decode("utf-8", errors="replace").strip()
+            raise OSError(f"git {arguments[0]} failed in {project_root}: {message}")
+        return done.stdout.decode("utf-8", errors="replace")
 
     commit = git("rev-parse", "HEAD").strip()
     entries = iter(git("status", "--porcelain", "-z", "--untracked-files=all").split("\0"))
