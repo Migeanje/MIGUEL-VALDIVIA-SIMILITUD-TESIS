@@ -260,6 +260,11 @@ across sessions with care.
 | 2026-11-02 | T22 | `pytest` on `tests/unit/redundancy`, `tests/unit/labeling` and `tests/unit/test_reproducibility_docs.py` | 528 passed | 77.50 s (81.6 s for the whole command), 1 run | — | 0 | 5 new tests | plan T20c (t22man) |
 | 2026-11-02 | all | Test suite (`pytest -q`), in the main tree with unit `t22man` | 3,725 passed, plus 3 skipped; 36 smoke tests deselected | 255.87 s (lock held 258.7 s; 258.8 s for the whole command), 1 run | — | 0 | 5 new tests in `tests/unit/redundancy` | plan Progress log (t22man) |
 | 2026-11-02 | all | Test collection of `tests/unit/redundancy` (`pytest --collect-only -q`) | 263 tests collected | 0.13 s (5.6 s for the whole command), 1 run | — | 0 | Recount for the plan's Next step | plan Next step (t22man) |
+| 2026-11-02 | T20c | The consensus contract's new identity test before the fix (`pytest` on `tests/unit/labeling/test_consensus.py`), in the main tree | 1 failed, 19 passed (RED) | 0.24 s, 1 run | — | 0 | Two `ConsensusLabel` classes, as expected | plan T20c (contract1) |
+| 2026-11-02 | T20c | The same tests after the fix | 20 passed (GREEN) | 1.40 s (5.6 s for the whole command), 1 run | — | 0 | — | plan T20c (contract1) |
+| 2026-11-02 | T20c | `pytest` on `tests/unit/labeling`, `tests/unit/redundancy` and `tests/unit/test_reproducibility_docs.py` | 529 passed | 83.66 s (88.0 s for the whole command), 1 run | — | 0 | 1 new test | plan T20c (contract1) |
+| 2026-11-02 | all | Test suite (`pytest -q`), in the main tree with unit `contract1` | 3,726 passed, plus 3 skipped; 36 smoke tests deselected | 265.32 s (lock held 269.2 s; 269.4 s for the whole command), 1 run | — | 0 | 1 new test in `tests/unit/labeling` | plan Progress log (contract1) |
+| 2026-11-02 | all | Test collection of `tests/unit/labeling` (`pytest --collect-only -q`) | 246 tests collected | 0.30 s (7.4 s for the whole command), 1 run | — | 0 | Recount for the plan's Next step | plan Next step (contract1) |
 
 ### Notes on the ledger
 

@@ -1,9 +1,9 @@
 """The consensus labels' contract with T22's run (T20c, S4) and the final label of a disputed
 pair (D34 (9)).
 
-The contract's reader lives in T22's unit (``redundancy/labels.py``), outside this tree; these
-tests pin the names, values, columns and Parquet types that both units declare, so that a change
-on either side fails here.
+The contract is declared once, in T22's reader (``redundancy/labels.py``), and the importer
+writes with that declaration; these tests pin its names, values, columns and Parquet types, so
+that a change to the contract fails here.
 """
 
 from pathlib import Path
@@ -20,7 +20,22 @@ from thematic_redundancy.labeling.consensus import (
     consensus_labels_path,
     final_level,
 )
+from thematic_redundancy.redundancy import labels
 from thematic_redundancy.shared.storage import ParquetTableStore
+
+
+def test_the_importer_writes_with_the_declaration_that_t22_reads() -> None:
+    for name in (
+        "ConsensusLabel",
+        "binary_label",
+        "consensus_labels_path",
+        "Level",
+        "Source",
+        *("LABELS_DIR_NAME", "CONSENSUS_FILE_NAME", "LEVELS", "SOURCES", "COLUMNS"),
+        *("REDUNDANT", "RELATED", "UNRELATED", "AGREEMENT", "ADJUDICATION"),
+        *("LABELED_PREFIX", "PILOT_PREFIX"),
+    ):
+        assert getattr(consensus, name) is getattr(labels, name), name
 
 
 def test_the_contract_declares_the_names_and_values_that_t22_reads() -> None:

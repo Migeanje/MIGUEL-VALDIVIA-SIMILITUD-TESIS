@@ -1,5 +1,7 @@
 """The consensus labels of the labeled set: the contract between the importer that writes them
-(T20c) and the run of T22 that reads them, its reader, and its match against T20a's draw.
+(T20c) and the run of T22 that reads them, its reader, and its match against T20a's draw. The
+contract is declared only here; the importer imports it (through
+:mod:`thematic_redundancy.labeling.consensus`), so the writer and the reader cannot drift apart.
 
 **Contract.** One Parquet file, ``<labeling.records_dir>/<snapshot_id>/labels/consensus.parquet``
 (:func:`consensus_labels_path`), inside the gitignored ``data/``, beside T20a's
