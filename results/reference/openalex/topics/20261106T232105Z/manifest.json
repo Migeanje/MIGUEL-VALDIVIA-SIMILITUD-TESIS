@@ -1,0 +1,55 @@
+{
+  "download_id": "20261106T232105Z",
+  "retrieved_at": "2026-11-06T23:21:05Z",
+  "base_url": "https://api.openalex.org",
+  "url": "https://api.openalex.org/topics",
+  "query_parameters": {
+    "per-page": "200",
+    "page": "1"
+  },
+  "user_agent": "thematic-redundancy-research/0.1 (academic thesis research)",
+  "settings": {
+    "base_url": "https://api.openalex.org/",
+    "per_page": 200,
+    "request_interval_seconds": 1.0,
+    "timeout_seconds": 30.0,
+    "max_retries": 3,
+    "backoff_seconds": 2.0
+  },
+  "meta_count": 4516,
+  "records_written": 4516,
+  "distinct_ids": 4516,
+  "pages": 23,
+  "requests": 23,
+  "data_files": {
+    "topics.jsonl": {
+      "path": "data/raw/openalex/topics/20261106T232105Z/topics.jsonl",
+      "size_bytes": 38214080,
+      "sha256": "5efacdd5c6e3f5aad63c91f97b054d34d232c3075eb43557a723150b2dda284d"
+    }
+  },
+  "config_sha256": "2bc2c20014df96ac4d287e9f6f0c3cc3de1daeb0c1b826c68c0db49b9e828f5f",
+  "git_commit": "a26fa9e833025652b2b81f298b3ead678fd62a66",
+  "git_dirty": [
+    "README.md",
+    "config/default.yaml",
+    "docs/reproducibility/configuration.md",
+    "docs/reproducibility/data_card.md",
+    "docs/reproducibility/how_to_run.md",
+    "src/thematic_redundancy/shared/config.py",
+    "tests/unit/test_config.py",
+    "src/thematic_redundancy/reference/__init__.py",
+    "src/thematic_redundancy/reference/openalex.py",
+    "src/thematic_redundancy/reference/openalex_topics.py",
+    "tests/unit/reference/conftest.py",
+    "tests/unit/reference/openalex_fakes.py",
+    "tests/unit/reference/test_openalex_client.py",
+    "tests/unit/reference/test_openalex_topics.py"
+  ],
+  "versions": {
+    "python": "3.13.2",
+    "httpx": "0.28.1",
+    "pydantic": "2.13.5"
+  },
+  "seconds": 38.393
+}

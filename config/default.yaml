@@ -366,3 +366,18 @@ expert_samples:
   terms: 10
   saturation_method: linear
   saturation_boundary: lower
+
+# OpenAlex REST API for the one-time download of its Topics list, the "never touched" reference
+# (T25, D17; authorized once by the user under U8). The download asks for per_page topics per
+# page (OpenAlex serves at most 200) with page-number paging, starts requests at least
+# request_interval_seconds apart, gives each step of a request timeout_seconds, and retries a
+# request after HTTP 429, HTTP 5xx, a timeout or a network error up to max_retries times,
+# waiting backoff_seconds before the first retry and twice as long before each later one. It
+# sends no email, mailto parameter, API key or cookie, so base_url holds no query.
+openalex:
+  base_url: "https://api.openalex.org"
+  per_page: 200
+  request_interval_seconds: 1.0
+  timeout_seconds: 30.0
+  max_retries: 3
+  backoff_seconds: 2.0

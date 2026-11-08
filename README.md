@@ -201,6 +201,57 @@ It is as polite as the harvest: one request at a time, at least
 follows redirects only within the repository's host. It sends about two requests per thesis:
 one to list the item's files and one to download the thesis.
 
+## OpenAlex Topics reference
+
+The "never touched" reference of the gap analysis (T25, D17) is the OpenAlex Topics list
+(CC0). Download it once:
+
+```sh
+uv run python -m thematic_redundancy.reference.openalex_topics
+```
+
+This is a remote operation on `api.openalex.org`: run it only with the user's authorization
+(U8). It pages through `https://api.openalex.org/topics` by page number (`page=1`, then 2,
+3, ... up to the last page that the first page's `meta.count` needs), `openalex.per_page`
+topics per page (200), and writes:
+
+- `data/raw/openalex/topics/<download_id>/topics.jsonl` (gitignored): every topic record as
+  OpenAlex serves it, one compact JSON object per line, UTF-8 with LF endings, in the order of
+  the listing.
+- `results/reference/openalex/topics/<download_id>/manifest.json` (tracked):
+  - the download id, the UTC retrieval time, the URL, the first request's query and the
+    User-Agent sent;
+  - the values of the `openalex` block and the SHA-256 of `config/default.yaml`;
+  - OpenAlex's `meta.count`, the records written and their distinct ids, the pages and the
+    HTTP requests;
+  - the path, size and SHA-256 of `topics.jsonl`;
+  - the code commit and its changed paths, and the versions of Python, httpx and pydantic.
+
+How a download behaves:
+
+- **Id.** It defaults to the UTC retrieval time, such as `20261105T140309Z`, under the rules
+  of a snapshot id. `--download-id` chooses another name. An id whose data folder or manifest
+  exists is refused before any request: a download is never overwritten.
+- **Complete or nothing.** The records must number OpenAlex's `meta.count` and every topic
+  `id` must be unique; otherwise it stops before anything is written. `topics.jsonl` is
+  written first and `manifest.json` last, each atomically; a failure or an interruption
+  before the manifest is in place takes `topics.jsonl` back.
+- **One at a time.** A run holds the lock of `data/raw/openalex/topics/`.
+- **No personal data.** It sends the project's User-Agent and the `per-page` and `page`
+  parameters only: no email, `mailto` parameter, API key or cookie. The configuration
+  refuses an `openalex.base_url` that is not https, or holds a query, a fragment, a user name
+  or a password.
+- **Refusals.** HTTP 401 and 403 stop it at once, and HTTP 429 once the retries are spent,
+  with an `error:` line that names the status: the API may then want a key or a lower rate,
+  which needs the user's authorization. Any other failure is also one `error:` line with exit
+  code 1; an interruption exits with 130.
+
+It is as polite as the harvest: one request at a time, at least
+`openalex.request_interval_seconds` apart (1 s or more), a timeout of
+`openalex.timeout_seconds` on each request, and at most `openalex.max_retries` retries after
+HTTP 429, HTTP 5xx or a network error, waiting `openalex.backoff_seconds` and then twice as
+long each time, or the server's `Retry-After` up to one minute. It follows no redirect.
+
 ## PDF text extraction
 
 Once the PDFs are on disk, extract their text page by page. A full run takes about 3 hours
@@ -927,6 +978,9 @@ work offline with `HF_HUB_OFFLINE=1`.
   redistributed, and every displayed thesis links to its repository item.
 - Thesis PDFs are saved under the uuid of their item. Their original file names, which may hold
   author names, are never stored.
+- The OpenAlex Topics list (CC0) lives under the gitignored `data/raw/openalex/`; its tracked
+  manifest under `results/reference/` holds counts, digests and the code state only. The
+  download sends no personal data: no email, `mailto` parameter, API key or cookie.
 - DNI fields (every metadata key ending in `.dni`, such as `renati.author.dni` and
   `renati.advisor.dni`) are dropped at ingestion, before anything is written. The snapshot
   manifest lists the dropped keys.

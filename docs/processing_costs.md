@@ -20,6 +20,7 @@ row here, in the same commit.
 | Manual verification of the objectives (T10) | about 2 h of the user's time for 60 theses (reported by the user, not timed): about 2 min per thesis (derived) |
 | Fichas build (T12) | 0.6 s for 766 records; the quality report with the spaCy stopword re-check, 8.5–9.2 s |
 | mpnet model download (U8) | 287.6 s, the first load included, for 1,126,358,977 B (1.13 GB) on disk |
+| OpenAlex Topics download (T25, U8) | 38.4 s for 4,516 topics in 23 requests, 38,214,080 B: about 118 topics/s (derived); 2 more requests in the refused cursor run |
 | Chunk build (T13) | 22.8–23.5 s for 744 theses and 5,217 chunks under both tokenizers, tokenizer loading included; 46.2–46.9 s in a slower machine state |
 | Embeddings (T14) | 549.0 s from an empty cache for 5,211 distinct texts with both models (encoding: MiniLM 127.2 s, mpnet 306.3 s); 52.8 s on a rerun from the cache |
 | TF-IDF baseline (T15) | 25.9–29.1 s for the whole command over 744 theses and 2,216 sections (cleaning 16.1–16.7 s); 14,308 terms and 98,282 nonzeros per matrix |
@@ -271,6 +272,20 @@ across sessions with care.
 | 2026-11-02 | T20b | `pytest` on `tests/unit/topic_map`, `tests/unit/labeling/test_draw_pairs.py`, `tests/unit/labeling/test_pair_workbooks.py` and `tests/unit/test_reproducibility_docs.py` | 411 passed | 72.76 s (80.7 s for the whole command), 1 run | — | 0 | 1 new test | plan T20b (gitstate) |
 | 2026-11-02 | all | Test suite (`pytest -q`), in the main tree with unit `gitstate` | 3,727 passed, plus 3 skipped; 36 smoke tests deselected | 513.36 s (lock held 517.5 s; 517.8 s for the whole command), 1 run | — | 0 | 1 new test in `tests/unit/topic_map` | plan Progress log (gitstate) |
 | 2026-11-02 | all | Test collection of `tests/unit/topic_map` (`pytest --collect-only -q`) | 320 tests collected | 1.19 s (4.4 s for the whole command), 1 run | — | 0 | Recount for the plan's Next step | plan Next step (gitstate) |
+| 2026-11-05 | T25 | Delegated writer: T25's first slice (client, command, `openalex` block, tests, docs) | 7 new files (1,949 lines) and 7 changed (255 additions, 10 deletions) | 1,662.2 s (27.7 min), 107 tool uses | — | 0 | No network: the tests' transport is fake and a guard blocks the real one | plan T25 |
+| 2026-11-05 | T25 | The writer's RED: `tests/unit/test_config.py`, then `tests/unit/reference`, before the code | 41 failed, 463 passed, 1 skipped; the reference tests failed at collection (`ModuleNotFoundError`) | 62.32 s and 17.12 s, 1 run each | — | 0 | — | plan T25 |
+| 2026-11-05 | T25 | The writer's GREEN: the same tests | 64 passed; 504 passed, 1 skipped | 9.68 s and 75.01 s, 1 run each | — | 0 | — | plan T25 |
+| 2026-11-05 | T25 | The writer's check: `pytest` on `tests/unit/reference`, `tests/unit/test_config.py`, `tests/unit/test_reproducibility_docs.py` and `tests/unit/corpus` | 1,310 passed, 3 skipped | 212.52 s, 1 run | — | 0 | — | plan T25 |
+| 2026-11-05 | T25 | The parent's spot check: `pytest tests/unit/reference` | 64 passed | 10.12 s (11.8 s for the whole command), 1 run | — | 0 | — | plan T25 |
+| 2026-11-05 | T25 | First real download, cursor paging, from `api.openalex.org` (U8) | Page 1 served, then HTTP 401 on the cursor's second page; nothing written but the run lock | Lock held 6.7 s (6.9 s for the whole command), 1 run | — | 2 | Anonymous; stopped at once, no retry | plan T25 |
+| 2026-11-06 | T25 | Paging change, RED: `pytest tests/unit/reference` with the page-number tests | 28 failed, 35 passed | 51.23 s, 1 run | — | 0 | — | plan T25 |
+| 2026-11-06 | T25 | GREEN: the same tests | 63 passed, after a run with 1 failed and 62 passed (30.70 s) on one test's expected time | 15.23 s, 1 run | — | 0 | — | plan T25 |
+| 2026-11-06 | T25 | Three mutants of the paging (one page short; an empty list reported as 0 pages; one result more per page allowed), then the file restored byte-identical | Killed: 13, 1 and 1 failed | 17.90 s, 20.37 s and 18.71 s | — | 0 | — | plan T25 |
+| 2026-11-06 | T25 | `pytest` on `tests/unit/reference` and `tests/unit/test_config.py` | 567 passed, 1 skipped | 108.95 s, 1 run | — | 0 | — | plan T25 |
+| 2026-11-06 | T25 | `pytest` on `tests/unit/reference` and `tests/unit/test_reproducibility_docs.py` | 83 passed | 21.70 s, 1 run | — | 0 | — | plan T25 |
+| 2026-11-06 | T25 | OpenAlex Topics download `20261106T232105Z`, page-number paging, from `api.openalex.org` (U8) | 4,516 topics, 38,214,080 B | 38.4 s (lock held 47.0 s; 47.2 s for the whole command), 1 run | about 118 topics/s (derived) | 23 | Anonymous, at least 1 s apart, no retry needed | `results/reference/openalex/topics/20261106T232105Z/manifest.json` |
+| 2026-11-06 | all | Test suite (`pytest -q`), in the main tree with T25's first slice | 3,831 passed, plus 3 skipped; 36 smoke tests deselected | 966.43 s (lock held 974.2 s; 974.5 s for the whole command), 1 run | — | 0 | The new `tests/unit/reference` and the new cases of `tests/unit/test_config.py` | plan Progress log (T25) |
+| 2026-11-06 | all | Test collection of `tests/unit/test_config.py` and `tests/unit/reference` (`pytest --collect-only -q`) | 505 and 63 tests collected | 5.42 s (8.1 s for the whole command), 1 run | — | 0 | Recount for the plan's Next step | plan Next step (T25) |
 
 ### Notes on the ledger
 

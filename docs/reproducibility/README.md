@@ -66,7 +66,7 @@ step").
 | The T22 real run: τ by 5-fold cross-validation with a bootstrap interval, SBERT against TF-IDF, and stage 2 of the selection, which confirms or replaces the provisional winner C4 (step 30) | T22 | The consensus labels of T21; the user's confirmation of the four calibration values (SR-T22-1) |
 | The app's redundancy verdict at τ | T28 | The T22 run |
 | A rerun of the T19-based outputs if stage 2 changes the model: the gap run and the temporal split | T22, T24a, T27 | The T22 run |
-| The OpenAlex reference and the official-lines coverage view | T25 | U8, U5, U1 |
+| The rest of the OpenAlex reference: the subfields mapped to each program, the theses assigned to topics and the untouched topics ranked, and the official-lines coverage view (the Topics list itself was downloaded on 2026-11-06, `20261106T232105Z`) | T25 | U5, U1 |
 | The Dockerfile and its run guide | T29 | — |
 | The expert validation: Aiken's V with the judges, the session, the questionnaire analysis and the success criteria | T30 to T32 | The expert panel (U6) |
 | The ledger's open measurements: labeling hours, the Docker build; optionally, the stopword script's time | T21, T29, T11 | Those tasks |

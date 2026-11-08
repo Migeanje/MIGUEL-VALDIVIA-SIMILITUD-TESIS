@@ -192,6 +192,13 @@ they name theses or link codes to them (names and roles only; `<id>` is the snap
 | `data/processed/<id>/temporal/` | Which thesis went to which topic, and the expert sample with doc codes and titles | `run_temporal` (T27) |
 | `data/expert_session/<id>/muestras/` | The printed session materials, samples A to D, which show titles and, in sample B, abstracts and objectives; never committed. Their key, `clave.csv`, maps the case codes to doc codes | `run_expert_samples` (T31), run on 2026-10-29 |
 
+The OpenAlex Topics reference (T25, D17) is not corpus data and names no thesis, but it is raw
+downloaded data, so it follows the snapshot's split: the topic records as OpenAlex serves them
+(CC0) go to `data/raw/openalex/topics/<download id>/topics.jsonl`, and only their manifest,
+with counts and digests, to `results/reference/openalex/topics/<download id>/manifest.json`
+(`openalex_topics`). Download `20261106T232105Z`, of 2026-11-06, holds 4,516 topics in
+38,214,080 B (M).
+
 `.gitignore` also ignores the run locks that the commands leave beside their output folders
 (`results/**/.lock`). `.dockerignore` keeps `data/`, `tessdata/`, `results/` and `odd/` out of
 any Docker build context.

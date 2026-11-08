@@ -15,15 +15,15 @@ user (plan "Next step").
 
 | Fact | Value |
 |---|---|
-| SHA-256 of `config/default.yaml` at `2e8f9df` | `cba05e394ecfa41475218aa682053dc3118fd2a74622feade47ba444a1f291e1` (M): the file since `2d41c2c`, which added `expert_samples` |
+| SHA-256 of `config/default.yaml` | `2bc2c20014df96ac4d287e9f6f0c3cc3de1daeb0c1b826c68c0db49b9e828f5f` (M): the file since T25's first slice, which added `openalex`; `cba05e394ecfa41475218aa682053dc3118fd2a74622feade47ba444a1f291e1` from `2d41c2c` to `a26fa9e` |
 | Experiment declaration SHA-256 | `b974c54c3378c8fe02f7983323f0d58fa7672e4ca7d1999df15f708d2b76850b`, unchanged since D30 |
-| Blocks | 23 (M), in the order of the table below |
+| Blocks | 24 (M), in the order of the table below |
 | Loader | `load_config`: a YAML key written twice in one mapping is refused, and each block is a validated pydantic model with bounds |
 | Changing a value | Log it in the plan's "Initial configuration"; a pinned value needs a new decision |
 
 Each run manifest records the SHA-256 of the file it read, so a rerun can be matched with the
-configuration of its commit. Since the gap run, the file changed five times (M: each value
-equals `git show <commit>:config/default.yaml`):
+configuration of its commit. Since the gap run, the file changed six times (M: each value
+equals `git show <commit>:config/default.yaml`, or the file itself for the last row):
 
 | Commit | SHA-256 | What the commit added | Recorded by |
 |---|---|---|---|
@@ -33,6 +33,7 @@ equals `git show <commit>:config/default.yaml`):
 | `ec2abf6` | `3ec8f5984f872a183be157179d6a3d5b63c9c172b29fddb3dd0aa972dcf7ab1f` | The `proposal` and `temporal` blocks | The temporal split's manifest (run at `b161016`) |
 | `af46c30` | `27dec213f1b1703d88b9f78493298e946f22ff6c1e49e676049f09a96a950c1a` | The key `labeling.annotators` | The pilot workbook's manifest (run at `7a9fe30`) |
 | `2d41c2c` | `cba05e394ecfa41475218aa682053dc3118fd2a74622feade47ba444a1f291e1` | The `expert_samples` block | The expert samples' gitignored manifest (run at `2e8f9df`, which holds this file; D: the command records `default.yaml` among its inputs) |
+| T25's first slice | `2bc2c20014df96ac4d287e9f6f0c3cc3de1daeb0c1b826c68c0db49b9e828f5f` | The `openalex` block | The OpenAlex Topics download's manifest, `config_sha256` (download `20261106T232105Z`) |
 
 ## Blocks of `config/default.yaml`
 
@@ -63,6 +64,7 @@ In file order. "Read by" names the commands of the [how-to-run guide](how_to_run
 | `proposal` | `atypical_scope` global, `atypical_method` linear | O06's atypical flag of a thesis assigned by nearest centroid (D14): below the 5th percentile of the member-to-own-centroid similarities over every clustered thesis of the map, with numpy's linear percentile | O06, T23 (the values the user confirmed on 2026-10-20), T27 | `run_temporal`; the app's query page |
 | `temporal` | `split_year` 2025, `sample` (`seed` 20261027, `size` 40, `atypical` 10, `program_floor` 2) | The temporal split: the winner fitted on 2021–2024, the theses of 2025–2026 assigned to it; and the expert sample's size, atypical quota and floor per program. Not gap rule (d)'s `gaps.temporal_split_year` | O04, D30 E3, T27 | `run_temporal` |
 | `expert_samples` | `seed` 20261031, `assignments_per_program` 2, `group_examples` 3, `queries_per_program` 1, `ranking_size` 5, `topics` 6, `topic_examples` 5, `gaps_per_rule` 2, `gap_examples` 3, `terms` 10, `saturation_method` linear, `saturation_boundary` lower | The sizes and draws of samples A to D of the expert session | T31, `docs/expert_session/muestras_anonimizadas.md`; the user kept sample B's maps as built (SR-T31b-1, 2026-10-29) | `run_expert_samples` |
+| `openalex` | `base_url` https://api.openalex.org, `per_page` 200 (1–200), `request_interval_seconds` 1.0 (1.0–60.0), `timeout_seconds` 30.0 (1.0–300.0), `max_retries` 3 (0–10), `backoff_seconds` 2.0 (1.0–60.0) | The one-time download of the OpenAlex Topics list and the politeness of its requests, as `repository` does for the harvest; `base_url` must be https and hold no query, fragment, user name or password, since the download sends no personal data. Every value must be declared | T25, D17, U8 | `openalex_topics` |
 
 The `expected` counts of `fichas`, `chunking`, `embedding` and `tfidf` hold for the snapshot
 they name only; another snapshot needs its own counts, or the build stops. The
@@ -73,8 +75,8 @@ they name only; another snapshot needs its own counts, or the build stops. The
 The declaration (D30, fixed on 2026-10-19 before any run) is the whole `experiment` block plus
 the values it reuses from other blocks: `umap`, `kmeans`, `hdbscan`, `seeds`,
 `embedding.models`, `embedding.document_vector` and `tfidf.document_vector`. The blocks added
-since (`redundancy`'s new keys, `proposal`, `temporal`, `expert_samples` and
-`labeling.annotators`) are outside it, so its SHA-256 did not change.
+since (`redundancy`'s new keys, `proposal`, `temporal`, `expert_samples`,
+`labeling.annotators` and `openalex`) are outside it, so its SHA-256 did not change.
 
 | Check | Where | What it does |
 |---|---|---|

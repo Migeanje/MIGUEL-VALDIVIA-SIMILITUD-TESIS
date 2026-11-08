@@ -1011,6 +1011,41 @@ class ExpertSamplesConfig(_FrozenModel):
         return self
 
 
+class OpenAlexConfig(_FrozenModel):
+    """OpenAlex REST API and the pace of the one-time download of its Topics list (T25, D17).
+
+    The download sends no personal data, so ``base_url`` may hold no query (where a ``mailto``
+    address or an API key would go), no fragment and no user name or password."""
+
+    base_url: HttpUrl
+    per_page: Annotated[StrictInt, Field(ge=1, le=200)]
+    """Topics requested per page; OpenAlex serves at most 200."""
+    request_interval_seconds: Annotated[StrictFloat, Field(ge=1.0, le=60.0)]
+    """Shortest time between the starts of two requests; at least one second, to stay polite."""
+    timeout_seconds: Annotated[StrictFloat, Field(ge=1.0, le=300.0)]
+    """Longest wait for each step of a request: connecting, sending, and each read."""
+    max_retries: Annotated[StrictInt, Field(ge=0, le=10)]
+    """Retries of one request after HTTP 429, HTTP 5xx, a timeout or a network error."""
+    backoff_seconds: Annotated[StrictFloat, Field(ge=1.0, le=60.0)]
+    """Wait before the first retry; each later retry waits twice as long as the one before."""
+
+    @field_validator("base_url")
+    @classmethod
+    def _refuse_personal_data(cls, value: HttpUrl) -> HttpUrl:
+        if value.scheme != "https":
+            raise ValueError(f"must use https, got '{value.scheme}'")
+        if value.username is not None or value.password is not None:
+            raise ValueError("must hold no user name or password: the download sends no credential")
+        if value.query is not None:
+            raise ValueError(
+                "must hold no query: the download sends no mailto address, API key or other "
+                "parameter of its own"
+            )
+        if value.fragment is not None:
+            raise ValueError("must hold no fragment")
+        return value
+
+
 class AppConfig(_FrozenModel):
     """Complete, validated configuration of one analysis run."""
 
@@ -1037,6 +1072,7 @@ class AppConfig(_FrozenModel):
     proposal: ProposalConfig
     temporal: TemporalConfig
     expert_samples: ExpertSamplesConfig
+    openalex: OpenAlexConfig
 
     @field_validator("seeds")
     @classmethod

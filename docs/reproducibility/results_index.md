@@ -1,9 +1,10 @@
 # Results index
 
-Every file that git tracks under `results/` at `2e8f9df`, 35 files (M): the command that wrote
-it, the commit it ran at, where its provenance is recorded and what it holds. All of them are
-aggregates for snapshot `20261002T224412Z`; none holds a title, an abstract, a person's name or
-an ORCID iD. A second table lists the tracked files that commands in `main` will write but have
+Every file that git tracks under `results/` with T25's first slice, 36 files (M): the command
+that wrote it, the commit it ran at, where its provenance is recorded and what it holds. All
+but one are aggregates for snapshot `20261002T224412Z`; the other is the manifest of the
+OpenAlex Topics download (T25), which records a public topic list. None holds a title, an
+abstract, a person's name or an ORCID iD. A second table lists the tracked files that commands in `main` will write but have
 not written yet, and a third the gitignored files under `data/` that the same commands write,
 by name and role only.
 
@@ -202,6 +203,23 @@ step has run: the pilot workbook waits for the calibration meeting.
 |---|---|
 | `results/labeled_set/20261002T224412Z/workbooks/pilot_manifest.json` | Written last: the step, snapshot, git commit, seed 20261021 with `annotators` null and the records directory, counts (130 drawn pairs; 10 pilot pairs over 20 theses, 5 shown with their sides swapped, 0 cells redacted; the name guard's 3,312 strings over 144 distinct texts), the SHA-256 of its 5 inputs and of its 3 gitignored records, library versions and times; no CPU record. No pair id, blind code or doc code |
 
+### OpenAlex Topics reference (T25)
+
+```sh
+uv run python -m thematic_redundancy.reference.openalex_topics
+```
+
+Online, once, under the user's authorization (U8, granted 2026-11-04 for one anonymous download
+of the full Topics list). Cursor paging got HTTP 401 on its second page on 2026-11-05 and wrote
+nothing; the user then chose page-number paging (2026-11-06). Ran at `a26fa9e` with T25's first
+slice uncommitted (`git_commit` and the 14 paths of `git_dirty` in the manifest),
+2026-11-06T23:21:05Z, 38.4 s (M); committed with T25's first slice. It belongs to no snapshot:
+it records the public Topics list (CC0) that its gitignored data file holds.
+
+| File | Holds |
+|---|---|
+| `results/reference/openalex/topics/20261106T232105Z/manifest.json` | Written last: the download id, the retrieval time, the URL, the first request's query (`per-page` 200, `page` 1) and the User-Agent; the `openalex` values and the configuration's SHA-256; `meta.count` 4,516, 4,516 records written with 4,516 distinct ids, 23 pages and 23 requests (M); the path, size (38,214,080 B) and SHA-256 of the gitignored `topics.jsonl`; the git commit and changed paths, and the versions of Python, httpx and pydantic. No thesis data |
+
 ## Tracked results not written yet
 
 The README names these tracked records; at `2e8f9df` no run has written them, because each
@@ -241,13 +259,14 @@ git. `<id>` is the snapshot id.
 | `pair_workbooks pilot` | `data/labels/labeled_set/<id>/blind_codes.parquet`, `pilot_layout.parquet`, `workbooks/etiquetado_piloto.xlsx` | The blind code of every drawn pair, the pilot workbook's pairs and sides, and the pilot workbook |
 | `pair_workbooks import-pilot`, `main` | `data/labels/labeled_set/<id>/pilot_labels.parquet`, `assignment.parquet`, `main_layout.parquet`, `workbooks/etiquetado_anotador_<k>.xlsx` | The pilot's agreed labels, each labeled pair's pair of annotators, and the annotators' workbooks with their layout |
 | `pair_workbooks import-main`, `adjudication`, `import-adjudication` | `data/labels/labeled_set/<id>/labels/labels.parquet`, `labels/fleiss_inputs.parquet`, `adjudication_layout.parquet`, `workbooks/desempate_anotador_<k>.xlsx`, `labels/adjudication_labels.parquet`, `labels/consensus.parquet` | Each annotator's labels, the Fleiss' kappa inputs, the adjudication workbooks, the third labels, and the consensus labels that `run_redundancy` reads |
+| `openalex_topics` | `data/raw/openalex/topics/<download id>/topics.jsonl` | Every topic record of the OpenAlex Topics list (CC0) as the API served it, one per line; public data, kept out of git for its size |
 | `run_redundancy` | `data/processed/<id>/experiments/t22/pair_scores.parquet` | Each labeled pair's labels, fold, scores and predictions under each representation |
-| `download_pdfs`, `extract_text`, `run_gaps`, `draw_pairs`, `run_temporal`, `pair_workbooks`, `run_redundancy`, `run_expert_samples` | A `.lock` file in or beside the output folder (`results/**/.lock` is gitignored; the samples' lock is in their folder under `data/`) | Run locks, so that only one run at a time uses a folder |
+| `download_pdfs`, `extract_text`, `run_gaps`, `draw_pairs`, `run_temporal`, `pair_workbooks`, `run_redundancy`, `run_expert_samples`, `openalex_topics` | A `.lock` file in or beside the output folder (`results/**/.lock` is gitignored; the samples' lock is in their folder under `data/`, and the OpenAlex download's is `data/raw/openalex/topics/.lock`) | Run locks, so that only one run at a time uses a folder |
 
 At `2e8f9df` the files of `run_temporal`, of the `pilot` step and of `run_expert_samples` (its
 real run of 2026-10-29) exist; those of the later `pair_workbooks` steps and of
 `run_redundancy` do not (names listed, M).
 
-The manifests of T19, the gap run, the draw, the temporal split and the pilot step record the
-SHA-256 of their gitignored files (`data_files`), so a rerun can be compared with the recorded
+The manifests of T19, the gap run, the draw, the temporal split, the pilot step and the
+OpenAlex download record the SHA-256 of their gitignored files (`data_files`), so a rerun can be compared with the recorded
 one without publishing the files.

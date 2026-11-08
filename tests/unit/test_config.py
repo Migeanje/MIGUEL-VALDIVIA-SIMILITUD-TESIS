@@ -594,6 +594,91 @@ def test_the_expert_samples_block_is_outside_the_experiment_declaration(
     assert load_variant(tmp_path, raw_default).experiment_declaration_sha256() == declared
 
 
+def test_the_openalex_block_declares_t25s_download_values() -> None:
+    openalex = load_config(DEFAULT_CONFIG_PATH).openalex
+
+    assert str(openalex.base_url) == "https://api.openalex.org/"
+    assert openalex.model_dump(exclude={"base_url"}) == {
+        "per_page": 200,
+        "request_interval_seconds": 1.0,
+        "timeout_seconds": 30.0,
+        "max_retries": 3,
+        "backoff_seconds": 2.0,
+    }
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "base_url",
+        "per_page",
+        "request_interval_seconds",
+        "timeout_seconds",
+        "max_retries",
+        "backoff_seconds",
+    ],
+)
+def test_every_openalex_value_must_be_declared(
+    raw_default: dict[str, Any], tmp_path: Path, key: str
+) -> None:
+    del raw_default["openalex"][key]
+
+    with pytest.raises(ValidationError, match=f"openalex.{key}"):
+        load_variant(tmp_path, raw_default)
+
+
+@pytest.mark.parametrize(
+    ("base_url", "message"),
+    [
+        ("https://api.openalex.org/?mailto=nombre.inventado@example.org", "no query"),
+        ("https://api.openalex.org/?api_key=clave-inventada", "no query"),
+        ("https://usuario:clave@api.openalex.org", "no user name or password"),
+        ("https://api.openalex.org/#topics", "no fragment"),
+        ("http://api.openalex.org", "https"),
+    ],
+    ids=["mailto", "api-key", "credentials", "fragment", "plain-http"],
+)
+def test_an_openalex_url_that_could_carry_personal_data_is_rejected(
+    raw_default: dict[str, Any], tmp_path: Path, base_url: str, message: str
+) -> None:
+    raw_default["openalex"]["base_url"] = base_url
+
+    with pytest.raises(ValidationError, match=message):
+        load_variant(tmp_path, raw_default)
+
+
+def test_an_openalex_url_may_name_a_path(raw_default: dict[str, Any], tmp_path: Path) -> None:
+    raw_default["openalex"]["base_url"] = "https://mirror.example.org/openalex/"
+
+    openalex = load_variant(tmp_path, raw_default).openalex
+
+    assert str(openalex.base_url) == "https://mirror.example.org/openalex/"
+
+
+def test_the_openalex_block_is_outside_the_experiment_declaration(
+    raw_default: dict[str, Any], tmp_path: Path
+) -> None:
+    declared = load_config(DEFAULT_CONFIG_PATH).experiment_declaration_sha256()
+    raw_default["openalex"]["per_page"] = 50
+    raw_default["openalex"]["max_retries"] = 0
+
+    assert load_variant(tmp_path, raw_default).experiment_declaration_sha256() == declared
+
+
+def test_the_openalex_block_leaves_the_harvest_settings_alone(
+    raw_default: dict[str, Any], tmp_path: Path
+) -> None:
+    raw_default["openalex"].update(
+        {"request_interval_seconds": 5.0, "max_retries": 0, "base_url": "https://example.org"}
+    )
+
+    repository = load_variant(tmp_path, raw_default).repository
+
+    assert str(repository.base_url).rstrip("/") == "https://repositorio.ucsm.edu.pe"
+    assert (repository.page_size, repository.max_retries) == (100, 3)
+    assert repository.request_interval_seconds == 1.0
+
+
 def test_a_rare_share_not_below_the_present_share_is_rejected(
     raw_default: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -660,6 +745,7 @@ def test_kmeans_sweep_with_bounds_outside_the_contract_is_rejected(
         "temporal.sample.unexpected_key",
         "proposal.unexpected_key",
         "expert_samples.unexpected_key",
+        "openalex.unexpected_key",
     ],
 )
 def test_unknown_keys_are_rejected(
@@ -1051,6 +1137,17 @@ def test_harvest_settings_take_their_defaults_when_omitted(
         ("expert_samples.saturation_method", "mean"),
         ("expert_samples.saturation_boundary", "middle"),
         ("expert_samples.saturation_boundary", None),
+        ("openalex.per_page", 0),
+        ("openalex.per_page", 201),
+        ("openalex.request_interval_seconds", 0.5),
+        ("openalex.request_interval_seconds", 60.5),
+        ("openalex.timeout_seconds", 0.5),
+        ("openalex.timeout_seconds", 300.5),
+        ("openalex.max_retries", -1),
+        ("openalex.max_retries", 11),
+        ("openalex.backoff_seconds", 0.5),
+        ("openalex.backoff_seconds", 60.5),
+        ("openalex.base_url", "not a url"),
     ],
 )
 def test_values_outside_the_contract_are_rejected(
@@ -1109,6 +1206,10 @@ def test_values_outside_the_contract_are_rejected(
         ("redundancy.cv_stratified", 1, "bool_type"),
         ("topic_map.projection.n_neighbors", 15.0, "int_type"),
         ("topic_map.projection.min_dist", "0.0", "float_type"),
+        ("openalex.per_page", "200", "int_type"),
+        ("openalex.per_page", 200.0, "int_type"),
+        ("openalex.max_retries", True, "int_type"),
+        ("openalex.timeout_seconds", "30", "float_type"),
     ],
 )
 def test_numeric_fields_refuse_values_of_another_type(
@@ -1177,6 +1278,16 @@ def test_the_global_safe_loader_still_reads_plain_exponents_as_text() -> None:
         ("repository.request_interval_seconds", 60.0),
         ("repository.max_retries", 0),
         ("repository.max_retries", 10),
+        ("openalex.per_page", 1),
+        ("openalex.per_page", 200),
+        ("openalex.request_interval_seconds", 1),
+        ("openalex.request_interval_seconds", 60.0),
+        ("openalex.timeout_seconds", 1.0),
+        ("openalex.timeout_seconds", 300.0),
+        ("openalex.max_retries", 0),
+        ("openalex.max_retries", 10),
+        ("openalex.backoff_seconds", 1.0),
+        ("openalex.backoff_seconds", 60.0),
         ("ocr.dpi", 72),
         ("ocr.dpi", 600),
         ("extraction.min_text_chars", 1),

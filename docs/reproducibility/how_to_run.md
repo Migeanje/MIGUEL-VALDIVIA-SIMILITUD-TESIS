@@ -6,9 +6,10 @@ since it writes nothing. The steps check their inputs against the manifests that
 so a step whose inputs are missing or changed stops with an `error:` line instead of reading
 stale data.
 
-Only the machine setup and the corpus acquisition need the network. Steps 3 to 30 and the app
-run offline, from the frozen snapshot, the pseudonym key and, for steps 9, 22, 26 and 29, the
-workbooks that people filled.
+Only the machine setup, the corpus acquisition and the one-time download of the OpenAlex
+Topics reference need the network. Steps 3 to 30 and the app run offline, from the frozen
+snapshot, the pseudonym key and, for steps 9, 22, 26 and 29, the workbooks that people filled.
+The OpenAlex download is not a numbered step: no step of this guide reads it yet (T25).
 
 Times are wall-clock times from the ledger, [`docs/processing_costs.md`](../processing_costs.md),
 on the laptop described in the [environment](environment.md). Commands are the README's, unless
@@ -26,7 +27,8 @@ the step says otherwise. On snapshot `20261002T224412Z`, steps 1 to 20 have run 
 | The snapshot under `data/raw/20261002T224412Z/` | A new harvest gives a new snapshot, not this one (the repository is live, D23) |
 
 Every command takes `--project-root` (default: the current directory) and, except
-`ocr_assets`, `--snapshot-id` (default: the snapshot harvested last). `pair_workbooks` takes
+`ocr_assets` and `openalex_topics`, `--snapshot-id` (default: the snapshot harvested last);
+`openalex_topics` takes `--download-id` instead. `pair_workbooks` takes
 them after its step's name, and the app after a `--`. Run `--help` on any of them for the rest.
 
 ## Network and authorization
@@ -39,6 +41,7 @@ them after its step's name, and the app after a `--`. Run `--help` on any of the
 | mpnet model download (no command) | Hugging Face | U8, granted 2026-10-07 |
 | 1. `harvest`, 2. `download_pdfs` | The UCSM repository | U8, granted for T04 and T05 |
 | Fetching the 7 expired-embargo PDFs | The UCSM repository | Needs its own U8; not done |
+| `openalex_topics` (T25) | `api.openalex.org`, anonymous: no email, `mailto` parameter, API key or cookie | U8, granted by the user on 2026-11-04 for one download of the full Topics list with no credential; a credential or another download needs a new authorization |
 | Steps 3 to 30, the app, the checks | None; the app serves `localhost` only | — |
 
 ## One-time steps
@@ -48,6 +51,7 @@ These refuse to run twice, by design:
 | Step | What it refuses |
 |---|---|
 | 1. `harvest` | A snapshot that already exists: snapshots are never overwritten. A new run writes a new snapshot, named by default after its UTC harvest time |
+| `openalex_topics` | A download id whose data folder or manifest exists: a download is never overwritten. A new run, named by default after its UTC retrieval time, is a new remote operation and needs its own authorization (U8) |
 | 7. `locate_objectives --make-sample` | An existing verification workbook, which may hold verdicts |
 | 10. `build_fichas`, first run | Nothing, but it creates `data/interim/pseudonym.key`, which is never overwritten; a key file of the wrong size stops every later build |
 | 17. `draw_pairs` | An earlier draw of the snapshot: a draw is a one-time event. To draw again, move the earlier draw's records away first |
@@ -97,6 +101,25 @@ uv run python -m thematic_redundancy.corpus.download_pdfs
 Then the snapshot is frozen (T06): it is never modified or downloaded again, and its card,
 `results/snapshot/20261002T224412Z/data_card.md`, records its digests. There is no command for
 this step.
+
+### OpenAlex Topics reference (T25), online, under U8
+
+A remote operation: run it only with the user's authorization (U8). The user granted it on
+2026-11-04 for one download of the full Topics list from `api.openalex.org`, with no
+credential. Cursor paging got HTTP 401 on its second page (2026-11-05); the user then chose
+page-number paging (2026-11-06), which the command uses.
+
+```sh
+uv run python -m thematic_redundancy.reference.openalex_topics
+```
+
+| Step | Inputs | Outputs | Nature | Time |
+|---|---|---|---|---|
+| `openalex_topics` (T25, D17) | `openalex`; the network | `data/raw/openalex/topics/<download_id>/topics.jsonl` (gitignored), `results/reference/openalex/topics/<download_id>/manifest.json` (tracked) | One-time per download id; nothing is written unless the records number OpenAlex's `meta.count` with unique topic ids. HTTP 401 or 403, or HTTP 429 after the retries, stops it with the status named: ask the user before using a credential | Run once, download `20261106T232105Z` (2026-11-06): 4,516 topics in 23 pages and 23 requests, 38.4 s (M) |
+
+The manifest records the commit and the changed paths of the code, so commit first if the
+record should name a clean tree. No numbered step reads the download yet: mapping its
+subfields to the programs needs U5 (plan T25).
 
 ### Data preparation (P2), offline
 
