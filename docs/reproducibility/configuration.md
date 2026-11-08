@@ -15,7 +15,7 @@ user (plan "Next step").
 
 | Fact | Value |
 |---|---|
-| SHA-256 of `config/default.yaml` | `2bc2c20014df96ac4d287e9f6f0c3cc3de1daeb0c1b826c68c0db49b9e828f5f` (M): the file since T25's first slice, which added `openalex`; `cba05e394ecfa41475218aa682053dc3118fd2a74622feade47ba444a1f291e1` from `2d41c2c` to `a26fa9e` |
+| SHA-256 of `config/default.yaml` | `2bc2c20014df96ac4d287e9f6f0c3cc3de1daeb0c1b826c68c0db49b9e828f5f` (M): the file since `16866f9`, T25's first slice, which added `openalex`; `cba05e394ecfa41475218aa682053dc3118fd2a74622feade47ba444a1f291e1` from `2d41c2c` to `a26fa9e` |
 | Experiment declaration SHA-256 | `b974c54c3378c8fe02f7983323f0d58fa7672e4ca7d1999df15f708d2b76850b`, unchanged since D30 |
 | Blocks | 24 (M), in the order of the table below |
 | Loader | `load_config`: a YAML key written twice in one mapping is refused, and each block is a validated pydantic model with bounds |
@@ -23,7 +23,7 @@ user (plan "Next step").
 
 Each run manifest records the SHA-256 of the file it read, so a rerun can be matched with the
 configuration of its commit. Since the gap run, the file changed six times (M: each value
-equals `git show <commit>:config/default.yaml`, or the file itself for the last row):
+equals `git show <commit>:config/default.yaml`):
 
 | Commit | SHA-256 | What the commit added | Recorded by |
 |---|---|---|---|
@@ -33,7 +33,7 @@ equals `git show <commit>:config/default.yaml`, or the file itself for the last 
 | `ec2abf6` | `3ec8f5984f872a183be157179d6a3d5b63c9c172b29fddb3dd0aa972dcf7ab1f` | The `proposal` and `temporal` blocks | The temporal split's manifest (run at `b161016`) |
 | `af46c30` | `27dec213f1b1703d88b9f78493298e946f22ff6c1e49e676049f09a96a950c1a` | The key `labeling.annotators` | The pilot workbook's manifest (run at `7a9fe30`) |
 | `2d41c2c` | `cba05e394ecfa41475218aa682053dc3118fd2a74622feade47ba444a1f291e1` | The `expert_samples` block | The expert samples' gitignored manifest (run at `2e8f9df`, which holds this file; D: the command records `default.yaml` among its inputs) |
-| T25's first slice | `2bc2c20014df96ac4d287e9f6f0c3cc3de1daeb0c1b826c68c0db49b9e828f5f` | The `openalex` block | The OpenAlex Topics download's manifest, `config_sha256` (download `20261106T232105Z`) |
+| `16866f9` | `2bc2c20014df96ac4d287e9f6f0c3cc3de1daeb0c1b826c68c0db49b9e828f5f` | The `openalex` block | The OpenAlex Topics download's manifest, `config_sha256` (download `20261106T232105Z`) |
 
 ## Blocks of `config/default.yaml`
 

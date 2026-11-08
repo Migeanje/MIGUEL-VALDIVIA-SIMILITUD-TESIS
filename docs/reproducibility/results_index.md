@@ -1,6 +1,6 @@
 # Results index
 
-Every file that git tracks under `results/` with T25's first slice, 36 files (M): the command
+Every file that git tracks under `results/` at `16866f9`, 36 files (M): the command
 that wrote it, the commit it ran at, where its provenance is recorded and what it holds. All
 but one are aggregates for snapshot `20261002T224412Z`; the other is the manifest of the
 OpenAlex Topics download (T25), which records a public topic list. None holds a title, an
@@ -213,7 +213,7 @@ Online, once, under the user's authorization (U8, granted 2026-11-04 for one ano
 of the full Topics list). Cursor paging got HTTP 401 on its second page on 2026-11-05 and wrote
 nothing; the user then chose page-number paging (2026-11-06). Ran at `a26fa9e` with T25's first
 slice uncommitted (`git_commit` and the 14 paths of `git_dirty` in the manifest),
-2026-11-06T23:21:05Z, 38.4 s (M); committed with T25's first slice. It belongs to no snapshot:
+2026-11-06T23:21:05Z, 38.4 s (M); committed in `16866f9`. It belongs to no snapshot:
 it records the public Topics list (CC0) that its gitignored data file holds.
 
 | File | Holds |
